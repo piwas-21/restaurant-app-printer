@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<Shell
+    x:Class="PrinterAPP.AppShell"
+    xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+    xmlns:local="clr-namespace:PrinterAPP"
+    Title="PrinterAPP">
+
+    <TabBar>
+        <ShellContent
+            Title="Settings"
+            Icon="dotnet_bot.png"
+            ContentTemplate="{DataTemplate local:MainPage}"
+            Route="MainPage" />
+
+        <ShellContent
+            Title="Orders"
+            Icon="dotnet_bot.png"
+            ContentTemplate="{DataTemplate local:OrderManagementPage}"
+            Route="OrderManagementPage" />
+
+        <ShellContent
+            Title="Logs"
+            Icon="dotnet_bot.png"
+            ContentTemplate="{DataTemplate local:LogsPage}"
+            Route="LogsPage" />
+
+        <ShellContent
+            Title="Errors"
+            Icon="dotnet_bot.png"
+            ContentTemplate="{DataTemplate local:ErrorLogsPage}"
+            Route="ErrorLogsPage" />
+
+        <ShellContent
+            Title="Warnings"
+            Icon="dotnet_bot.png"
+            ContentTemplate="{DataTemplate local:WarningLogsPage}"
+            Route="WarningLogsPage" />
+    </TabBar>
+
+</Shell>
