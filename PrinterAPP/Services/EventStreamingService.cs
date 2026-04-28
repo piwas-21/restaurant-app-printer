@@ -581,17 +581,16 @@ public class EventStreamingService : IEventStreamingService
                 
                 using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
                 
-                // Add authorization header if we have a token
+                // Add X-Api-Key header if configured
                 var config = await _printerService.LoadConfigurationAsync();
-                if (!string.IsNullOrWhiteSpace(config.ApiToken))
+                if (!string.IsNullOrWhiteSpace(config.ApiKey))
                 {
-                    httpClient.DefaultRequestHeaders.Authorization = 
-                        new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", config.ApiToken);
-                    _logger.LogInformation("   Using API token for authentication");
+                    httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.ApiKey);
+                    _logger.LogInformation("   Using API key for authentication");
                 }
                 else
                 {
-                    _logger.LogWarning("   ⚠️ No API token configured - request may fail if auth required");
+                    _logger.LogWarning("   ⚠️ No API key configured - request may fail if auth required");
                 }
                 
                 var response = await httpClient.GetAsync(pollUrl, cancellationToken);
