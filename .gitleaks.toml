@@ -1,0 +1,40 @@
+# RUMI Printer-App — gitleaks config
+# Filename ".gitleaks.toml" is auto-discovered by gitleaks (no --config flag needed).
+# Runs in GitLab CI per .gitlab-ci.yml; complements local detect-secrets pre-commit hook.
+# Docs: https://github.com/gitleaks/gitleaks/blob/master/README.md
+
+[extend]
+useDefault = true
+
+# ── Allowlist (intentional false positives) ──────────────────────────
+[allowlist]
+description = "Project-specific allowlist for known non-secret patterns"
+
+# Paths that legitimately contain hashed / sample / placeholder credentials.
+# Patterns are anchored on either / or \ to work across Linux (CI) and Windows.
+paths = [
+  # detect-secrets baseline IS a list of known false-positive hashes by design.
+  # Re-scanning it with gitleaks would always fire (every entry is a hash literal).
+  '''^\.secrets\.baseline$''',
+  # MAUI build output and dependency caches
+  '''(^|/)bin(/|$)''',
+  '''(^|/)obj(/|$)''',
+  # MAUI generated platform code under Platforms/ contains sample identity strings
+  '''(^|/)Platforms/(Android|iOS|MacCatalyst|Tizen)(/|$)''',
+  # Resources (icons, fonts) — binary assets that occasionally trip entropy checks
+  '''(^|/)Resources(/|$)''',
+  # XAML files reference resource keys and color codes; not credentials
+  '''\.xaml$''',
+]
+
+# Specific commits known to contain false-positive hits
+# (add via: gitleaks detect --report-path /tmp/leaks.json then commit hash)
+commits = []
+
+# Known-safe regexes for placeholder values used in dev / docs.
+regexes = [
+  # Placeholder API key string used in default PrinterConfiguration before user setup.
+  '''REPLACE_WITH_PRINTER_FEED_API_KEY''',
+  # Sample backend URLs in docs / templates
+  '''https?://(localhost|127\.0\.0\.1|api\.example\.com)''',
+]

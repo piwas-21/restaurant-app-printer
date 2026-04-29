@@ -1,0 +1,46 @@
+# RUMI Printer-App — pre-commit configuration
+# Install:        pre-commit install && pre-commit install --hook-type pre-push
+# Update hooks:   pre-commit autoupdate
+# Run manually:   pre-commit run --all-files
+#
+# Phase 0 scope: hygiene + secret scanning.
+# Sprint 2 (planned): format gate via `dotnet format --verify-no-changes` (needs Windows
+#          runner for the MAUI workload — see docs/QUALITY-SECURITY-PLAN.md).
+# Sprint 3 (planned): TreatWarningsAsErrors via Directory.Build.props.
+
+repos:
+  # ── General hygiene ──────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: \.(svg|patch|xaml)$
+      - id: end-of-file-fixer
+        exclude: \.(svg|patch)$
+      - id: check-yaml
+        # GitLab CI uses YAML extensions that the default parser rejects
+        args: ["--unsafe"]
+      - id: check-json
+        # Skip files that legitimately hold credential placeholders
+        exclude: "(secrets|credentials|service-account|config|app-secrets)\\.json"
+      - id: check-xml
+        # XAML is XML; check it parses. .csproj also benefits.
+        files: \.(xaml|csproj|props|targets)$
+      - id: check-merge-conflict
+      - id: check-added-large-files
+        args: ["--maxkb=1000"]
+      - id: no-commit-to-branch
+        # `master` included defensively in case of accidental rename / fork.
+        args: ["--branch", "main", "--branch", "develop", "--branch", "master"]
+
+  # ── Secret scanning ──────────────────────────────────────────────────
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        # Single source of truth for known false positives is .secrets.baseline.
+        # Don't add path excludes here — they hide rows the baseline already
+        # captures, leaving the team without visibility when new "secrets"
+        # appear in those paths. Prefer regenerating the baseline:
+        #   detect-secrets scan --baseline .secrets.baseline
+        args: ["--baseline", ".secrets.baseline"]
