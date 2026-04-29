@@ -69,8 +69,8 @@ public class OrderPrintService
     /// Prints order to all appropriate printers: Cashier + FrontKitchen + BackKitchen (filtered by item KitchenType)
     /// </summary>
     public async Task<(bool Cashier, bool FrontKitchen, bool BackKitchen)> PrintOrderToAllPrintersAsync(
-        Order order, 
-        bool isManualPrint = false, 
+        Order order,
+        bool isManualPrint = false,
         CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("🖨️ Printing order {OrderNumber} to all printers", order.OrderNumber);
@@ -92,9 +92,9 @@ public class OrderPrintService
         }
 
         // 2. Check which kitchens have items
-        var hasFrontKitchenItems = order.Items?.Any(i => 
+        var hasFrontKitchenItems = order.Items?.Any(i =>
             string.Equals(i.KitchenType, "FrontKitchen", StringComparison.OrdinalIgnoreCase)) ?? false;
-        var hasBackKitchenItems = order.Items?.Any(i => 
+        var hasBackKitchenItems = order.Items?.Any(i =>
             string.Equals(i.KitchenType, "BackKitchen", StringComparison.OrdinalIgnoreCase)) ?? false;
 
         // 3. Print to FrontKitchen if there are FrontKitchen items
@@ -103,8 +103,8 @@ public class OrderPrintService
             try
             {
                 // Logic: Use dedicated FrontPrinter if exists, otherwise fallback to CashierPrinter (NOT KitchenPrinter/BackPrinter)
-                var frontKitchenPrinter = !string.IsNullOrWhiteSpace(config.FrontKitchenPrinterName) 
-                    ? config.FrontKitchenPrinterName 
+                var frontKitchenPrinter = !string.IsNullOrWhiteSpace(config.FrontKitchenPrinterName)
+                    ? config.FrontKitchenPrinterName
                     : config.CashierPrinterName; // Fallback to Cashier Printer as requested
 
                 if (!string.IsNullOrWhiteSpace(frontKitchenPrinter) && config.FrontKitchenAutoPrint)
@@ -113,7 +113,7 @@ public class OrderPrintService
                     var filteredOrder = CreateFilteredOrder(order, "FrontKitchen");
                     var content = FormatKitchenReceipt(filteredOrder, config, config.FrontKitchenPaperWidth, "FRONT KITCHEN");
                     frontKitchenSuccess = await PrintRawContentAsync(frontKitchenPrinter, content);
-                    _logger.LogInformation("FrontKitchen print ({ItemCount} items) to {Printer}: {Result}", 
+                    _logger.LogInformation("FrontKitchen print ({ItemCount} items) to {Printer}: {Result}",
                         filteredOrder.Items?.Count ?? 0, frontKitchenPrinter, frontKitchenSuccess ? "✓" : "✗");
                 }
             }
@@ -132,8 +132,8 @@ public class OrderPrintService
         {
             try
             {
-                var backKitchenPrinter = !string.IsNullOrWhiteSpace(config.BackKitchenPrinterName) 
-                    ? config.BackKitchenPrinterName 
+                var backKitchenPrinter = !string.IsNullOrWhiteSpace(config.BackKitchenPrinterName)
+                    ? config.BackKitchenPrinterName
                     : config.KitchenPrinterName;  // Fallback to legacy
 
                 if (!string.IsNullOrWhiteSpace(backKitchenPrinter) && config.BackKitchenAutoPrint)
@@ -142,7 +142,7 @@ public class OrderPrintService
                     var filteredOrder = CreateFilteredOrder(order, "BackKitchen");
                     var content = FormatKitchenReceipt(filteredOrder, config, config.BackKitchenPaperWidth, "Back Kitchen");
                     backKitchenSuccess = await PrintRawContentAsync(backKitchenPrinter, content);
-                    _logger.LogInformation("BackKitchen print ({ItemCount} items): {Result}", 
+                    _logger.LogInformation("BackKitchen print ({ItemCount} items): {Result}",
                         filteredOrder.Items?.Count ?? 0, backKitchenSuccess ? "✓" : "✗");
                 }
             }
@@ -454,7 +454,7 @@ public class OrderPrintService
     {
         var sb = new StringBuilder();
 
-        // Initialize printer and set Turkish code page for character support  
+        // Initialize printer and set Turkish code page for character support
         // Some printers need the code page command repeated to properly switch encoding
         sb.Append(ESC_INIT);
         sb.Append(ESC_CODEPAGE_TURKISH);

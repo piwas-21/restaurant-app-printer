@@ -50,7 +50,7 @@ PrinterAPP/
 │   └── UpdateInfo.cs                      # GitHub release metadata
 ├── Services/
 │   ├── IEventStreamingService.cs / EventStreamingService.cs   # SSE polling, order event handling
-│   ├── IPrinterService.cs / WindowsPrinterService.cs          # Windows Printer API (P/Invoke)
+│   ├── IPrinterService.cs / WindowsPrinterService.cs (class `SimplePrinterService`)  # Windows Printer API (P/Invoke). Filename ≠ class name today; tracked in #3.
 │   ├── OrderPrintService.cs                                    # ESC/POS formatting, receipt composition
 │   ├── OrderHistoryService.cs                                  # Persisted order history + dedup window
 │   ├── PrintStyleSettingsService.cs                            # Style settings persistence
@@ -100,7 +100,7 @@ Known exceptions are documented inline in each file with a comment block (`// FI
 
 ## §5 — Printer-app rules (hard)
 
-1. **All services have interfaces.** Register via `MauiProgram.cs` (`builder.Services.AddSingleton<IFoo, Foo>()`). Naming: `I{Feature}Service.cs` + `{Feature}Service.cs` (or `Windows{Feature}Service.cs` for platform-specific implementations).
+1. **All services have interfaces.** Register via `MauiProgram.cs` (`builder.Services.AddSingleton<IFoo, Foo>()`). Naming: `I{Feature}Service.cs` + `{Feature}Service.cs` (or `Windows{Feature}Service.cs` for platform-specific implementations). New services MUST follow this; four legacy services (`RequestLogService`, `OrderPrintService`, `OrderHistoryService`, `UpdateService`) are tracked for retrofit in [#3](https://gitlab.com/restaurant-app3282120/printer-app/-/issues/3) — until then, do not add new code that depends on them concretely; wait for the interface.
 2. **Code-behind contains only UI event handlers.** Business logic, state mutations, and I/O live in services. If a `.xaml.cs` exceeds 200 LOC, that's a sign you're putting logic in the wrong layer.
 3. **Models must mirror backend DTOs exactly.** Field names, types, casing, and nullability must match `backend/RestaurantSystem.Api/Features/<X>/Dtos/`. Before changing a model, grep the corresponding backend DTO and confirm — silent drift is a production-printing failure.
 4. **ESC/POS commands defined in a constants file**, not inline. Magic byte sequences in print code are a debugging tarpit.

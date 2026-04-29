@@ -19,7 +19,7 @@ public class SimplePrinterService : IPrinterService
         var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var configDir = Path.Combine(appDataPath, "KitchenPrinter");
         _configPath = Path.Combine(configDir, "config.json");
-        
+
         if (!Directory.Exists(configDir))
         {
             Directory.CreateDirectory(configDir);
@@ -27,34 +27,34 @@ public class SimplePrinterService : IPrinterService
     }
 
     #region Windows API Declarations
-    
+
     [DllImport("winspool.drv", CharSet = CharSet.Auto, SetLastError = true)]
     private static extern bool GetDefaultPrinter(StringBuilder buffer, ref int bufferSize);
-    
+
     [DllImport("winspool.drv", CharSet = CharSet.Auto, SetLastError = true)]
     private static extern bool EnumPrinters(PrinterEnumFlags flags, string? name, uint level, IntPtr pPrinterEnum, uint cbBuf, ref uint pcbNeeded, ref uint pcReturned);
-    
+
     [DllImport("winspool.drv", SetLastError = true, CharSet = CharSet.Auto)]
     private static extern bool OpenPrinter(string printerName, out IntPtr phPrinter, IntPtr pDefault);
-    
+
     [DllImport("winspool.drv", SetLastError = true)]
     private static extern bool ClosePrinter(IntPtr hPrinter);
-    
+
     [DllImport("winspool.drv", SetLastError = true)]
     private static extern bool StartDocPrinter(IntPtr hPrinter, int level, ref DOC_INFO_1 pDocInfo);
-    
+
     [DllImport("winspool.drv", SetLastError = true)]
     private static extern bool EndDocPrinter(IntPtr hPrinter);
-    
+
     [DllImport("winspool.drv", SetLastError = true)]
     private static extern bool StartPagePrinter(IntPtr hPrinter);
-    
+
     [DllImport("winspool.drv", SetLastError = true)]
     private static extern bool EndPagePrinter(IntPtr hPrinter);
-    
+
     [DllImport("winspool.drv", SetLastError = true)]
     private static extern bool WritePrinter(IntPtr hPrinter, byte[] pBuf, int cbBuf, out int pcWritten);
-    
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
     private struct DOC_INFO_1
     {
@@ -65,7 +65,7 @@ public class SimplePrinterService : IPrinterService
         [MarshalAs(UnmanagedType.LPTStr)]
         public string pDatatype;
     }
-    
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
     private struct PRINTER_INFO_2
     {
@@ -102,7 +102,7 @@ public class SimplePrinterService : IPrinterService
         public uint cJobs;
         public uint AveragePPM;
     }
-    
+
     [Flags]
     private enum PrinterEnumFlags
     {
@@ -111,13 +111,13 @@ public class SimplePrinterService : IPrinterService
         PRINTER_ENUM_NAME = 0x00000008,
         PRINTER_ENUM_NETWORK = 0x00000040,
     }
-    
+
     #endregion
 
     public Task<List<string>> GetAvailablePrintersAsync()
     {
         var printers = new List<string>();
-        
+
         try
         {
             // Method 1: Get default printer
@@ -126,7 +126,7 @@ public class SimplePrinterService : IPrinterService
             {
                 printers.Add($"{defaultPrinter} (Default)");
             }
-            
+
             // Method 2: Enumerate all local printers
             var localPrinters = EnumerateLocalPrinters();
             foreach (var printer in localPrinters)
@@ -136,7 +136,7 @@ public class SimplePrinterService : IPrinterService
                     printers.Add(printer);
                 }
             }
-            
+
             // Method 3: Try WMI as fallback (requires System.Management)
             try
             {
@@ -158,23 +158,23 @@ public class SimplePrinterService : IPrinterService
         {
             System.Diagnostics.Debug.WriteLine($"Error getting printers: {ex.Message}");
         }
-        
+
         if (printers.Count == 0)
         {
             printers.Add("Default Printer");
         }
-        
+
         return Task.FromResult(printers);
     }
-    
+
     private string GetDefaultPrinterName()
     {
         const int ERROR_INSUFFICIENT_BUFFER = 122;
         int size = 0;
-        
+
         // First call to get size
         GetDefaultPrinter(null!, ref size);
-        
+
         if (Marshal.GetLastWin32Error() == ERROR_INSUFFICIENT_BUFFER)
         {
             var buffer = new StringBuilder(size);
@@ -183,20 +183,20 @@ public class SimplePrinterService : IPrinterService
                 return buffer.ToString();
             }
         }
-        
+
         return string.Empty;
     }
-    
+
     private List<string> EnumerateLocalPrinters()
     {
         var printers = new List<string>();
         uint cbNeeded = 0;
         uint cReturned = 0;
-        
+
         // First call to get size
-        EnumPrinters(PrinterEnumFlags.PRINTER_ENUM_LOCAL | PrinterEnumFlags.PRINTER_ENUM_CONNECTIONS, 
+        EnumPrinters(PrinterEnumFlags.PRINTER_ENUM_LOCAL | PrinterEnumFlags.PRINTER_ENUM_CONNECTIONS,
                     null, 2, IntPtr.Zero, 0, ref cbNeeded, ref cReturned);
-        
+
         if (cbNeeded > 0)
         {
             IntPtr pAddr = Marshal.AllocHGlobal((int)cbNeeded);
@@ -207,7 +207,7 @@ public class SimplePrinterService : IPrinterService
                 {
                     IntPtr offset = pAddr;
                     int size = Marshal.SizeOf(typeof(PRINTER_INFO_2));
-                    
+
                     for (int i = 0; i < cReturned; i++)
                     {
                         var printerInfo = Marshal.PtrToStructure<PRINTER_INFO_2>(offset);
@@ -224,14 +224,14 @@ public class SimplePrinterService : IPrinterService
                 Marshal.FreeHGlobal(pAddr);
             }
         }
-        
+
         return printers;
     }
-    
+
     private List<string> GetPrintersViaWMI()
     {
         var printers = new List<string>();
-        
+
         // Only try if System.Management is available
 #if WINDOWS
         try
@@ -251,7 +251,7 @@ public class SimplePrinterService : IPrinterService
             // System.Management might not be available
         }
 #endif
-        
+
         return printers;
     }
 
@@ -317,7 +317,7 @@ public class SimplePrinterService : IPrinterService
             return false;
         }
     }
-    
+
     private bool SendTextToPrinter(string printerName, string text)
     {
         IntPtr hPrinter = IntPtr.Zero;
@@ -386,7 +386,7 @@ public class SimplePrinterService : IPrinterService
                 ClosePrinter(hPrinter);
         }
     }
-    
+
     private async Task<bool> PrintViaHtmlBold(string text, string printerName, PrinterConfiguration config)
     {
         try
@@ -473,7 +473,7 @@ public class SimplePrinterService : IPrinterService
             // Save to temp file
             var tempFile = Path.Combine(Path.GetTempPath(), $"receipt_{Guid.NewGuid()}.txt");
             await File.WriteAllTextAsync(tempFile, text);
-            
+
             // Use PowerShell to print (more reliable than notepad)
             var processInfo = new System.Diagnostics.ProcessStartInfo
             {
@@ -483,19 +483,19 @@ public class SimplePrinterService : IPrinterService
                 CreateNoWindow = true,
                 WindowStyle = System.Diagnostics.ProcessWindowStyle.Hidden
             };
-            
+
             var process = System.Diagnostics.Process.Start(processInfo);
             if (process != null)
             {
                 await process.WaitForExitAsync();
-                
+
                 // Cleanup
                 await Task.Delay(2000);
                 try { File.Delete(tempFile); } catch { }
-                
+
                 return process.ExitCode == 0;
             }
-            
+
             return false;
         }
         catch
@@ -503,7 +503,7 @@ public class SimplePrinterService : IPrinterService
             return false;
         }
     }
-    
+
     private async Task<bool> TryPrintToPort(string printerName, string text)
     {
         try
@@ -721,7 +721,7 @@ public class SimplePrinterService : IPrinterService
 
         return sb.ToString();
     }
-    
+
     private bool IsThermalPrinter(string printerName)
     {
         var thermalKeywords = new[] { "EPSON", "TM-", "TSP", "POS", "Receipt", "Thermal", "Star" };
@@ -734,7 +734,7 @@ public class SimplePrinterService : IPrinterService
         {
             using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
             var response = await client.GetAsync($"{apiUrl}/api/events/kitchen");
-            return response.IsSuccessStatusCode || 
+            return response.IsSuccessStatusCode ||
                    response.StatusCode == System.Net.HttpStatusCode.Unauthorized;
         }
         catch
