@@ -1,0 +1,3 @@
+# gitleaks ignore file — pin specific finger-printable findings to suppress.
+# Format: <commit-sha>:<path>:<rule-id>:<line>
+# See https://github.com/gitleaks/gitleaks#gitleaksignore for details.
