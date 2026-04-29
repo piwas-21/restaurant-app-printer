@@ -38,9 +38,9 @@ public class UpdateService
         try
         {
             _logger.LogInformation("Checking for updates from GitHub...");
-            
+
             var response = await _httpClient.GetFromJsonAsync<GitHubRelease>(RELEASES_API_URL);
-            
+
             if (response == null)
             {
                 _logger.LogWarning("No release information found");
@@ -58,14 +58,14 @@ public class UpdateService
             string arch = is64Bit ? "x64" : "x86";
 
             // Find the best matching exe asset
-            var exeAsset = response.Assets?.FirstOrDefault(a => 
-                a.Name?.Contains(arch, StringComparison.OrdinalIgnoreCase) == true && 
+            var exeAsset = response.Assets?.FirstOrDefault(a =>
+                a.Name?.Contains(arch, StringComparison.OrdinalIgnoreCase) == true &&
                 a.Name?.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) == true);
 
             // Fallback: If no arch-specific found, take any .exe (legacy support)
             if (exeAsset == null)
             {
-                exeAsset = response.Assets?.FirstOrDefault(a => 
+                exeAsset = response.Assets?.FirstOrDefault(a =>
                     a.Name?.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) == true);
             }
 
@@ -98,11 +98,11 @@ public class UpdateService
 
             // Download to temp file
             var tempFile = Path.Combine(Path.GetTempPath(), "PrinterApp_Update.exe");
-            
+
             using (var response = await _httpClient.GetAsync(updateInfo.DownloadUrl, HttpCompletionOption.ResponseHeadersRead))
             {
                 response.EnsureSuccessStatusCode();
-                
+
                 var totalBytes = response.Content.Headers.ContentLength ?? 0;
                 var downloadedBytes = 0L;
 
@@ -160,7 +160,7 @@ public class UpdateService
             var currentProcessId = Process.GetCurrentProcess().Id;
             var backupPath = currentExePath + ".bak";
             var logPath = Path.Combine(Path.GetTempPath(), "printerapp_update.log");
-            
+
             _logger.LogInformation("Installing update from {UpdateFile} to {CurrentExe}", updateFilePath, currentExePath);
             _logger.LogInformation("Current process ID: {ProcessId}", currentProcessId);
 
@@ -174,7 +174,7 @@ public class UpdateService
 
             // Get current exe size for comparison
             var currentFileInfo = new FileInfo(currentExePath);
-            _logger.LogInformation("Current exe size: {CurrentSize} bytes, Update size: {UpdateSize} bytes", 
+            _logger.LogInformation("Current exe size: {CurrentSize} bytes, Update size: {UpdateSize} bytes",
                 currentFileInfo.Length, updateFileInfo.Length);
 
             // Backup current version
@@ -266,7 +266,7 @@ REM Self-delete and exit
             };
 
             process.Start();
-            
+
             _logger.LogInformation("Update script started. App will exit and restart...");
 
             // Give the batch script time to start

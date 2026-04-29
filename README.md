@@ -15,7 +15,7 @@ A specialized Windows application built with **.NET MAUI** that handles automate
   - **Kitchen Tickets:** Large, bold text for easy reading in the kitchen.
   - **Ingredient Customizations:** Clearly marks added/removed ingredients (e.g., `✘ NO Onion`, `+ EXTRA Cheese`).
   - **Turish Character Support:** Correctly handles Turkish characters (e.g., `İ`, `Ş`, `Ğ`) on thermal printers.
-- **Auto-Update System:** 
+- **Auto-Update System:**
   - Checks GitHub Releases for updates on startup and via manual check.
   - Automatically downloads and installs new versions.
 - **Background Operation:** Runs reliably on Windows to ensure no orders are missed.

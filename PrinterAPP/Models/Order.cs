@@ -46,11 +46,11 @@ public class OrderItem
     public decimal ItemTotal { get; set; }
     public string? SpecialInstructions { get; set; }
     public string? KitchenType { get; set; } // e.g., "FrontKitchen", "BackKitchen", etc.
-    
+
     // Ingredient customizations (added/removed ingredients)
     [JsonPropertyName("ingredientCustomizations")]
     public List<IngredientCustomization>? IngredientCustomizations { get; set; }
-    
+
     // Side items / additionals (child order items)
     public List<OrderItem>? SideItems { get; set; }
 }
