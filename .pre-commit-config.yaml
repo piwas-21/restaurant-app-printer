@@ -44,3 +44,15 @@ repos:
         # appear in those paths. Prefer regenerating the baseline:
         #   detect-secrets scan --baseline .secrets.baseline
         args: ["--baseline", ".secrets.baseline"]
+
+  # ── Sprint 2: file-length gate ───────────────────────────────────────
+  # Enforces the per-file LOC limits from CLAUDE.md §4. Existing oversized
+  # files are grandfathered in scripts/file-length-baseline.txt; new
+  # violations block. See scripts/check-file-length.sh for limits + opt-out.
+  - repo: local
+    hooks:
+      - id: file-length
+        name: file-length (CLAUDE.md §4 limits)
+        entry: bash scripts/check-file-length.sh
+        language: system
+        files: \.cs$

@@ -83,18 +83,28 @@ The printer-app is a **strict consumer** of the backend API. Models in `PrinterA
 
 ## §4 — File length limits
 
-Enforced by reviewer; will be enforced by `scripts/check-quality.sh` once Sprint 2 lands.
+Enforced by [scripts/check-file-length.sh](scripts/check-file-length.sh) (pre-commit + CI `file_length` job, blocking).
 
 | File type | Max LOC | Action if exceeded |
 |---|---|---|
 | Page code-behind (`.xaml.cs`) | 200 | Move logic into a service; code-behind should only wire UI events |
-| Service class | 300 | Split by concern — one service = one responsibility |
-| Model class | 80 | Data containers only; no behaviour |
-| P/Invoke wrapper | 200 | Isolate native interop in a dedicated wrapper |
-| Constants file (ESC/POS commands, config keys) | 100 | Group by category and split |
-| Converter (XAML `IValueConverter`) | 60 | One converter = one transformation |
+| Service class (`PrinterAPP/Services/**`) | 300 | Split by concern — one service = one responsibility |
+| Model class (`PrinterAPP/Models/**`) | 80 | Data containers only; no behaviour |
+| P/Invoke wrapper (`PrinterAPP/Platforms/Windows/**`) | 200 | Isolate native interop in a dedicated wrapper |
+| Constants file (`*Constants.cs`) | 100 | Group by category and split |
+| Converter (`PrinterAPP/Converters/**`) | 60 | One converter = one transformation |
 
-Known exceptions are documented inline in each file with a comment block (`// FILE_LENGTH_EXEMPT: <reason>`).
+Excluded from the gate: non-Windows platform shims (`Platforms/Android`, `Platforms/iOS`, `Platforms/MacCatalyst`, `Platforms/Tizen`) since the Windows-only target (ADR-001) doesn't compile them.
+
+**Existing oversized files** are baselined in [scripts/file-length-baseline.txt](scripts/file-length-baseline.txt) (set at the current honest floor; ratchet down as the refactor track lands). New violations block the gate.
+
+**Per-file opt-out** (rare; needs reviewer sign-off): add `// FILE_LENGTH_EXEMPT: <reason>` within the first 5 lines of the file.
+
+**After a refactor lands** that brings a baselined file under its limit:
+```bash
+bash scripts/check-file-length.sh --regen-baseline
+```
+Commit the updated `scripts/file-length-baseline.txt` in the same MR.
 
 ---
 
@@ -148,6 +158,7 @@ Grep for the type/method/key you're adding or modifying. List every callsite. Co
 | Gate | When | What | Blocking? | Source of truth |
 |---|---|---|---|---|
 | Pre-commit hooks | Every `git commit` | trailing whitespace, EOF, large files, secret scan, no-commit-to-protected | yes | [.pre-commit-config.yaml](.pre-commit-config.yaml) |
+| File-length gate | Pre-commit (per-file when .cs staged) **and** MR pipeline (`file_length` job) | LOC ≤ §4 limit OR file is in `scripts/file-length-baseline.txt` | yes | [scripts/check-file-length.sh](scripts/check-file-length.sh), [.pre-commit-config.yaml](.pre-commit-config.yaml), `.gitlab-ci.yml` |
 | `dotnet build PrinterAPP.sln` | Pre-commit (when `.cs/.csproj/.sln/.xaml` staged) **and** MR pipeline | 0 errors | yes | `.gitlab-ci.yml` (see note below) |
 | Gitleaks | MR pipeline | No leaked credentials (allowlist via `.gitleaks.toml`) | yes | [.gitleaks.toml](.gitleaks.toml) |
 | GitLab SAST | MR pipeline | Auto-injected analyzers | yes | `.gitlab-ci.yml` |

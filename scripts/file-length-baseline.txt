@@ -1,0 +1,19 @@
+# Printer-App file-length baseline.
+# Files listed here exceed the CLAUDE.md §4 limit and are tracked
+# for refactor (see docs/SPRINT-PLAN.md). The file-length checker
+# (scripts/check-file-length.sh) skips these so existing debt
+# doesn't block new MRs; new violations still block.
+#
+# Regenerate after a refactor lands:
+#   bash scripts/check-file-length.sh --regen-baseline
+# Inspect for ratchet opportunities:
+#   bash scripts/check-file-length.sh --all
+PrinterAPP/OrderManagementPage.xaml.cs
+PrinterAPP/Models/Order.cs
+PrinterAPP/Models/PrintStyleSettings.cs
+PrinterAPP/MainPage.xaml.cs
+PrinterAPP/Services/OrderPrintService.cs
+PrinterAPP/Services/UpdateService.cs
+PrinterAPP/Services/EventStreamingService.cs
+PrinterAPP/Services/WindowsPrinterService.cs
+PrinterAPP/Services/RequestLogService.cs
