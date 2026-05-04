@@ -67,7 +67,7 @@ public class OrderHistoryService
             // Insert at the beginning (most recent first)
             _orders.Insert(0, historyItem);
 
-            _logger.LogInformation("Order #{OrderNumber} added to history (total: {Count})", 
+            _logger.LogInformation("Order #{OrderNumber} added to history (total: {Count})",
                 orderEvent.Order.OrderNumber, _orders.Count);
 
             // Notify subscribers

@@ -13,7 +13,7 @@ public class EventStreamingService : IEventStreamingService
     private CancellationTokenSource? _cancellationTokenSource;
     private Task? _kitchenListeningTask;
     private bool _isListening;
-    
+
     // Track processed order IDs to prevent duplicate display/print (with timestamp for cleanup)
     private readonly Dictionary<string, DateTime> _processedOrders = new();
     private readonly object _processedOrdersLock = new();
@@ -171,7 +171,7 @@ public class EventStreamingService : IEventStreamingService
 
                 await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
                 using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 256, leaveOpen: true);
-                
+
                 string? eventType = null;
                 var dataBuilder = new StringBuilder();
 
@@ -181,7 +181,7 @@ public class EventStreamingService : IEventStreamingService
 
                 // Start background task to check for connection timeout
                 var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                _ = Task.Run(async () => 
+                _ = Task.Run(async () =>
                 {
                     while (!timeoutCts.Token.IsCancellationRequested)
                     {
@@ -310,15 +310,15 @@ public class EventStreamingService : IEventStreamingService
                     if (orderEvent?.Order != null)
                     {
                         var order = orderEvent.Order;
-                        
+
                         // FILTER: Only process orders with Confirmed status
                         if (!string.Equals(order.Status, "Confirmed", StringComparison.OrdinalIgnoreCase))
                         {
-                            _logger.LogDebug("Skipping order {OrderNumber} - status is {Status}, not Confirmed", 
+                            _logger.LogDebug("Skipping order {OrderNumber} - status is {Status}, not Confirmed",
                                 order.OrderNumber, order.Status);
                             return;
                         }
-                        
+
                         // DEDUPLICATION: Check if we've already processed this order
                         var orderKey = order.OrderNumber;
                         if (IsOrderAlreadyProcessed(orderKey))
@@ -326,10 +326,10 @@ public class EventStreamingService : IEventStreamingService
                             _logger.LogInformation("Skipping duplicate order {OrderNumber}", order.OrderNumber);
                             return;
                         }
-                        
+
                         // Mark order as processed
                         MarkOrderAsProcessed(orderKey);
-                        
+
                         // Log order details for debugging
                         _logger.LogInformation("Received order {OrderNumber} with {ItemCount} items (Status: {Status})",
                             order.OrderNumber,
@@ -347,20 +347,20 @@ public class EventStreamingService : IEventStreamingService
                         else
                         {
                             _logger.LogWarning("Order {OrderNumber} has no items! Attempting to fetch full details from API...", order.OrderNumber);
-                            
-                            try 
+
+                            try
                             {
                                 // Extract ID from OrderNumber (e.g., "ORD-123" or "123")
-                                var orderIdStr = order.OrderNumber.Contains("/") 
-                                    ? order.OrderNumber.Split('/').Last() 
+                                var orderIdStr = order.OrderNumber.Contains("/")
+                                    ? order.OrderNumber.Split('/').Last()
                                     : order.OrderNumber;
-                                
+
                                 if (int.TryParse(orderIdStr, out var orderId))
                                 {
                                     var fullOrder = await FetchOrderDetailsAsync(orderId, sourceEndpoint);
                                     if (fullOrder != null && fullOrder.Items != null && fullOrder.Items.Any())
                                     {
-                                        _logger.LogInformation("Successfully fetched full details for order {OrderNumber} with {Count} items", 
+                                        _logger.LogInformation("Successfully fetched full details for order {OrderNumber} with {Count} items",
                                             order.OrderNumber, fullOrder.Items.Count);
                                         order = fullOrder;
                                         // Update the wrapper reference too
@@ -404,11 +404,11 @@ public class EventStreamingService : IEventStreamingService
                         // FILTER: Only process orders with Confirmed status
                         if (!string.Equals(order.Status, "Confirmed", StringComparison.OrdinalIgnoreCase))
                         {
-                            _logger.LogDebug("Skipping order {OrderNumber} - status is {Status}, not Confirmed", 
+                            _logger.LogDebug("Skipping order {OrderNumber} - status is {Status}, not Confirmed",
                                 order.OrderNumber, order.Status);
                             return;
                         }
-                        
+
                         // DEDUPLICATION: Check if we've already processed this order
                         var orderKey = order.OrderNumber;
                         if (IsOrderAlreadyProcessed(orderKey))
@@ -416,10 +416,10 @@ public class EventStreamingService : IEventStreamingService
                             _logger.LogInformation("Skipping duplicate order {OrderNumber}", order.OrderNumber);
                             return;
                         }
-                        
+
                         // Mark order as processed
                         MarkOrderAsProcessed(orderKey);
-                        
+
                         // Log parsed order with full JSON data
                         _requestLogService.LogOrderReceived(
                             int.TryParse(order.OrderNumber.Split('/').Last(), out var orderNum) ? orderNum : 0,
@@ -462,7 +462,7 @@ public class EventStreamingService : IEventStreamingService
     {
         ConnectionStatusChanged?.Invoke(this, status);
     }
-    
+
     /// <summary>
     /// Check if an order has already been processed (to prevent duplicates)
     /// </summary>
@@ -472,11 +472,11 @@ public class EventStreamingService : IEventStreamingService
         {
             // Clean up old entries first
             CleanupOldProcessedOrders();
-            
+
             return _processedOrders.ContainsKey(orderNumber);
         }
     }
-    
+
     /// <summary>
     /// Mark an order as processed
     /// </summary>
@@ -487,7 +487,7 @@ public class EventStreamingService : IEventStreamingService
             _processedOrders[orderNumber] = DateTime.UtcNow;
         }
     }
-    
+
     /// <summary>
     /// Clean up processed orders older than MaxProcessedOrdersAge
     /// </summary>
@@ -498,12 +498,12 @@ public class EventStreamingService : IEventStreamingService
             .Where(kvp => kvp.Value < cutoff)
             .Select(kvp => kvp.Key)
             .ToList();
-        
+
         foreach (var orderNumber in oldOrders)
         {
             _processedOrders.Remove(orderNumber);
         }
-        
+
         if (oldOrders.Count > 0)
         {
             _logger.LogDebug("Cleaned up {Count} old processed order records", oldOrders.Count);
@@ -521,7 +521,7 @@ public class EventStreamingService : IEventStreamingService
 
             using var httpClient = new HttpClient();
             // Pass the token if available in config (future improvement)
-            
+
             var response = await httpClient.GetAsync(url);
             if (!response.IsSuccessStatusCode)
             {
@@ -551,36 +551,36 @@ public class EventStreamingService : IEventStreamingService
     {
         const int pollingIntervalSeconds = 5;
         var baseUrl = apiBaseUrl.TrimEnd('/');
-        
+
         _logger.LogInformation("========================================");
         _logger.LogInformation("🔄 POLLING SERVICE STARTED");
         _logger.LogInformation("   API Base URL: {Url}", baseUrl);
         _logger.LogInformation("   Interval: {Interval} seconds", pollingIntervalSeconds);
         _logger.LogInformation("========================================");
-        
+
         // Also log to debug output for WPF apps
         System.Diagnostics.Debug.WriteLine($"[POLLING] Started - URL: {baseUrl}, Interval: {pollingIntervalSeconds}s");
-        
+
         int pollCount = 0;
-        
+
         while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
                 await Task.Delay(TimeSpan.FromSeconds(pollingIntervalSeconds), cancellationToken);
-                
+
                 pollCount++;
                 // Use dedicated printer-feed endpoint (no auth required)
                 var pollUrl = $"{baseUrl}/api/orders/printer-feed?modifiedSince={_lastPollTime:o}";
-                
+
                 _logger.LogInformation("🔄 Poll #{Count} - Fetching orders since {Since}", pollCount, _lastPollTime);
                 System.Diagnostics.Debug.WriteLine($"[POLLING] #{pollCount} - URL: {pollUrl}");
-                
+
                 // Update connection status so UI shows activity
                 OnConnectionStatusChanged($"Polling... (#{pollCount})");
-                
+
                 using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-                
+
                 // Add X-Api-Key header if configured
                 var config = await _printerService.LoadConfigurationAsync();
                 if (!string.IsNullOrWhiteSpace(config.ApiKey))
@@ -592,12 +592,12 @@ public class EventStreamingService : IEventStreamingService
                 {
                     _logger.LogWarning("   ⚠️ No API key configured - request may fail if auth required");
                 }
-                
+
                 var response = await httpClient.GetAsync(pollUrl, cancellationToken);
-                
+
                 _logger.LogInformation("   Response: {StatusCode}", response.StatusCode);
                 System.Diagnostics.Debug.WriteLine($"[POLLING] Response: {response.StatusCode}");
-                
+
                 if (!response.IsSuccessStatusCode)
                 {
                     var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
@@ -605,42 +605,42 @@ public class EventStreamingService : IEventStreamingService
                     OnConnectionStatusChanged($"Poll failed: {response.StatusCode}");
                     continue;
                 }
-                
+
                 var json = await response.Content.ReadAsStringAsync(cancellationToken);
                 _logger.LogInformation("   Response length: {Length} bytes", json.Length);
-                
+
                 var result = JsonSerializer.Deserialize<OrdersApiResponse>(json, new JsonSerializerOptions
                 {
                     PropertyNameCaseInsensitive = true
                 });
-                
+
                 var itemCount = result?.Data?.Items?.Count ?? 0;
                 _logger.LogInformation("   Orders found: {Count}", itemCount);
-                
+
                 if (result?.Data?.Items != null && result.Data.Items.Count > 0)
                 {
                     _logger.LogInformation("📦 Found {Count} confirmed orders!", result.Data.Items.Count);
-                    
+
                     foreach (var order in result.Data.Items)
                     {
-                        _logger.LogInformation("   Processing order: {OrderNumber} (Status: {Status})", 
+                        _logger.LogInformation("   Processing order: {OrderNumber} (Status: {Status})",
                             order.OrderNumber, order.Status);
-                        
+
                         if (IsOrderAlreadyProcessed(order.OrderNumber))
                         {
                             _logger.LogInformation("   ⏭️ Skipping duplicate: {OrderNumber}", order.OrderNumber);
                             continue;
                         }
-                        
+
                         MarkOrderAsProcessed(order.OrderNumber);
-                        
+
                         var orderEvent = new OrderEvent
                         {
                             EventType = "order-polled",
                             Order = order,
                             Timestamp = DateTime.UtcNow
                         };
-                        
+
                         _logger.LogInformation("�️ Sending order to printer: {OrderNumber}", order.OrderNumber);
                         OnOrderReceived(orderEvent);
                     }
@@ -649,7 +649,7 @@ public class EventStreamingService : IEventStreamingService
                 {
                     _logger.LogInformation("   No new orders");
                 }
-                
+
                 _lastPollTime = DateTime.UtcNow;
                 OnConnectionStatusChanged($"Connected - last poll: {DateTime.Now:HH:mm:ss}");
             }
@@ -669,7 +669,7 @@ public class EventStreamingService : IEventStreamingService
                 OnConnectionStatusChanged($"Error: {ex.Message}");
             }
         }
-        
+
         _logger.LogInformation("🛑 Polling service stopped");
     }
 

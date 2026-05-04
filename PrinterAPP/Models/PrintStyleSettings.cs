@@ -40,15 +40,15 @@ public enum PrintAlignment
 public class PrintStyleSettings
 {
     // Kitchen Receipt Sections
-    public SectionStyle KitchenHeader { get; set; } = new() 
-    { 
+    public SectionStyle KitchenHeader { get; set; } = new()
+    {
         SectionName = "Kitchen Header",
         Size = FontSize.Normal,
         IsBold = true,
         IsEmphasized = true,
         Alignment = PrintAlignment.Center
     };
-    
+
     public SectionStyle KitchenOrderInfo { get; set; } = new()
     {
         SectionName = "Order Info (ID, Date, Type)",
@@ -57,7 +57,7 @@ public class PrintStyleSettings
         IsEmphasized = false,
         Alignment = PrintAlignment.Left
     };
-    
+
     public SectionStyle KitchenOrderType { get; set; } = new()
     {
         SectionName = "Order Type",
@@ -66,7 +66,7 @@ public class PrintStyleSettings
         IsEmphasized = true,
         Alignment = PrintAlignment.Left
     };
-    
+
     public SectionStyle KitchenItemName { get; set; } = new()
     {
         SectionName = "Item Names",
@@ -75,7 +75,7 @@ public class PrintStyleSettings
         IsEmphasized = false,
         Alignment = PrintAlignment.Left
     };
-    
+
     public SectionStyle KitchenItemQuantity { get; set; } = new()
     {
         SectionName = "Item Quantities",
@@ -84,7 +84,7 @@ public class PrintStyleSettings
         IsEmphasized = true,
         Alignment = PrintAlignment.Left
     };
-    
+
     public SectionStyle KitchenIngredients { get; set; } = new()
     {
         SectionName = "Ingredients/Notes",
@@ -93,7 +93,7 @@ public class PrintStyleSettings
         IsEmphasized = false,
         Alignment = PrintAlignment.Left
     };
-    
+
     // Cashier Receipt Sections
     public SectionStyle CashierHeader { get; set; } = new()
     {
@@ -103,7 +103,7 @@ public class PrintStyleSettings
         IsEmphasized = true,
         Alignment = PrintAlignment.Center
     };
-    
+
     public SectionStyle CashierOrderInfo { get; set; } = new()
     {
         SectionName = "Order Info",
@@ -112,7 +112,7 @@ public class PrintStyleSettings
         IsEmphasized = true,
         Alignment = PrintAlignment.Left
     };
-    
+
     public SectionStyle CashierItemLine { get; set; } = new()
     {
         SectionName = "Item Lines",
@@ -121,7 +121,7 @@ public class PrintStyleSettings
         IsEmphasized = true,
         Alignment = PrintAlignment.Left
     };
-    
+
     public SectionStyle CashierTotals { get; set; } = new()
     {
         SectionName = "Totals",
@@ -130,7 +130,7 @@ public class PrintStyleSettings
         IsEmphasized = true,
         Alignment = PrintAlignment.Left
     };
-    
+
     public SectionStyle CashierGrandTotal { get; set; } = new()
     {
         SectionName = "Grand Total",

@@ -303,7 +303,7 @@ public partial class MainPage : ContentPage
                 _orderHistoryService.AddOrder(orderEvent);
 
                 // Print to all appropriate printers (Cashier + FrontKitchen + BackKitchen)
-                var (cashierSuccess, frontKitchenSuccess, backKitchenSuccess) = 
+                var (cashierSuccess, frontKitchenSuccess, backKitchenSuccess) =
                     await _orderPrintService.PrintOrderToAllPrintersAsync(orderEvent.Order);
 
                 // Update print status in history (combine kitchen results)
@@ -638,7 +638,7 @@ public partial class MainPage : ContentPage
             await DisplayAlert("Error", $"Failed to reset settings: {ex.Message}", "OK");
         }
     }
-    
+
     private async void OnPrintStylesClicked(object sender, EventArgs e)
     {
         try

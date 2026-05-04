@@ -12,7 +12,7 @@ public partial class UpdaterWindow : ContentPage
     {
         InitializeComponent();
         _updateService = updateService;
-        
+
         // Show current version immediately
         CurrentVersionLabel.Text = _updateService.GetCurrentVersion();
     }

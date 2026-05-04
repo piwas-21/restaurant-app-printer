@@ -1,0 +1,43 @@
+# RUMI Printer-App — GitLab CI pipeline (Phase 0 bootstrap)
+#
+# Scope today: hygiene gates that run on Linux shared runners.
+# - gitleaks (full repo secret scan)
+# - GitLab SAST (auto-injected analyzers)
+#
+# Out of scope today (need a Windows runner):
+# - dotnet build / dotnet format / dotnet test for the MAUI Windows TFM.
+#   Sprint 2 wires a self-hosted Windows runner; until then, local
+#   build-windows.ps1 / build-windows.sh is the source of truth pre-merge.
+#   See docs/QUALITY-SECURITY-PLAN.md for the planned timeline.
+
+stages:
+  - test
+
+# ── File-length gate ───────────────────────────────────────────────────
+# Enforces per-file LOC limits from CLAUDE.md §4. Existing oversized files
+# are grandfathered via scripts/file-length-baseline.txt; new violations
+# block. Pure bash — no .NET SDK needed.
+file_length:
+  stage: test
+  image: bash:5
+  script:
+    - bash scripts/check-file-length.sh --all
+
+# ── Secret scanning ────────────────────────────────────────────────────
+# Gitleaks runs against the working tree; allowlist lives in .gitleaks.toml.
+gitleaks:
+  stage: test
+  image:
+    name: zricethezav/gitleaks
+    entrypoint: [""]
+  script:
+    - gitleaks detect --verbose --source .
+
+# ── GitLab SAST ────────────────────────────────────────────────────────
+# Auto-detects the language and injects the appropriate analyzer (csharp).
+# Findings are surfaced in the MR security widget.
+sast:
+  stage: test
+
+include:
+  - template: Jobs/SAST.gitlab-ci.yml

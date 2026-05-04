@@ -361,3 +361,8 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# macOS iCloud sync placeholder/lock files
+.!*!*
+
+# Claude Code per-repo settings (machine-local).
+.claude/

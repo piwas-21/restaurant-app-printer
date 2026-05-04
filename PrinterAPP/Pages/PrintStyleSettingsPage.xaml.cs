@@ -13,7 +13,7 @@ public partial class PrintStyleSettingsPage : ContentPage
         InitializeComponent();
         _settingsService = new PrintStyleSettingsService();
         _currentSettings = _settingsService.LoadSettings();
-        
+
         BuildStyleControls();
     }
 
@@ -45,20 +45,20 @@ public partial class PrintStyleSettingsPage : ContentPage
         container.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         container.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         container.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        
+
         container.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(120) });
         container.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Star });
 
         // Font Size
         var sizeLabel = new Label { Text = "Font Size:", VerticalOptions = LayoutOptions.Center };
-        var sizePicker = new Picker 
+        var sizePicker = new Picker
         {
             Title = "Select Size",
             ItemsSource = Enum.GetNames(typeof(FontSize)).ToList(),
             SelectedIndex = (int)style.Size
         };
         sizePicker.SelectedIndexChanged += (s, e) => style.Size = (FontSize)sizePicker.SelectedIndex;
-        
+
         Grid.SetRow(sizeLabel, 0);
         Grid.SetColumn(sizeLabel, 0);
         Grid.SetRow(sizePicker, 0);
@@ -70,7 +70,7 @@ public partial class PrintStyleSettingsPage : ContentPage
         var boldLabel = new Label { Text = "Bold:", VerticalOptions = LayoutOptions.Center };
         var boldSwitch = new Switch { IsToggled = style.IsBold };
         boldSwitch.Toggled += (s, e) => style.IsBold = e.Value;
-        
+
         Grid.SetRow(boldLabel, 1);
         Grid.SetColumn(boldLabel, 0);
         Grid.SetRow(boldSwitch, 1);
@@ -82,7 +82,7 @@ public partial class PrintStyleSettingsPage : ContentPage
         var empLabel = new Label { Text = "Emphasized:", VerticalOptions = LayoutOptions.Center };
         var empSwitch = new Switch { IsToggled = style.IsEmphasized };
         empSwitch.Toggled += (s, e) => style.IsEmphasized = e.Value;
-        
+
         Grid.SetRow(empLabel, 2);
         Grid.SetColumn(empLabel, 0);
         Grid.SetRow(empSwitch, 2);
@@ -99,7 +99,7 @@ public partial class PrintStyleSettingsPage : ContentPage
             SelectedIndex = (int)style.Alignment
         };
         alignPicker.SelectedIndexChanged += (s, e) => style.Alignment = (PrintAlignment)alignPicker.SelectedIndex;
-        
+
         Grid.SetRow(alignLabel, 3);
         Grid.SetColumn(alignLabel, 0);
         Grid.SetRow(alignPicker, 3);
