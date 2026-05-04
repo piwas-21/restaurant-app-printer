@@ -1,0 +1,36 @@
+name: CI
+
+# Phase 0 hygiene gates ported from .gitlab-ci.yml. Out-of-scope today
+# (need a Windows runner): dotnet build / format / test for the MAUI
+# Windows TFM. Sprint 2 wires those once a Windows runner is available.
+#
+# Security: this workflow uses no untrusted input from PR titles, bodies,
+# branch names, etc. — only static commands and secrets.GITHUB_TOKEN.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+jobs:
+  file_length:
+    name: file-length (CLAUDE.md §4)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash scripts/check-file-length.sh --all
+
+  gitleaks:
+    name: gitleaks (secret scan)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -10,7 +10,7 @@
 - **Stack**: .NET MAUI 9 (Windows-only target: `net9.0-windows10.0.19041.0`), C# 12, ESC/POS thermal-printer driver
 - **Runtime**: Windows 10+ (build target restricts to Windows; iOS/Android/macOS targets are not built)
 - **Architecture**: Service-oriented MVVM with code-behind (standard MAUI pattern), DI registration in `MauiProgram.cs`
-- **Hosted on**: GitLab — https://gitlab.com/restaurant-app3282120/printer-app
+- **Hosted on**: GitHub — https://github.com/piwas-21/restaurant-app-printer
 - **Production**: distributed to client workstations as a packaged Windows app via the GitHub releases-based `UpdateService`
 - **In-flight workspace**: this repo is one of three under [/Users/mahmutkaya/workspace/rumi-workspace/](../). The workspace meta-repo holds cross-repo plans and the master roadmap. When this repo is cloned standalone, only this `CLAUDE.md` is in scope.
 
@@ -110,7 +110,7 @@ Commit the updated `scripts/file-length-baseline.txt` in the same MR.
 
 ## §5 — Printer-app rules (hard)
 
-1. **All services have interfaces.** Register via `MauiProgram.cs` (`builder.Services.AddSingleton<IFoo, Foo>()`). Naming: `I{Feature}Service.cs` + `{Feature}Service.cs` (or `Windows{Feature}Service.cs` for platform-specific implementations). New services MUST follow this; four legacy services (`RequestLogService`, `OrderPrintService`, `OrderHistoryService`, `UpdateService`) are tracked for retrofit in [#3](https://gitlab.com/restaurant-app3282120/printer-app/-/issues/3) — until then, do not add new code that depends on them concretely; wait for the interface.
+1. **All services have interfaces.** Register via `MauiProgram.cs` (`builder.Services.AddSingleton<IFoo, Foo>()`). Naming: `I{Feature}Service.cs` + `{Feature}Service.cs` (or `Windows{Feature}Service.cs` for platform-specific implementations). New services MUST follow this; four legacy services (`RequestLogService`, `OrderPrintService`, `OrderHistoryService`, `UpdateService`) are tracked for retrofit in [#3](https://github.com/piwas-21/restaurant-app-printer/issues/3) — until then, do not add new code that depends on them concretely; wait for the interface.
 2. **Code-behind contains only UI event handlers.** Business logic, state mutations, and I/O live in services. If a `.xaml.cs` exceeds 200 LOC, that's a sign you're putting logic in the wrong layer.
 3. **Models must mirror backend DTOs exactly.** Field names, types, casing, and nullability must match `backend/RestaurantSystem.Api/Features/<X>/Dtos/`. Before changing a model, grep the corresponding backend DTO and confirm — silent drift is a production-printing failure.
 4. **ESC/POS commands defined in a constants file**, not inline. Magic byte sequences in print code are a debugging tarpit.
@@ -158,15 +158,15 @@ Grep for the type/method/key you're adding or modifying. List every callsite. Co
 | Gate | When | What | Blocking? | Source of truth |
 |---|---|---|---|---|
 | Pre-commit hooks | Every `git commit` | trailing whitespace, EOF, large files, secret scan, no-commit-to-protected | yes | [.pre-commit-config.yaml](.pre-commit-config.yaml) |
-| File-length gate | Pre-commit (per-file when .cs staged) **and** MR pipeline (`file_length` job) | LOC ≤ §4 limit OR file is in `scripts/file-length-baseline.txt` | yes | [scripts/check-file-length.sh](scripts/check-file-length.sh), [.pre-commit-config.yaml](.pre-commit-config.yaml), `.gitlab-ci.yml` |
-| `dotnet build PrinterAPP.sln` | Pre-commit (when `.cs/.csproj/.sln/.xaml` staged) **and** MR pipeline | 0 errors | yes | `.gitlab-ci.yml` (see note below) |
-| Gitleaks | MR pipeline | No leaked credentials (allowlist via `.gitleaks.toml`) | yes | [.gitleaks.toml](.gitleaks.toml) |
-| GitLab SAST | MR pipeline | Auto-injected analyzers | yes | `.gitlab-ci.yml` |
+| File-length gate | Pre-commit (per-file when .cs staged) **and** CI workflow (`file_length` job) | LOC ≤ §4 limit OR file is in `scripts/file-length-baseline.txt` | yes | [scripts/check-file-length.sh](scripts/check-file-length.sh), [.pre-commit-config.yaml](.pre-commit-config.yaml), `.github/workflows/ci.yml` |
+| `dotnet build PrinterAPP.sln` | Pre-commit (when `.cs/.csproj/.sln/.xaml` staged) **and** CI workflow | 0 errors | yes | `.github/workflows/ci.yml` (see note below) |
+| Gitleaks | CI workflow | No leaked credentials (allowlist via `.gitleaks.toml`) | yes | [.gitleaks.toml](.gitleaks.toml) |
+| CodeQL (SAST) | CI workflow | Auto-injected analyzers | yes | `.github/workflows/ci.yml` |
 | `dotnet format --verify-no-changes` | Sprint 2 (planned) | 0 formatting drift | future | (not yet wired) |
 | Test suite | Sprint 3 (planned) | Unit + integration tests | future | [docs/TEST-COVERAGE-PLAN.md](docs/TEST-COVERAGE-PLAN.md) |
 | Trivy / dependency scan | Sprint 4 (planned) | NuGet supply-chain scan | future | (not yet wired) |
 
-> **Build runner caveat**: MAUI Windows-targeting builds need a Windows runner. The default GitLab.com shared runners are Linux; the MAUI workload `dotnet build` will fail on Linux for the `windows10.0.19041` target framework. Sprint 2 wires a self-hosted Windows runner; until then, the CI build job runs on best-effort and is `allow_failure: true`. Local builds via `build-windows.sh` (Git Bash) or `build-windows.ps1` are the source of truth pre-merge.
+> **Build runner caveat**: MAUI Windows-targeting builds need a Windows runner. The default GitHub-hosted runners are Linux; the MAUI workload `dotnet build` will fail on Linux for the `windows10.0.19041` target framework. Sprint 2 wires a self-hosted Windows runner; until then, the CI build job runs on best-effort and is `allow_failure: true`. Local builds via `build-windows.sh` (Git Bash) or `build-windows.ps1` are the source of truth pre-merge.
 
 ### Setup for a new developer
 ```powershell
@@ -195,7 +195,7 @@ main                    ← production releases (tagged, auto-update consumes th
 ```
 
 - **Never push to `main` or `develop` directly** — pre-commit hook blocks this.
-- Branch off **`develop`**. Open MR to `develop`. After merge to `develop` and validation, `develop` is promoted to `main` for a release.
+- Branch off **`develop`**. Open PR to `develop`. After merge to `develop` and validation, `develop` is promoted to `main` for a release.
 - Default branch on remote: `develop`.
 - One issue = one branch. Delete branch after merge (`--remove-source-branch`).
 - Branch naming: `feature/`, `fix/`, `chore/`, `docs/`, `test/`.
@@ -218,7 +218,7 @@ Body should explain **why**, not what (the diff shows what).
 
 ### Merge requests
 
-Every MR uses [.gitlab/merge_request_templates/Default.md](.gitlab/merge_request_templates/Default.md). Required sections:
+Every PR uses [.github/pull_request_template.md](.github/pull_request_template.md). Required sections:
 - Summary
 - Sprint task / issue link
 - Acceptance criteria coverage table
@@ -272,4 +272,4 @@ Never commit:
 2. `git status` → only intentional changes staged.
 3. Commit with `type(scope):` format.
 4. Push to feature branch.
-5. Open MR via `glab mr create` (or GitLab UI) — fill in the template fully, including acceptance-criteria coverage table.
+5. Open PR via `gh pr create` (or GitHub UI) — fill in the template fully, including acceptance-criteria coverage table.
