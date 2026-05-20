@@ -81,7 +81,7 @@ public partial class OrderManagementPage : ContentPage
 
                     var success = await _orderPrintService.PrintOrderAsync(
                         orderItem.Order,
-                        OrderPrintService.PrinterType.Kitchen,
+                        PrinterType.Kitchen,
                         isManualPrint: true);
 
                     if (success)
@@ -120,7 +120,7 @@ public partial class OrderManagementPage : ContentPage
 
                     var success = await _orderPrintService.PrintOrderAsync(
                         orderItem.Order,
-                        OrderPrintService.PrinterType.Cashier,
+                        PrinterType.Cashier,
                         isManualPrint: true);
 
                     if (success)
@@ -159,12 +159,12 @@ public partial class OrderManagementPage : ContentPage
 
                     var kitchenSuccess = await _orderPrintService.PrintOrderAsync(
                         orderItem.Order,
-                        OrderPrintService.PrinterType.Kitchen,
+                        PrinterType.Kitchen,
                         isManualPrint: true);
 
                     var cashierSuccess = await _orderPrintService.PrintOrderAsync(
                         orderItem.Order,
-                        OrderPrintService.PrinterType.Cashier,
+                        PrinterType.Cashier,
                         isManualPrint: true);
 
                     if (kitchenSuccess && cashierSuccess)

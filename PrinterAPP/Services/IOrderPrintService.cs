@@ -11,7 +11,7 @@ public interface IOrderPrintService
 
     Task<bool> PrintOrderAsync(
         Order order,
-        OrderPrintService.PrinterType printerType,
+        PrinterType printerType,
         bool isManualPrint = false,
         CancellationToken cancellationToken = default);
 }

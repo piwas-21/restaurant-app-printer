@@ -50,12 +50,13 @@ PrinterAPP/
 │   └── UpdateInfo.cs                      # GitHub release metadata
 ├── Services/
 │   ├── IEventStreamingService.cs / EventStreamingService.cs   # SSE polling, order event handling
-│   ├── IPrinterService.cs / WindowsPrinterService.cs (class `SimplePrinterService`)  # Windows Printer API (P/Invoke). Filename ≠ class name today; tracked in #3.
-│   ├── OrderPrintService.cs                                    # ESC/POS formatting, receipt composition
-│   ├── OrderHistoryService.cs                                  # Persisted order history + dedup window
+│   ├── IPrinterService.cs / WindowsPrinterService.cs           # Windows Printer API (P/Invoke)
+│   ├── IOrderPrintService.cs / OrderPrintService.cs            # ESC/POS formatting, receipt composition
+│   ├── IOrderHistoryService.cs / OrderHistoryService.cs        # Persisted order history + dedup window
+│   ├── PrinterType.cs                                          # Kitchen / Cashier discriminator
 │   ├── PrintStyleSettingsService.cs                            # Style settings persistence
-│   ├── RequestLogService.cs                                    # Request/response logging
-│   └── UpdateService.cs                                        # GitHub release auto-update
+│   ├── IRequestLogService.cs / RequestLogService.cs            # Request/response logging
+│   └── IUpdateService.cs / UpdateService.cs                    # GitHub release auto-update
 ├── Converters/                            # XAML value converters
 ├── Pages/                                 # Additional pages
 ├── Platforms/                             # Platform-specific code (Windows only)

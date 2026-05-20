@@ -711,9 +711,4 @@ public class OrderPrintService : IOrderPrintService
     }
 #endif
 
-    public enum PrinterType
-    {
-        Kitchen,
-        Cashier
-    }
 }
