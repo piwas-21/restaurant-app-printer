@@ -4,7 +4,7 @@ using PrinterAPP.Models;
 
 namespace PrinterAPP.Services;
 
-public class OrderHistoryService
+public class OrderHistoryService : IOrderHistoryService
 {
     private readonly ILogger<OrderHistoryService> _logger;
     private readonly ObservableCollection<OrderHistoryItem> _orders;

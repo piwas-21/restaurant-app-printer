@@ -5,14 +5,14 @@ namespace PrinterAPP;
 
 public partial class OrderManagementPage : ContentPage
 {
-    private readonly OrderHistoryService _orderHistoryService;
-    private readonly OrderPrintService _orderPrintService;
+    private readonly IOrderHistoryService _orderHistoryService;
+    private readonly IOrderPrintService _orderPrintService;
     private readonly IEventStreamingService _eventStreamingService;
     private readonly ILogger<OrderManagementPage> _logger;
 
     public OrderManagementPage(
-        OrderHistoryService orderHistoryService,
-        OrderPrintService orderPrintService,
+        IOrderHistoryService orderHistoryService,
+        IOrderPrintService orderPrintService,
         IEventStreamingService eventStreamingService,
         ILogger<OrderManagementPage> logger)
     {

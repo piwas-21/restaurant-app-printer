@@ -4,10 +4,10 @@ using PrinterAPP.Models;
 
 namespace PrinterAPP.Services;
 
-public class OrderPrintService
+public class OrderPrintService : IOrderPrintService
 {
     private readonly IPrinterService _printerService;
-    private readonly RequestLogService _requestLogService;
+    private readonly IRequestLogService _requestLogService;
     private readonly ILogger<OrderPrintService> _logger;
     private readonly PrintStyleSettingsService _styleService;
     private readonly PrintStyleSettings _styleSettings;
@@ -38,7 +38,7 @@ public class OrderPrintService
 
     public OrderPrintService(
         IPrinterService printerService,
-        RequestLogService requestLogService,
+        IRequestLogService requestLogService,
         ILogger<OrderPrintService> logger)
     {
         _printerService = printerService;

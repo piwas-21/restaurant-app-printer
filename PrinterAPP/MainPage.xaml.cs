@@ -10,9 +10,9 @@ public partial class MainPage : ContentPage
 {
     private readonly IPrinterService _printerService;
     private readonly IEventStreamingService _eventStreamingService;
-    private readonly OrderPrintService _orderPrintService;
-    private readonly OrderHistoryService _orderHistoryService;
-    private readonly UpdateService _updateService;
+    private readonly IOrderPrintService _orderPrintService;
+    private readonly IOrderHistoryService _orderHistoryService;
+    private readonly IUpdateService _updateService;
     private readonly ILogger<MainPage> _logger;
     private PrinterConfiguration _config;
     private bool _isServiceRunning = false;
@@ -20,9 +20,9 @@ public partial class MainPage : ContentPage
     public MainPage(
         IPrinterService printerService,
         IEventStreamingService eventStreamingService,
-        OrderPrintService orderPrintService,
-        OrderHistoryService orderHistoryService,
-        UpdateService updateService,
+        IOrderPrintService orderPrintService,
+        IOrderHistoryService orderHistoryService,
+        IUpdateService updateService,
         ILogger<MainPage> logger)
     {
         InitializeComponent();

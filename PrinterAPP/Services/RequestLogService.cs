@@ -6,7 +6,7 @@ using Microsoft.Extensions.Logging;
 
 namespace PrinterAPP.Services;
 
-public class RequestLogService
+public class RequestLogService : IRequestLogService
 {
     private readonly ILogger<RequestLogService> _logger;
     private readonly ObservableCollection<LogEntry> _logs;
