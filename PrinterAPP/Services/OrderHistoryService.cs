@@ -10,7 +10,11 @@ public class OrderHistoryService : IOrderHistoryService
     private readonly ObservableCollection<OrderHistoryItem> _orders;
     private readonly object _lockObject = new();
 
-    public ObservableCollection<OrderHistoryItem> Orders => _orders;
+    // External callers see the read-only wrapper so they cannot bypass
+    // the 100-item cap or the _lockObject-guarded mutators below by
+    // calling .Add() / .Clear() directly on the inner collection.
+    // CollectionChanged events propagate through the wrapper.
+    public ReadOnlyObservableCollection<OrderHistoryItem> Orders { get; }
 
     public event EventHandler<OrderHistoryItem>? OrderAdded;
 
@@ -18,6 +22,7 @@ public class OrderHistoryService : IOrderHistoryService
     {
         _logger = logger;
         _orders = new ObservableCollection<OrderHistoryItem>();
+        Orders = new ReadOnlyObservableCollection<OrderHistoryItem>(_orders);
     }
 
     public void AddOrder(OrderEvent orderEvent)

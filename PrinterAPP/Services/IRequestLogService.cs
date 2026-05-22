@@ -4,7 +4,7 @@ namespace PrinterAPP.Services;
 
 public interface IRequestLogService
 {
-    ObservableCollection<LogEntry> Logs { get; }
+    ReadOnlyObservableCollection<LogEntry> Logs { get; }
     event EventHandler<LogEntry>? LogAdded;
 
     void LogSSEConnection(string endpoint, string status, string? url = null, Dictionary<string, string>? headers = null);

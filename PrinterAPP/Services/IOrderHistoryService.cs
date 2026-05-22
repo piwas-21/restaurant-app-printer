@@ -5,7 +5,7 @@ namespace PrinterAPP.Services;
 
 public interface IOrderHistoryService
 {
-    ObservableCollection<OrderHistoryItem> Orders { get; }
+    ReadOnlyObservableCollection<OrderHistoryItem> Orders { get; }
     event EventHandler<OrderHistoryItem>? OrderAdded;
 
     void AddOrder(OrderEvent orderEvent);
