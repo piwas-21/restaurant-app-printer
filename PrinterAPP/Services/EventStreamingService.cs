@@ -8,7 +8,7 @@ namespace PrinterAPP.Services;
 public class EventStreamingService : IEventStreamingService
 {
     private readonly IPrinterService _printerService;
-    private readonly RequestLogService _requestLogService;
+    private readonly IRequestLogService _requestLogService;
     private readonly ILogger<EventStreamingService> _logger;
     private CancellationTokenSource? _cancellationTokenSource;
     private Task? _kitchenListeningTask;
@@ -28,7 +28,7 @@ public class EventStreamingService : IEventStreamingService
 
     public EventStreamingService(
         IPrinterService printerService,
-        RequestLogService requestLogService,
+        IRequestLogService requestLogService,
         ILogger<EventStreamingService> logger)
     {
         _printerService = printerService;

@@ -7,7 +7,7 @@ using PrinterAPP.Models;
 
 namespace PrinterAPP.Services;
 
-public class UpdateService
+public class UpdateService : IUpdateService
 {
     private readonly ILogger<UpdateService> _logger;
     private readonly HttpClient _httpClient;

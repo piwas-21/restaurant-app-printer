@@ -1,4 +1,4 @@
-﻿// Platforms/Windows/SimplePrinterService.cs
+﻿// PrinterAPP/Services/WindowsPrinterService.cs
 using System.Text.Json;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -7,14 +7,14 @@ using PrinterAPP.Models;
 namespace PrinterAPP.Services;
 
 /// <summary>
-/// Simple printer service that works without any special NuGet packages
+/// Windows printer service that works without any special NuGet packages
 /// Uses only Windows APIs via P/Invoke
 /// </summary>
-public class SimplePrinterService : IPrinterService
+public class WindowsPrinterService : IPrinterService
 {
     private readonly string _configPath;
 
-    public SimplePrinterService()
+    public WindowsPrinterService()
     {
         var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
         var configDir = Path.Combine(appDataPath, "KitchenPrinter");

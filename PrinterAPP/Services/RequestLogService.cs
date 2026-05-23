@@ -6,13 +6,17 @@ using Microsoft.Extensions.Logging;
 
 namespace PrinterAPP.Services;
 
-public class RequestLogService
+public class RequestLogService : IRequestLogService
 {
     private readonly ILogger<RequestLogService> _logger;
     private readonly ObservableCollection<LogEntry> _logs;
     private readonly object _lockObject = new();
 
-    public ObservableCollection<LogEntry> Logs => _logs;
+    // External callers see the read-only wrapper so they cannot bypass
+    // the 200-item cap or the _lockObject-guarded mutators below by
+    // calling .Add() / .Clear() directly on the inner collection.
+    // CollectionChanged events propagate through the wrapper.
+    public ReadOnlyObservableCollection<LogEntry> Logs { get; }
 
     public event EventHandler<LogEntry>? LogAdded;
 
@@ -20,6 +24,7 @@ public class RequestLogService
     {
         _logger = logger;
         _logs = new ObservableCollection<LogEntry>();
+        Logs = new ReadOnlyObservableCollection<LogEntry>(_logs);
     }
 
     public void LogSSEConnection(string endpoint, string status, string? url = null, Dictionary<string, string>? headers = null)

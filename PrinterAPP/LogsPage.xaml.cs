@@ -6,11 +6,11 @@ namespace PrinterAPP;
 
 public partial class LogsPage : ContentPage
 {
-    private readonly RequestLogService _requestLogService;
+    private readonly IRequestLogService _requestLogService;
     private readonly ObservableCollection<LogEntry> _kitchenLogs;
     private readonly ObservableCollection<LogEntry> _serviceLogs;
 
-    public LogsPage(RequestLogService requestLogService)
+    public LogsPage(IRequestLogService requestLogService)
     {
         InitializeComponent();
         _requestLogService = requestLogService;
