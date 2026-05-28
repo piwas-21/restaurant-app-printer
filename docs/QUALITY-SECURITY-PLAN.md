@@ -244,8 +244,7 @@ is the same constraint that defers CodeQL, issue #4). Jobs:
 - **Trivy fs** — filesystem scan, HIGH/CRITICAL, `ignore-unfixed`.
 - **gitleaks** — full-history (`fetch-depth: 0`) secret scan; catches secrets
   that predate per-PR scanning, which the diff-scoped PR gate never sees.
-- **NuGet vulnerability audit** — `dotnet list package --vulnerable
-  --include-transitive` against `PrinterAPP/PrinterAPP.csproj`. Restores on Linux
+- **NuGet vulnerability audit** — `dotnet list package --vulnerable --include-transitive` against `PrinterAPP/PrinterAPP.csproj`. Restores on Linux
   with `-p:EnableWindowsTargeting=true`, which resolves the
   `net9.0-windows10.0.19041.0` TFM reference **without the MAUI workload**
   (verified locally: restore succeeds, audit runs, currently 0 vulnerable
