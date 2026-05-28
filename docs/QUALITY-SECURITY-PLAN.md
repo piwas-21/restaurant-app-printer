@@ -234,9 +234,28 @@ Quality gate: A-rating, ≥ 50% new-code coverage (lower than backend/frontend d
 
 ## 6. Weekly scheduled pipeline
 
-Cron: `0 6 * * 1`. Jobs:
-- TruffleHog full history (`--results=verified,unknown`)
-- OSV-Scanner JSON, 30-day artifact
+**Shipped** — `.github/workflows/security-audit.yml` (issue [#6](https://github.com/piwas-21/restaurant-app-printer/issues/6)).
+
+Cron: `0 6 * * 1` (Mondays 06:00 UTC) + `workflow_dispatch`. Runs entirely on
+`ubuntu-latest` — **no Windows runner needed** (Windows runners are scarce; this
+is the same constraint that defers CodeQL, issue #4). Jobs:
+
+- **OSV-Scanner** — full-tree (`--recursive`) dependency CVE scan.
+- **Trivy fs** — filesystem scan, HIGH/CRITICAL, `ignore-unfixed`.
+- **gitleaks** — full-history (`fetch-depth: 0`) secret scan; catches secrets
+  that predate per-PR scanning, which the diff-scoped PR gate never sees.
+- **NuGet vulnerability audit** — `dotnet list package --vulnerable
+  --include-transitive` against `PrinterAPP/PrinterAPP.csproj`. Restores on Linux
+  with `-p:EnableWindowsTargeting=true`, which resolves the
+  `net9.0-windows10.0.19041.0` TFM reference **without the MAUI workload**
+  (verified locally: restore succeeds, audit runs, currently 0 vulnerable
+  packages). Direct approach — the OSV-Scanner-only fallback was not needed.
+
+Scheduled runs fail red on findings (visible signal on the Actions tab) with a
+job summary. No issue-creation automation. All actions SHA-pinned to match
+`ci.yml`.
+
+Still **planned** (Sprint 4, need a Windows runner / release artifacts):
 - `dotnet list package --outdated` → artifact
 - License audit (`dotnet-project-licenses` — block GPL/AGPL transitives)
 - Sensitive-file audit (mirrors DeelMarkt's `infra-security` job — extra scrutiny on `*.pfx`/`*.snk`/`*.cer`)
