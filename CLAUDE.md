@@ -165,7 +165,8 @@ Grep for the type/method/key you're adding or modifying. List every callsite. Co
 | CodeQL (SAST) | CI workflow | Auto-injected analyzers | yes | `.github/workflows/ci.yml` |
 | `dotnet format --verify-no-changes` | Sprint 2 (planned) | 0 formatting drift | future | (not yet wired) |
 | Test suite | Sprint 3 (planned) | Unit + integration tests | future | [docs/TEST-COVERAGE-PLAN.md](docs/TEST-COVERAGE-PLAN.md) |
-| Trivy / dependency scan | Sprint 4 (planned) | NuGet supply-chain scan | future | (not yet wired) |
+| Weekly security audit | Mondays 06:00 UTC + manual dispatch | OSV-Scanner (full tree), Trivy fs (HIGH/CRITICAL), gitleaks (full history), `dotnet list package --vulnerable --include-transitive` | yes (scheduled run fails red on findings) | `.github/workflows/security-audit.yml` |
+| Trivy / dependency scan (in-PR) | Sprint 4 (planned) | NuGet supply-chain scan on every PR | future | (not yet wired) |
 
 > **Build runner caveat**: MAUI Windows-targeting builds need a Windows runner. The default GitHub-hosted runners are Linux; the MAUI workload `dotnet build` will fail on Linux for the `windows10.0.19041` target framework. Sprint 2 wires a self-hosted Windows runner; until then, the CI build job runs on best-effort and is `allow_failure: true`. Local builds via `build-windows.sh` (Git Bash) or `build-windows.ps1` are the source of truth pre-merge.
 
