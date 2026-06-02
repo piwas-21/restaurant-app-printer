@@ -11,44 +11,59 @@
         </Grid.RowDefinitions>
 
         <!-- Header -->
+        <!--
+          Two-row layout so the controls fit narrow phone screens (Android) as well as
+          wide Windows windows. Row 0: title + a right-aligned service-status pill.
+          Row 1: the two real actions stretch to share the width equally. The previous
+          single-row layout used fixed button widths (100+120+150dp) that overflowed a
+          ~411dp phone and clipped the Refresh button off-screen with no way to scroll.
+        -->
         <Frame Grid.Row="0" BackgroundColor="White" Padding="20" CornerRadius="10" HasShadow="True" Margin="0,0,0,15">
-            <Grid ColumnDefinitions="*,Auto,Auto,Auto">
-                <VerticalStackLayout>
-                    <Label Text="Order History"
-                           FontSize="24"
-                           FontAttributes="Bold"/>
-                    <Label x:Name="StatusLabel"
-                           Text="No orders received yet"
-                           FontSize="14"
-                           TextColor="Gray"/>
-                </VerticalStackLayout>
+            <Grid RowDefinitions="Auto,Auto" RowSpacing="14">
 
-                <Button Text="Refresh"
-                        Grid.Column="1"
-                        BackgroundColor="#2196F3"
-                        TextColor="White"
-                        CornerRadius="20"
-                        WidthRequest="100"
-                        Margin="10,0,10,0"
-                        Clicked="OnRefreshClicked"/>
+                <!-- Title + service status -->
+                <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                    <VerticalStackLayout Grid.Column="0" VerticalOptions="Center">
+                        <Label Text="Order History"
+                               FontSize="22"
+                               FontAttributes="Bold"/>
+                        <Label x:Name="StatusLabel"
+                               Text="No orders received yet"
+                               FontSize="13"
+                               TextColor="Gray"/>
+                    </VerticalStackLayout>
 
-                <Button Text="Clear History"
-                        Grid.Column="2"
-                        BackgroundColor="#FF9800"
-                        TextColor="White"
-                        CornerRadius="20"
-                        WidthRequest="120"
-                        Margin="0,0,10,0"
-                        Clicked="OnClearHistoryClicked"/>
+                    <Button x:Name="ServiceStatusButton"
+                            Grid.Column="1"
+                            Text="Service: Stopped"
+                            BackgroundColor="Orange"
+                            TextColor="White"
+                            CornerRadius="20"
+                            HeightRequest="40"
+                            Padding="16,0"
+                            FontSize="12"
+                            VerticalOptions="Center"
+                            IsEnabled="False"/>
+                </Grid>
 
-                <Button x:Name="ServiceStatusButton"
-                        Grid.Column="3"
-                        Text="Service: Stopped"
-                        BackgroundColor="Orange"
-                        TextColor="White"
-                        CornerRadius="20"
-                        WidthRequest="150"
-                        IsEnabled="False"/>
+                <!-- Action buttons (equal width, fill row) -->
+                <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="12">
+                    <Button Text="Refresh"
+                            Grid.Column="0"
+                            BackgroundColor="#2196F3"
+                            TextColor="White"
+                            CornerRadius="20"
+                            HeightRequest="44"
+                            Clicked="OnRefreshClicked"/>
+
+                    <Button Text="Clear History"
+                            Grid.Column="1"
+                            BackgroundColor="#FF9800"
+                            TextColor="White"
+                            CornerRadius="20"
+                            HeightRequest="44"
+                            Clicked="OnClearHistoryClicked"/>
+                </Grid>
             </Grid>
         </Frame>
 
