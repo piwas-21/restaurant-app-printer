@@ -26,6 +26,7 @@
   <ItemGroup>
     <Compile Include="..\PrinterAPP\Services\IPrinterTransport.cs" Link="Linked\IPrinterTransport.cs" />
     <Compile Include="..\PrinterAPP\Services\NetworkTcpTransport.cs" Link="Linked\NetworkTcpTransport.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrinterEndpoint.cs" Link="Linked\PrinterEndpoint.cs" />
   </ItemGroup>
 
 </Project>
