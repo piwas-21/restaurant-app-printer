@@ -16,6 +16,7 @@ public class PrinterEndpointTests
     [InlineData("  10.0.0.5  ", "10.0.0.5", 9100)]          // trimmed
     [InlineData("192.168.1.50:9100", "192.168.1.50", 9100)] // explicit default port
     [InlineData("10.0.0.5:6001", "10.0.0.5", 6001)]         // custom port
+    [InlineData("192.168.1.50 : 9100", "192.168.1.50", 9100)] // spaces around the colon
     [InlineData("255.255.255.255:1", "255.255.255.255", 1)] // port lower bound
     public void TryParse_accepts_ip_targets(string value, string expectedIp, int expectedPort)
     {

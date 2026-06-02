@@ -39,6 +39,13 @@ public sealed class NetworkTcpTransport : IPrinterTransport
         _connectTimeout = connectTimeout ?? TimeSpan.FromSeconds(5);
         _writeTimeout = writeTimeout ?? TimeSpan.FromSeconds(10);
         _retryDelay = retryDelay ?? TimeSpan.FromMilliseconds(250);
+        // Guard against negative TimeSpans that would throw inside CancelAfter / Task.Delay.
+        if (_connectTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(connectTimeout), _connectTimeout, "Must be positive.");
+        if (_writeTimeout <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(writeTimeout), _writeTimeout, "Must be positive.");
+        if (_retryDelay < TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(retryDelay), _retryDelay, "Must be non-negative.");
     }
 
     public async Task SendAsync(byte[] data, CancellationToken ct)
@@ -88,7 +95,9 @@ public sealed class NetworkTcpTransport : IPrinterTransport
 
     private async Task<TcpClient> ConnectOnceAsync(CancellationToken ct)
     {
-        var client = new TcpClient();
+        // Match the target's address family (IPv4/IPv6), and disable Nagle so small ESC/POS control
+        // commands (cut, feed, formatting) are sent immediately rather than buffered.
+        var client = new TcpClient(_ip.AddressFamily) { NoDelay = true };
         try
         {
             using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);

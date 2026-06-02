@@ -36,8 +36,8 @@ public static class PrinterEndpoint
         // "ipv4:port" form (IPv6 with a port would need brackets; out of scope — printers are IPv4).
         var idx = trimmed.LastIndexOf(':');
         if (idx > 0 && idx < trimmed.Length - 1
-            && IPAddress.TryParse(trimmed[..idx], out var hostIp)
-            && int.TryParse(trimmed[(idx + 1)..], out var parsedPort)
+            && IPAddress.TryParse(trimmed[..idx].TrimEnd(), out var hostIp)
+            && int.TryParse(trimmed[(idx + 1)..].TrimStart(), out var parsedPort)
             && parsedPort is >= 1 and <= 65535)
         {
             ip = hostIp;

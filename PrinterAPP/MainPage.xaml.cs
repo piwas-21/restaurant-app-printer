@@ -414,6 +414,23 @@ public partial class MainPage : ContentPage
     {
         try
         {
+            // Validate any manually-entered printer IPs up front so we don't save an unusable value
+            // (which would later be mis-routed to the Windows spooler as a "printer name").
+            foreach (var (entry, label) in new[]
+                     {
+                         (KitchenPrinterIpEntry.Text, "Kitchen"),
+                         (CashierPrinterIpEntry.Text, "Cashier"),
+                     })
+            {
+                if (!string.IsNullOrWhiteSpace(entry) && !PrinterEndpoint.TryParse(entry, out _, out _))
+                {
+                    await DisplayAlert("Invalid printer IP",
+                        $"'{entry.Trim()}' is not a valid {label} printer IP. Use e.g. 192.168.1.50 or 192.168.1.50:9100.",
+                        "OK");
+                    return;
+                }
+            }
+
             // Check if API URL has changed
             var newApiUrl = ApiUrlEntry.Text?.Trim();
             var oldApiUrl = _config.ApiBaseUrl?.Trim();
@@ -499,8 +516,10 @@ public partial class MainPage : ContentPage
             // Time restriction settings
             _config.EnableTimeRestriction = EnableTimeRestrictionSwitch.IsToggled;
             // MAUI 10 made TimePicker.Time nullable (TimeSpan?); the config fields are non-nullable.
-            _config.RestrictStartTime = RestrictStartTimePicker.Time ?? TimeSpan.Zero;
-            _config.RestrictEndTime = RestrictEndTimePicker.Time ?? TimeSpan.Zero;
+            // Preserve the existing saved value if the picker somehow reports null (rather than
+            // silently resetting the restriction window to midnight).
+            _config.RestrictStartTime = RestrictStartTimePicker.Time ?? _config.RestrictStartTime;
+            _config.RestrictEndTime = RestrictEndTimePicker.Time ?? _config.RestrictEndTime;
 
             // Save configuration
             _logger.LogInformation("Saving configuration with API URL: {ApiUrl}", _config.ApiBaseUrl);
@@ -577,10 +596,12 @@ public partial class MainPage : ContentPage
 
             // Test kitchen printer — a configured network IP goes straight over TCP (works on
             // Android); otherwise fall back to the Windows spooler test path.
-            if (!string.IsNullOrWhiteSpace(KitchenPrinterIpEntry.Text)
-                && PrinterEndpoint.TryParse(KitchenPrinterIpEntry.Text, out var kIp, out var kPort))
+            if (!string.IsNullOrWhiteSpace(KitchenPrinterIpEntry.Text))
             {
-                results.Add(await _printerTestService.TestNetworkPrinterAsync(kIp, kPort, "KITCHEN", "Kitchen"));
+                if (PrinterEndpoint.TryParse(KitchenPrinterIpEntry.Text, out var kIp, out var kPort))
+                    results.Add(await _printerTestService.TestNetworkPrinterAsync(kIp, kPort, "KITCHEN", "Kitchen"));
+                else
+                    results.Add($"Kitchen printer: ✗ Invalid IP '{KitchenPrinterIpEntry.Text.Trim()}'");
             }
             else if (KitchenPrinterPicker.SelectedItem != null)
             {
@@ -590,10 +611,12 @@ public partial class MainPage : ContentPage
             }
 
             // Test cashier printer
-            if (!string.IsNullOrWhiteSpace(CashierPrinterIpEntry.Text)
-                && PrinterEndpoint.TryParse(CashierPrinterIpEntry.Text, out var cIp, out var cPort))
+            if (!string.IsNullOrWhiteSpace(CashierPrinterIpEntry.Text))
             {
-                results.Add(await _printerTestService.TestNetworkPrinterAsync(cIp, cPort, "CASHIER", "Cashier"));
+                if (PrinterEndpoint.TryParse(CashierPrinterIpEntry.Text, out var cIp, out var cPort))
+                    results.Add(await _printerTestService.TestNetworkPrinterAsync(cIp, cPort, "CASHIER", "Cashier"));
+                else
+                    results.Add($"Cashier printer: ✗ Invalid IP '{CashierPrinterIpEntry.Text.Trim()}'");
             }
             else if (CashierPrinterPicker.SelectedItem != null)
             {

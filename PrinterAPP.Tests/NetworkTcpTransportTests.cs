@@ -159,6 +159,13 @@ public class NetworkTcpTransportTests
         Assert.Throws<ArgumentNullException>(() => new NetworkTcpTransport(null!));
         Assert.Throws<ArgumentOutOfRangeException>(() => new NetworkTcpTransport(IPAddress.Loopback, 0));
         Assert.Throws<ArgumentOutOfRangeException>(() => new NetworkTcpTransport(IPAddress.Loopback, 70000));
+        // Non-positive connect/write timeouts and a negative retry delay are rejected.
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new NetworkTcpTransport(IPAddress.Loopback, 9100, connectTimeout: TimeSpan.FromSeconds(-1)));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new NetworkTcpTransport(IPAddress.Loopback, 9100, writeTimeout: TimeSpan.Zero));
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new NetworkTcpTransport(IPAddress.Loopback, 9100, retryDelay: TimeSpan.FromSeconds(-1)));
     }
 
     [Fact]

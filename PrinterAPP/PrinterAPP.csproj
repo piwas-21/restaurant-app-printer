@@ -12,9 +12,11 @@
     <TargetFrameworks>net10.0-android</TargetFrameworks>
     <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('windows'))">$(TargetFrameworks);net10.0-windows10.0.19041.0</TargetFrameworks>
 
-    <!-- WinExe suppresses the console window on Windows; Android is a normal app exe. -->
-    <OutputType Condition="$(TargetFramework.Contains('-windows'))">WinExe</OutputType>
-    <OutputType Condition="$(TargetFramework.Contains('-android'))">Exe</OutputType>
+    <!-- WinExe suppresses the console window on Windows; Android is a normal app exe.
+         Guard `$(TargetFramework) != ''`: it's empty during outer multi-target evaluation, where
+         calling a string method on it can error in some MSBuild/IDE/restore paths. -->
+    <OutputType Condition="'$(TargetFramework)' != '' and $(TargetFramework.Contains('-windows'))">WinExe</OutputType>
+    <OutputType Condition="'$(TargetFramework)' != '' and $(TargetFramework.Contains('-android'))">Exe</OutputType>
 
     <RootNamespace>PrinterAPP</RootNamespace>
     <UseMaui>true</UseMaui>
@@ -32,8 +34,8 @@
 
     <WindowsPackageType>None</WindowsPackageType>
 
-    <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('-windows'))">10.0.17763.0</SupportedOSPlatformVersion>
-    <SupportedOSPlatformVersion Condition="$(TargetFramework.Contains('-android'))">24.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="'$(TargetFramework)' != '' and $(TargetFramework.Contains('-windows'))">10.0.17763.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="'$(TargetFramework)' != '' and $(TargetFramework.Contains('-android'))">24.0</SupportedOSPlatformVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -51,7 +53,7 @@
   </ItemGroup>
 
   <!-- Windows-only dependencies (WMI printer enumeration). Not referenced on Android. -->
-  <ItemGroup Condition="$(TargetFramework.Contains('-windows'))">
+  <ItemGroup Condition="'$(TargetFramework)' != '' and $(TargetFramework.Contains('-windows'))">
     <PackageReference Include="System.Management" Version="10.0.0" />
   </ItemGroup>
 
