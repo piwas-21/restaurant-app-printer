@@ -5,10 +5,10 @@ namespace PrinterAPP;
 
 public partial class UpdaterWindow : ContentPage
 {
-    private readonly UpdateService _updateService;
+    private readonly IUpdateService _updateService;
     private UpdateInfo? _updateInfo;
 
-    public UpdaterWindow(UpdateService updateService)
+    public UpdaterWindow(IUpdateService updateService)
     {
         InitializeComponent();
         _updateService = updateService;

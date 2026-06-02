@@ -7,8 +7,9 @@
 
 ## §1 — Identity
 
-- **Stack**: .NET MAUI 9 (Windows-only target: `net9.0-windows10.0.19041.0`), C# 12, ESC/POS thermal-printer driver
-- **Runtime**: Windows 10+ (build target restricts to Windows; iOS/Android/macOS targets are not built)
+- **Stack**: .NET MAUI 10 (multi-target: `net10.0-android;net10.0-windows10.0.19041.0` — the Windows TFM is OS-conditioned so non-Windows hosts build Android only), C# 13, ESC/POS thermal-printer driver. See [ADR-005](docs/adr/ADR-005-multi-target-maui-android.md) (Phase 1 of the cross-platform plan).
+- **Runtime**: Windows 10+ (existing rollout) **and** Android 7+ / API 24 (new, primary rollout). iOS/macOS/Tizen scaffolding is present but unbuilt (iOS deferred to v2). **Android does not print yet** — the network transport lands in Phase 2; Phase 1 only makes Android compile + launch.
+- **Build caveat**: `*-windows` TFMs build only on Windows. On macOS/Linux/CI-Linux, `dotnet build` produces the Android artifact only — the Windows MSI + any MAUI-10 regression must be verified on a Windows host before release.
 - **Architecture**: Service-oriented MVVM with code-behind (standard MAUI pattern), DI registration in `MauiProgram.cs`
 - **Hosted on**: GitHub — https://github.com/piwas-21/restaurant-app-printer
 - **Production**: distributed to client workstations as a packaged Windows app via the GitHub releases-based `UpdateService`
@@ -50,12 +51,13 @@ PrinterAPP/
 │   └── UpdateInfo.cs                      # GitHub release metadata
 ├── Services/
 │   ├── IEventStreamingService.cs / EventStreamingService.cs   # SSE polling, order event handling
-│   ├── IPrinterService.cs / WindowsPrinterService.cs (class `SimplePrinterService`)  # Windows Printer API (P/Invoke). Filename ≠ class name today; tracked in #3.
-│   ├── OrderPrintService.cs                                    # ESC/POS formatting, receipt composition
-│   ├── OrderHistoryService.cs                                  # Persisted order history + dedup window
+│   ├── IPrinterService.cs / WindowsPrinterService.cs           # Windows Printer API (P/Invoke)
+│   ├── IOrderPrintService.cs / OrderPrintService.cs            # ESC/POS formatting, receipt composition
+│   ├── IOrderHistoryService.cs / OrderHistoryService.cs        # Persisted order history + dedup window
+│   ├── PrinterType.cs                                          # Kitchen / Cashier discriminator
 │   ├── PrintStyleSettingsService.cs                            # Style settings persistence
-│   ├── RequestLogService.cs                                    # Request/response logging
-│   └── UpdateService.cs                                        # GitHub release auto-update
+│   ├── IRequestLogService.cs / RequestLogService.cs            # Request/response logging
+│   └── IUpdateService.cs / UpdateService.cs                    # GitHub release auto-update
 ├── Converters/                            # XAML value converters
 ├── Pages/                                 # Additional pages
 ├── Platforms/                             # Platform-specific code (Windows only)
@@ -164,7 +166,8 @@ Grep for the type/method/key you're adding or modifying. List every callsite. Co
 | CodeQL (SAST) | CI workflow | Auto-injected analyzers | yes | `.github/workflows/ci.yml` |
 | `dotnet format --verify-no-changes` | Sprint 2 (planned) | 0 formatting drift | future | (not yet wired) |
 | Test suite | Sprint 3 (planned) | Unit + integration tests | future | [docs/TEST-COVERAGE-PLAN.md](docs/TEST-COVERAGE-PLAN.md) |
-| Trivy / dependency scan | Sprint 4 (planned) | NuGet supply-chain scan | future | (not yet wired) |
+| Weekly security audit | Mondays 06:00 UTC + manual dispatch | OSV-Scanner (full tree), Trivy fs (HIGH/CRITICAL), gitleaks (full history), `dotnet list package --vulnerable --include-transitive` | yes (scheduled run fails red on findings) | `.github/workflows/security-audit.yml` |
+| Trivy / dependency scan (in-PR) | Sprint 4 (planned) | NuGet supply-chain scan on every PR | future | (not yet wired) |
 
 > **Build runner caveat**: MAUI Windows-targeting builds need a Windows runner. The default GitHub-hosted runners are Linux; the MAUI workload `dotnet build` will fail on Linux for the `windows10.0.19041` target framework. Sprint 2 wires a self-hosted Windows runner; until then, the CI build job runs on best-effort and is `allow_failure: true`. Local builds via `build-windows.sh` (Git Bash) or `build-windows.ps1` are the source of truth pre-merge.
 
@@ -234,7 +237,7 @@ Never auto-edit these files / take these actions without explicit user instructi
 ### Hard refusals
 - **`config.json` shipped to a customer machine.** That file is per-installation user state, not source. The repo's `PrinterConfiguration` defaults are the source of truth for new installs.
 - **`Platforms/Windows/Package.appxmanifest`** identity / signing fields — these tie to the code-signing certificate and the Windows Store / sideload identity. Changes are a release-engineering event.
-- **`PrinterAPP.csproj` `<TargetFramework>`** — changing the Windows TFM (currently `net9.0-windows10.0.19041.0`) is an architecture decision (need a new ADR). Patch-level SDK bumps via `global.json` are fine.
+- **`PrinterAPP.csproj` `<TargetFrameworks>`** — the project multi-targets `net10.0-android;net10.0-windows10.0.19041.0` (Windows TFM OS-conditioned) per [ADR-005](docs/adr/ADR-005-multi-target-maui-android.md). **Adding/removing a TFM (e.g. iOS in v2) or changing the .NET major is an architecture decision — needs a new ADR.** Patch-level SDK bumps via `global.json` are fine.
 - **`UpdateService.cs` release URL / GitHub repo identity** — that's the auto-update channel. Changing it strands every existing install.
 - **Branch protection bypass**: never `git commit --no-verify`, `git push --force-with-lease` to `develop`/`main`, `git reset --hard` on `develop`/`main`.
 

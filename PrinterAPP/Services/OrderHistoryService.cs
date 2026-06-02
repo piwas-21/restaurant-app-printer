@@ -1,16 +1,22 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using Microsoft.Extensions.Logging;
 using PrinterAPP.Models;
 
 namespace PrinterAPP.Services;
 
-public class OrderHistoryService
+public class OrderHistoryService : IOrderHistoryService
 {
     private readonly ILogger<OrderHistoryService> _logger;
     private readonly ObservableCollection<OrderHistoryItem> _orders;
     private readonly object _lockObject = new();
 
-    public ObservableCollection<OrderHistoryItem> Orders => _orders;
+    // External callers see the read-only wrapper so they cannot bypass
+    // the 100-item cap or the _lockObject-guarded mutators below by
+    // calling .Add() / .Clear() directly on the inner collection.
+    // CollectionChanged events propagate through the wrapper.
+    public ReadOnlyObservableCollection<OrderHistoryItem> Orders { get; }
 
     public event EventHandler<OrderHistoryItem>? OrderAdded;
 
@@ -18,6 +24,7 @@ public class OrderHistoryService
     {
         _logger = logger;
         _orders = new ObservableCollection<OrderHistoryItem>();
+        Orders = new ReadOnlyObservableCollection<OrderHistoryItem>(_orders);
     }
 
     public void AddOrder(OrderEvent orderEvent)
@@ -83,6 +90,21 @@ public class OrderHistoryService
 
     public void UpdatePrintStatus(string orderId, bool kitchenPrinted, bool cashierPrinted)
     {
+        // OrderHistoryItem raises PropertyChanged from its setters; marshal to the UI thread so the
+        // bound CollectionView updates safely (mirrors AddOrder). Callers come from print completion
+        // on background threads.
+        if (MainThread.IsMainThread)
+        {
+            UpdatePrintStatusInternal(orderId, kitchenPrinted, cashierPrinted);
+        }
+        else
+        {
+            MainThread.BeginInvokeOnMainThread(() => UpdatePrintStatusInternal(orderId, kitchenPrinted, cashierPrinted));
+        }
+    }
+
+    private void UpdatePrintStatusInternal(string orderId, bool kitchenPrinted, bool cashierPrinted)
+    {
         lock (_lockObject)
         {
             var order = _orders.FirstOrDefault(o => o.Order.Id == orderId);
@@ -113,17 +135,68 @@ public class OrderHistoryService
     }
 }
 
-public class OrderHistoryItem
+public class OrderHistoryItem : INotifyPropertyChanged
 {
     public Order Order { get; set; } = null!;
     public string EventType { get; set; } = string.Empty;
     public DateTime ReceivedAt { get; set; }
-    public bool KitchenPrinted { get; set; }
-    public bool CashierPrinted { get; set; }
-    public DateTime? LastPrintedAt { get; set; }
-    public string Status { get; set; } = string.Empty;
+
+    private bool _kitchenPrinted;
+    public bool KitchenPrinted
+    {
+        get => _kitchenPrinted;
+        set
+        {
+            if (_kitchenPrinted == value) return;
+            _kitchenPrinted = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(StatusColor)); // derived
+        }
+    }
+
+    private bool _cashierPrinted;
+    public bool CashierPrinted
+    {
+        get => _cashierPrinted;
+        set
+        {
+            if (_cashierPrinted == value) return;
+            _cashierPrinted = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(StatusColor)); // derived
+        }
+    }
+
+    private DateTime? _lastPrintedAt;
+    public DateTime? LastPrintedAt
+    {
+        get => _lastPrintedAt;
+        set
+        {
+            if (_lastPrintedAt == value) return;
+            _lastPrintedAt = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private string _status = string.Empty;
+    public string Status
+    {
+        get => _status;
+        set
+        {
+            if (_status == value) return;
+            _status = value;
+            OnPropertyChanged();
+        }
+    }
 
     public string DisplayText => $"Order #{Order.OrderNumber} - {Order.Type} - Table {Order.TableNumber} - {Order.Items.Count} items - ${Order.Total:F2}";
     public string ReceivedAtText => ReceivedAt.ToLocalTime().ToString("HH:mm:ss");
     public string StatusColor => KitchenPrinted && CashierPrinted ? "Green" : CashierPrinted || KitchenPrinted ? "Orange" : "Red";
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    private void OnPropertyChanged([CallerMemberName] string? propertyName = null) =>
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
 }

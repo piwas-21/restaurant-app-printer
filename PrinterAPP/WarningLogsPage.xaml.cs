@@ -6,10 +6,10 @@ namespace PrinterAPP;
 
 public partial class WarningLogsPage : ContentPage
 {
-    private readonly RequestLogService _requestLogService;
+    private readonly IRequestLogService _requestLogService;
     private readonly ObservableCollection<LogEntry> _warningLogs;
 
-    public WarningLogsPage(RequestLogService requestLogService)
+    public WarningLogsPage(IRequestLogService requestLogService)
     {
         InitializeComponent();
         _requestLogService = requestLogService;
@@ -20,8 +20,10 @@ public partial class WarningLogsPage : ContentPage
         // Bind to filtered collection
         WarningLogsCollectionView.ItemsSource = _warningLogs;
 
-        // Subscribe to log changes
-        _requestLogService.Logs.CollectionChanged += OnLogsCollectionChanged;
+        // Subscribe to log changes (cast: ReadOnlyObservableCollection implements
+        // INotifyCollectionChanged explicitly — CollectionChanged isn't directly accessible).
+        ((System.Collections.Specialized.INotifyCollectionChanged)_requestLogService.Logs).CollectionChanged +=
+            OnLogsCollectionChanged;
 
         // Initial population
         RefreshLogs();
@@ -31,7 +33,8 @@ public partial class WarningLogsPage : ContentPage
     {
         base.OnDisappearing();
         // Unsubscribe to prevent memory leaks
-        _requestLogService.Logs.CollectionChanged -= OnLogsCollectionChanged;
+        ((System.Collections.Specialized.INotifyCollectionChanged)_requestLogService.Logs).CollectionChanged -=
+            OnLogsCollectionChanged;
     }
 
     private void OnLogsCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)

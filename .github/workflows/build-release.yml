@@ -8,8 +8,22 @@ on:
 permissions:
   contents: write
 
+# Two independent jobs so a failure in one platform still releases the other.
+# Windows -> self-contained .exe installers (consumed by the in-app auto-updater).
+# Android -> a sideloadable .apk attached to the GitHub Release.
+#
+# Android signing secrets (repo Settings -> Secrets and variables -> Actions). If absent, the
+# Android job falls back to a Debug-signed APK that installs for TESTING but is NOT for production:
+#   ANDROID_KEYSTORE_BASE64   - base64 of your release keystore (.jks/.keystore)
+#   ANDROID_KEYSTORE_PASSWORD - keystore (store) password
+#   ANDROID_KEY_ALIAS         - key alias
+#   ANDROID_KEY_PASSWORD      - key password
+# Generate once:  keytool -genkeypair -v -keystore printerapp.keystore -alias printerapp \
+#                   -keyalg RSA -keysize 2048 -validity 10000
+#   then:  base64 -i printerapp.keystore | pbcopy   (paste into ANDROID_KEYSTORE_BASE64)
+
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
 
     steps:
@@ -19,20 +33,20 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
-        dotnet-version: '9.0.x' # Updated to match project's net9.0 target
+        dotnet-version: '10.0.x' # matches global.json / net10.0 multi-target (ADR-005)
 
-    - name: Install MAUI Workload
-      run: dotnet workload install maui
+    - name: Restore MAUI workloads
+      run: dotnet workload restore PrinterAPP/PrinterAPP.csproj
 
     - name: Build and Publish (x64)
       run: |
         cd PrinterAPP
-        dotnet publish PrinterAPP.csproj -c Release -f net9.0-windows10.0.19041.0 -r win-x64 --self-contained -p:PublishSingleFile=true -o ./publish/x64
+        dotnet publish PrinterAPP.csproj -c Release -f net10.0-windows10.0.19041.0 -r win-x64 --self-contained -p:PublishSingleFile=true -o ./publish/x64
 
     - name: Build and Publish (x86)
       run: |
         cd PrinterAPP
-        dotnet publish PrinterAPP.csproj -c Release -f net9.0-windows10.0.19041.0 -r win-x86 --self-contained -p:PublishSingleFile=true -o ./publish/x86
+        dotnet publish PrinterAPP.csproj -c Release -f net10.0-windows10.0.19041.0 -r win-x86 --self-contained -p:PublishSingleFile=true -o ./publish/x86
 
     - name: Rename Executables
       run: |
@@ -40,11 +54,84 @@ jobs:
         ren x64\PrinterAPP.exe PrinterApp-Setup-x64.exe
         ren x86\PrinterAPP.exe PrinterApp-Setup-x86.exe
 
-    - name: Upload Release Asset
+    - name: Upload Windows Release Assets
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
         files: |
           PrinterAPP/publish/x64/PrinterApp-Setup-x64.exe
           PrinterAPP/publish/x86/PrinterApp-Setup-x86.exe
+        token: ${{ secrets.GITHUB_TOKEN }}
+
+  build-android:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '10.0.x'
+
+    - name: Setup JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Restore MAUI workloads (android only on Linux — Windows TFM is OS-conditioned)
+      run: dotnet workload restore PrinterAPP/PrinterAPP.csproj
+
+    - name: Decode signing keystore (if configured)
+      id: keystore
+      env:
+        KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      run: |
+        if [ -n "$KS_B64" ]; then
+          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/printerapp.keystore"
+          echo "present=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "::warning::No ANDROID_KEYSTORE_BASE64 secret — building a Debug-signed APK (testing only, not for production)."
+          echo "present=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Publish signed Release APK
+      if: steps.keystore.outputs.present == 'true'
+      env:
+        STORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      run: |
+        dotnet publish PrinterAPP/PrinterAPP.csproj -c Release -f net10.0-android \
+          -p:AndroidPackageFormat=apk \
+          -p:AndroidKeyStore=true \
+          -p:AndroidSigningKeyStore="$RUNNER_TEMP/printerapp.keystore" \
+          -p:AndroidSigningKeyAlias="$KEY_ALIAS" \
+          -p:AndroidSigningStorePass="$STORE_PASS" \
+          -p:AndroidSigningKeyPass="$KEY_PASS" \
+          -o ./android-publish
+
+    - name: Build Debug APK (no release keystore — testing only)
+      if: steps.keystore.outputs.present == 'false'
+      run: |
+        dotnet publish PrinterAPP/PrinterAPP.csproj -c Debug -f net10.0-android \
+          -p:AndroidPackageFormat=apk \
+          -o ./android-publish
+
+    - name: Collect APK
+      run: |
+        mkdir -p android-out
+        apk=$(find ./android-publish -name "*-Signed.apk" | head -1)
+        if [ -z "$apk" ]; then apk=$(find ./android-publish -name "*.apk" | head -1); fi
+        if [ -z "$apk" ]; then echo "No APK produced" && exit 1; fi
+        cp "$apk" "android-out/PrinterApp-Android.apk"
+        ls -la android-out
+
+    - name: Upload Android Release Asset
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: android-out/PrinterApp-Android.apk
         token: ${{ secrets.GITHUB_TOKEN }}

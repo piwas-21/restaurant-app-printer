@@ -366,3 +366,7 @@ FodyWeavers.xsd
 
 # Claude Code per-repo settings (machine-local).
 .claude/
+
+# Local CI-parity APK publish output
+android-publish/
+android-out/

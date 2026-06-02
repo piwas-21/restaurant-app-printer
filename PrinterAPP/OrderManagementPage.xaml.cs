@@ -5,14 +5,14 @@ namespace PrinterAPP;
 
 public partial class OrderManagementPage : ContentPage
 {
-    private readonly OrderHistoryService _orderHistoryService;
-    private readonly OrderPrintService _orderPrintService;
+    private readonly IOrderHistoryService _orderHistoryService;
+    private readonly IOrderPrintService _orderPrintService;
     private readonly IEventStreamingService _eventStreamingService;
     private readonly ILogger<OrderManagementPage> _logger;
 
     public OrderManagementPage(
-        OrderHistoryService orderHistoryService,
-        OrderPrintService orderPrintService,
+        IOrderHistoryService orderHistoryService,
+        IOrderPrintService orderPrintService,
         IEventStreamingService eventStreamingService,
         ILogger<OrderManagementPage> logger)
     {
@@ -81,7 +81,7 @@ public partial class OrderManagementPage : ContentPage
 
                     var success = await _orderPrintService.PrintOrderAsync(
                         orderItem.Order,
-                        OrderPrintService.PrinterType.Kitchen,
+                        PrinterType.Kitchen,
                         isManualPrint: true);
 
                     if (success)
@@ -120,7 +120,7 @@ public partial class OrderManagementPage : ContentPage
 
                     var success = await _orderPrintService.PrintOrderAsync(
                         orderItem.Order,
-                        OrderPrintService.PrinterType.Cashier,
+                        PrinterType.Cashier,
                         isManualPrint: true);
 
                     if (success)
@@ -157,15 +157,12 @@ public partial class OrderManagementPage : ContentPage
                 {
                     _logger.LogInformation("Reprinting order #{OrderNumber} to both printers", orderItem.Order.OrderNumber);
 
-                    var kitchenSuccess = await _orderPrintService.PrintOrderAsync(
-                        orderItem.Order,
-                        OrderPrintService.PrinterType.Kitchen,
-                        isManualPrint: true);
-
-                    var cashierSuccess = await _orderPrintService.PrintOrderAsync(
-                        orderItem.Order,
-                        OrderPrintService.PrinterType.Cashier,
-                        isManualPrint: true);
+                    // Route through PrintOrderToAllPrintersAsync so Front/Back-kitchen items go to the
+                    // right printers (the old two-call path bypassed multi-kitchen routing). A kitchen
+                    // result is true when that kitchen's ticket printed OR there were no items for it.
+                    var (cashierSuccess, frontKitchenSuccess, backKitchenSuccess) =
+                        await _orderPrintService.PrintOrderToAllPrintersAsync(orderItem.Order, isManualPrint: true);
+                    var kitchenSuccess = frontKitchenSuccess && backKitchenSuccess;
 
                     if (kitchenSuccess && cashierSuccess)
                     {

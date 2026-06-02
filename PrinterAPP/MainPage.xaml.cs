@@ -10,9 +10,10 @@ public partial class MainPage : ContentPage
 {
     private readonly IPrinterService _printerService;
     private readonly IEventStreamingService _eventStreamingService;
-    private readonly OrderPrintService _orderPrintService;
-    private readonly OrderHistoryService _orderHistoryService;
-    private readonly UpdateService _updateService;
+    private readonly IOrderPrintService _orderPrintService;
+    private readonly IOrderHistoryService _orderHistoryService;
+    private readonly IUpdateService _updateService;
+    private readonly IPrinterTestService _printerTestService;
     private readonly ILogger<MainPage> _logger;
     private PrinterConfiguration _config;
     private bool _isServiceRunning = false;
@@ -20,9 +21,10 @@ public partial class MainPage : ContentPage
     public MainPage(
         IPrinterService printerService,
         IEventStreamingService eventStreamingService,
-        OrderPrintService orderPrintService,
-        OrderHistoryService orderHistoryService,
-        UpdateService updateService,
+        IOrderPrintService orderPrintService,
+        IOrderHistoryService orderHistoryService,
+        IUpdateService updateService,
+        IPrinterTestService printerTestService,
         ILogger<MainPage> logger)
     {
         InitializeComponent();
@@ -31,6 +33,7 @@ public partial class MainPage : ContentPage
         _orderPrintService = orderPrintService;
         _orderHistoryService = orderHistoryService;
         _updateService = updateService;
+        _printerTestService = printerTestService;
         _logger = logger;
         _config = new PrinterConfiguration();
 
@@ -83,6 +86,13 @@ public partial class MainPage : ContentPage
 
             // Load available printers
             await LoadPrintersAsync();
+
+            // Round-trip a saved network IP into the IP entry (the picker can't hold an IP, and on
+            // Android it enumerates nothing).
+            if (PrinterEndpoint.TryParse(_config.KitchenPrinterName, out _, out _))
+                KitchenPrinterIpEntry.Text = _config.KitchenPrinterName;
+            if (PrinterEndpoint.TryParse(_config.CashierPrinterName, out _, out _))
+                CashierPrinterIpEntry.Text = _config.CashierPrinterName;
 
             // Update service status (Windows only)
             UpdateServiceStatus();
@@ -404,6 +414,23 @@ public partial class MainPage : ContentPage
     {
         try
         {
+            // Validate any manually-entered printer IPs up front so we don't save an unusable value
+            // (which would later be mis-routed to the Windows spooler as a "printer name").
+            foreach (var (entry, label) in new[]
+                     {
+                         (KitchenPrinterIpEntry.Text, "Kitchen"),
+                         (CashierPrinterIpEntry.Text, "Cashier"),
+                     })
+            {
+                if (!string.IsNullOrWhiteSpace(entry) && !PrinterEndpoint.TryParse(entry, out _, out _))
+                {
+                    await DisplayAlert("Invalid printer IP",
+                        $"'{entry.Trim()}' is not a valid {label} printer IP. Use e.g. 192.168.1.50 or 192.168.1.50:9100.",
+                        "OK");
+                    return;
+                }
+            }
+
             // Check if API URL has changed
             var newApiUrl = ApiUrlEntry.Text?.Trim();
             var oldApiUrl = _config.ApiBaseUrl?.Trim();
@@ -459,7 +486,13 @@ public partial class MainPage : ContentPage
             {
                 _config.KitchenPrintCopies = Math.Max(1, Math.Min(kitchenCopies, 5)); // Limit 1-5
             }
-            if (KitchenPrinterPicker.SelectedItem != null)
+            // A manually-entered network IP takes precedence over the spooler picker (and is the
+            // only way to set a printer on Android, where the picker enumerates nothing).
+            if (!string.IsNullOrWhiteSpace(KitchenPrinterIpEntry.Text))
+            {
+                _config.KitchenPrinterName = KitchenPrinterIpEntry.Text.Trim();
+            }
+            else if (KitchenPrinterPicker.SelectedItem != null)
             {
                 _config.KitchenPrinterName = KitchenPrinterPicker.SelectedItem.ToString()!.Replace(" (Default)", "").Trim();
             }
@@ -471,15 +504,22 @@ public partial class MainPage : ContentPage
             {
                 _config.CashierPrintCopies = Math.Max(1, Math.Min(cashierCopies, 5)); // Limit 1-5
             }
-            if (CashierPrinterPicker.SelectedItem != null)
+            if (!string.IsNullOrWhiteSpace(CashierPrinterIpEntry.Text))
+            {
+                _config.CashierPrinterName = CashierPrinterIpEntry.Text.Trim();
+            }
+            else if (CashierPrinterPicker.SelectedItem != null)
             {
                 _config.CashierPrinterName = CashierPrinterPicker.SelectedItem.ToString()!.Replace(" (Default)", "").Trim();
             }
 
             // Time restriction settings
             _config.EnableTimeRestriction = EnableTimeRestrictionSwitch.IsToggled;
-            _config.RestrictStartTime = RestrictStartTimePicker.Time;
-            _config.RestrictEndTime = RestrictEndTimePicker.Time;
+            // MAUI 10 made TimePicker.Time nullable (TimeSpan?); the config fields are non-nullable.
+            // Preserve the existing saved value if the picker somehow reports null (rather than
+            // silently resetting the restriction window to midnight).
+            _config.RestrictStartTime = RestrictStartTimePicker.Time ?? _config.RestrictStartTime;
+            _config.RestrictEndTime = RestrictEndTimePicker.Time ?? _config.RestrictEndTime;
 
             // Save configuration
             _logger.LogInformation("Saving configuration with API URL: {ApiUrl}", _config.ApiBaseUrl);
@@ -530,9 +570,13 @@ public partial class MainPage : ContentPage
     {
         try
         {
-            if (KitchenPrinterPicker.SelectedItem == null && CashierPrinterPicker.SelectedItem == null)
+            bool anyConfigured = KitchenPrinterPicker.SelectedItem != null
+                || CashierPrinterPicker.SelectedItem != null
+                || !string.IsNullOrWhiteSpace(KitchenPrinterIpEntry.Text)
+                || !string.IsNullOrWhiteSpace(CashierPrinterIpEntry.Text);
+            if (!anyConfigured)
             {
-                await DisplayAlert("Error", "Please select at least one printer first", "OK");
+                await DisplayAlert("Error", "Please select a printer or enter a network printer IP first", "OK");
                 return;
             }
 
@@ -550,8 +594,16 @@ public partial class MainPage : ContentPage
 
             var results = new List<string>();
 
-            // Test kitchen printer
-            if (KitchenPrinterPicker.SelectedItem != null)
+            // Test kitchen printer — a configured network IP goes straight over TCP (works on
+            // Android); otherwise fall back to the Windows spooler test path.
+            if (!string.IsNullOrWhiteSpace(KitchenPrinterIpEntry.Text))
+            {
+                if (PrinterEndpoint.TryParse(KitchenPrinterIpEntry.Text, out var kIp, out var kPort))
+                    results.Add(await _printerTestService.TestNetworkPrinterAsync(kIp, kPort, "KITCHEN", "Kitchen"));
+                else
+                    results.Add($"Kitchen printer: ✗ Invalid IP '{KitchenPrinterIpEntry.Text.Trim()}'");
+            }
+            else if (KitchenPrinterPicker.SelectedItem != null)
             {
                 var printerName = KitchenPrinterPicker.SelectedItem.ToString();
                 var success = await _printerService.PrintTestReceiptAsync(printerName!, _config);
@@ -559,7 +611,14 @@ public partial class MainPage : ContentPage
             }
 
             // Test cashier printer
-            if (CashierPrinterPicker.SelectedItem != null)
+            if (!string.IsNullOrWhiteSpace(CashierPrinterIpEntry.Text))
+            {
+                if (PrinterEndpoint.TryParse(CashierPrinterIpEntry.Text, out var cIp, out var cPort))
+                    results.Add(await _printerTestService.TestNetworkPrinterAsync(cIp, cPort, "CASHIER", "Cashier"));
+                else
+                    results.Add($"Cashier printer: ✗ Invalid IP '{CashierPrinterIpEntry.Text.Trim()}'");
+            }
+            else if (CashierPrinterPicker.SelectedItem != null)
             {
                 var printerName = CashierPrinterPicker.SelectedItem.ToString();
                 var success = await _printerService.PrintTestReceiptAsync(printerName!, _config);

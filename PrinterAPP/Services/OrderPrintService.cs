@@ -4,10 +4,10 @@ using PrinterAPP.Models;
 
 namespace PrinterAPP.Services;
 
-public class OrderPrintService
+public class OrderPrintService : IOrderPrintService
 {
     private readonly IPrinterService _printerService;
-    private readonly RequestLogService _requestLogService;
+    private readonly IRequestLogService _requestLogService;
     private readonly ILogger<OrderPrintService> _logger;
     private readonly PrintStyleSettingsService _styleService;
     private readonly PrintStyleSettings _styleSettings;
@@ -38,7 +38,7 @@ public class OrderPrintService
 
     public OrderPrintService(
         IPrinterService printerService,
-        RequestLogService requestLogService,
+        IRequestLogService requestLogService,
         ILogger<OrderPrintService> logger)
     {
         _printerService = printerService;
@@ -107,7 +107,12 @@ public class OrderPrintService
                     ? config.FrontKitchenPrinterName
                     : config.CashierPrinterName; // Fallback to Cashier Printer as requested
 
-                if (!string.IsNullOrWhiteSpace(frontKitchenPrinter) && config.FrontKitchenAutoPrint)
+                // Manual reprints bypass the auto-print toggle (consistent with PrintOrderAsync).
+                // An intentionally-skipped print (auto-print off) is a success, not a failure — only
+                // a genuine print attempt that fails reports false.
+                bool shouldPrintFront = config.FrontKitchenAutoPrint || isManualPrint;
+                frontKitchenSuccess = !shouldPrintFront;
+                if (shouldPrintFront && !string.IsNullOrWhiteSpace(frontKitchenPrinter))
                 {
                     // Filter order to only FrontKitchen items
                     var filteredOrder = CreateFilteredOrder(order, "FrontKitchen");
@@ -136,7 +141,11 @@ public class OrderPrintService
                     ? config.BackKitchenPrinterName
                     : config.KitchenPrinterName;  // Fallback to legacy
 
-                if (!string.IsNullOrWhiteSpace(backKitchenPrinter) && config.BackKitchenAutoPrint)
+                // Manual reprints bypass the auto-print toggle (consistent with PrintOrderAsync).
+                // An intentionally-skipped print (auto-print off) is a success, not a failure.
+                bool shouldPrintBack = config.BackKitchenAutoPrint || isManualPrint;
+                backKitchenSuccess = !shouldPrintBack;
+                if (shouldPrintBack && !string.IsNullOrWhiteSpace(backKitchenPrinter))
                 {
                     // Filter order to only BackKitchen items
                     var filteredOrder = CreateFilteredOrder(order, "BackKitchen");
@@ -614,7 +623,23 @@ public class OrderPrintService
     {
         try
         {
-            // Use the Windows printer service to print raw content
+            // Network printer: when the configured target is an IP literal ("ip" or "ip:port"),
+            // send the ESC/POS bytes over TCP via the cross-platform transport (Phase 2b). This is
+            // the print path on Android and any network-attached printer; PC857 encoding (ADR-002)
+            // matches the codepage selected in the ESC/POS stream.
+            if (PrinterEndpoint.TryParse(printerName, out var ip, out var port))
+            {
+                Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+                var bytes = Encoding.GetEncoding(857).GetBytes(content);
+                // Phase-2b: transport constructed per target IP (a per-printer value), so it is not
+                // a DI singleton. A transport factory / per-printer resolution is deferred. See ADR-006.
+                IPrinterTransport transport = new NetworkTcpTransport(ip, port);
+                await transport.SendAsync(bytes, CancellationToken.None);
+                return true;
+            }
+
+            // Otherwise treat it as a Windows spooler printer name (unchanged legacy path; returns
+            // false on non-Windows since winspool is Windows-only).
             var result = await Task.Run(() =>
             {
                 return PrintToWindowsPrinter(printerName, content);
@@ -711,9 +736,4 @@ public class OrderPrintService
     }
 #endif
 
-    public enum PrinterType
-    {
-        Kitchen,
-        Cashier
-    }
 }

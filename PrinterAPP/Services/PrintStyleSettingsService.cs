@@ -1,5 +1,7 @@
 using System.Text.Json;
 using PrinterAPP.Models;
+// Disambiguate from Microsoft.Maui.FontSize (added to MAUI 10's implicit usings).
+using FontSize = PrinterAPP.Models.FontSize;
 
 namespace PrinterAPP.Services;
 
