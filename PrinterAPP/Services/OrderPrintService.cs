@@ -108,7 +108,11 @@ public class OrderPrintService : IOrderPrintService
                     : config.CashierPrinterName; // Fallback to Cashier Printer as requested
 
                 // Manual reprints bypass the auto-print toggle (consistent with PrintOrderAsync).
-                if (!string.IsNullOrWhiteSpace(frontKitchenPrinter) && (config.FrontKitchenAutoPrint || isManualPrint))
+                // An intentionally-skipped print (auto-print off) is a success, not a failure — only
+                // a genuine print attempt that fails reports false.
+                bool shouldPrintFront = config.FrontKitchenAutoPrint || isManualPrint;
+                frontKitchenSuccess = !shouldPrintFront;
+                if (shouldPrintFront && !string.IsNullOrWhiteSpace(frontKitchenPrinter))
                 {
                     // Filter order to only FrontKitchen items
                     var filteredOrder = CreateFilteredOrder(order, "FrontKitchen");
@@ -138,7 +142,10 @@ public class OrderPrintService : IOrderPrintService
                     : config.KitchenPrinterName;  // Fallback to legacy
 
                 // Manual reprints bypass the auto-print toggle (consistent with PrintOrderAsync).
-                if (!string.IsNullOrWhiteSpace(backKitchenPrinter) && (config.BackKitchenAutoPrint || isManualPrint))
+                // An intentionally-skipped print (auto-print off) is a success, not a failure.
+                bool shouldPrintBack = config.BackKitchenAutoPrint || isManualPrint;
+                backKitchenSuccess = !shouldPrintBack;
+                if (shouldPrintBack && !string.IsNullOrWhiteSpace(backKitchenPrinter))
                 {
                     // Filter order to only BackKitchen items
                     var filteredOrder = CreateFilteredOrder(order, "BackKitchen");
