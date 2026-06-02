@@ -478,8 +478,9 @@ public partial class MainPage : ContentPage
 
             // Time restriction settings
             _config.EnableTimeRestriction = EnableTimeRestrictionSwitch.IsToggled;
-            _config.RestrictStartTime = RestrictStartTimePicker.Time;
-            _config.RestrictEndTime = RestrictEndTimePicker.Time;
+            // MAUI 10 made TimePicker.Time nullable (TimeSpan?); the config fields are non-nullable.
+            _config.RestrictStartTime = RestrictStartTimePicker.Time ?? TimeSpan.Zero;
+            _config.RestrictEndTime = RestrictEndTimePicker.Time ?? TimeSpan.Zero;
 
             // Save configuration
             _logger.LogInformation("Saving configuration with API URL: {ApiUrl}", _config.ApiBaseUrl);

@@ -7,8 +7,9 @@
 
 ## §1 — Identity
 
-- **Stack**: .NET MAUI 9 (Windows-only target: `net9.0-windows10.0.19041.0`), C# 12, ESC/POS thermal-printer driver
-- **Runtime**: Windows 10+ (build target restricts to Windows; iOS/Android/macOS targets are not built)
+- **Stack**: .NET MAUI 10 (multi-target: `net10.0-android;net10.0-windows10.0.19041.0` — the Windows TFM is OS-conditioned so non-Windows hosts build Android only), C# 13, ESC/POS thermal-printer driver. See [ADR-005](docs/adr/ADR-005-multi-target-maui-android.md) (Phase 1 of the cross-platform plan).
+- **Runtime**: Windows 10+ (existing rollout) **and** Android 7+ / API 24 (new, primary rollout). iOS/macOS/Tizen scaffolding is present but unbuilt (iOS deferred to v2). **Android does not print yet** — the network transport lands in Phase 2; Phase 1 only makes Android compile + launch.
+- **Build caveat**: `*-windows` TFMs build only on Windows. On macOS/Linux/CI-Linux, `dotnet build` produces the Android artifact only — the Windows MSI + any MAUI-10 regression must be verified on a Windows host before release.
 - **Architecture**: Service-oriented MVVM with code-behind (standard MAUI pattern), DI registration in `MauiProgram.cs`
 - **Hosted on**: GitHub — https://github.com/piwas-21/restaurant-app-printer
 - **Production**: distributed to client workstations as a packaged Windows app via the GitHub releases-based `UpdateService`
@@ -236,7 +237,7 @@ Never auto-edit these files / take these actions without explicit user instructi
 ### Hard refusals
 - **`config.json` shipped to a customer machine.** That file is per-installation user state, not source. The repo's `PrinterConfiguration` defaults are the source of truth for new installs.
 - **`Platforms/Windows/Package.appxmanifest`** identity / signing fields — these tie to the code-signing certificate and the Windows Store / sideload identity. Changes are a release-engineering event.
-- **`PrinterAPP.csproj` `<TargetFramework>`** — changing the Windows TFM (currently `net9.0-windows10.0.19041.0`) is an architecture decision (need a new ADR). Patch-level SDK bumps via `global.json` are fine.
+- **`PrinterAPP.csproj` `<TargetFrameworks>`** — the project multi-targets `net10.0-android;net10.0-windows10.0.19041.0` (Windows TFM OS-conditioned) per [ADR-005](docs/adr/ADR-005-multi-target-maui-android.md). **Adding/removing a TFM (e.g. iOS in v2) or changing the .NET major is an architecture decision — needs a new ADR.** Patch-level SDK bumps via `global.json` are fine.
 - **`UpdateService.cs` release URL / GitHub repo identity** — that's the auto-update channel. Changing it strands every existing install.
 - **Branch protection bypass**: never `git commit --no-verify`, `git push --force-with-lease` to `develop`/`main`, `git reset --hard` on `develop`/`main`.
 

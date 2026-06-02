@@ -1,6 +1,9 @@
 # ADR-001 — Windows-only MAUI target
 
-**Status:** Accepted
+> **Amended 2026-06-01 by [ADR-005](ADR-005-multi-target-maui-android.md):** the build now multi-targets
+> Android + Windows (.NET 10 / MAUI 10). Windows remains a first-class target; it is no longer the only one.
+
+**Status:** Accepted (relaxed by ADR-005)
 **Date:** 2026-04-29
 **Author:** mahmutkaya
 **Reviewers:** —
