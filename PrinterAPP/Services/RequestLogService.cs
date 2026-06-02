@@ -108,6 +108,21 @@ public class RequestLogService : IRequestLogService
 
     private void AddLogEntry(LogEntry entry)
     {
+        // `_logs` is bound to the log pages' CollectionViews; mutating an ObservableCollection off
+        // the UI thread throws in MAUI. Log calls frequently originate from background threads
+        // (SSE event streaming), so marshal to the UI thread.
+        if (MainThread.IsMainThread)
+        {
+            AddLogEntryInternal(entry);
+        }
+        else
+        {
+            MainThread.BeginInvokeOnMainThread(() => AddLogEntryInternal(entry));
+        }
+    }
+
+    private void AddLogEntryInternal(LogEntry entry)
+    {
         try
         {
             lock (_lockObject)
@@ -135,6 +150,18 @@ public class RequestLogService : IRequestLogService
     }
 
     public void ClearLogs()
+    {
+        if (MainThread.IsMainThread)
+        {
+            ClearLogsInternal();
+        }
+        else
+        {
+            MainThread.BeginInvokeOnMainThread(ClearLogsInternal);
+        }
+    }
+
+    private void ClearLogsInternal()
     {
         lock (_lockObject)
         {
