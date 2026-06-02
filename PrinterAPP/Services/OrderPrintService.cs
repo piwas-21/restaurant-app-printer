@@ -107,7 +107,8 @@ public class OrderPrintService : IOrderPrintService
                     ? config.FrontKitchenPrinterName
                     : config.CashierPrinterName; // Fallback to Cashier Printer as requested
 
-                if (!string.IsNullOrWhiteSpace(frontKitchenPrinter) && config.FrontKitchenAutoPrint)
+                // Manual reprints bypass the auto-print toggle (consistent with PrintOrderAsync).
+                if (!string.IsNullOrWhiteSpace(frontKitchenPrinter) && (config.FrontKitchenAutoPrint || isManualPrint))
                 {
                     // Filter order to only FrontKitchen items
                     var filteredOrder = CreateFilteredOrder(order, "FrontKitchen");
@@ -136,7 +137,8 @@ public class OrderPrintService : IOrderPrintService
                     ? config.BackKitchenPrinterName
                     : config.KitchenPrinterName;  // Fallback to legacy
 
-                if (!string.IsNullOrWhiteSpace(backKitchenPrinter) && config.BackKitchenAutoPrint)
+                // Manual reprints bypass the auto-print toggle (consistent with PrintOrderAsync).
+                if (!string.IsNullOrWhiteSpace(backKitchenPrinter) && (config.BackKitchenAutoPrint || isManualPrint))
                 {
                     // Filter order to only BackKitchen items
                     var filteredOrder = CreateFilteredOrder(order, "BackKitchen");
