@@ -14,6 +14,7 @@ Index of ADRs for the RUMI Printer-App. New ADRs are numbered sequentially with 
 | [002](ADR-002-escpos-codepage.md) | ESC/POS commands and codepage PC857 | Accepted | 2026-04-29 | printing, i18n |
 | [003](ADR-003-x-api-key-auth.md) | X-Api-Key auth for printer-feed | Accepted | 2026-04-29 | auth, security |
 | [004](ADR-004-github-release-auto-update.md) | GitHub-release-based auto-update | Accepted | 2026-04-29 | distribution, release |
+| [006](ADR-006-printer-transport-abstraction.md) | IPrinterTransport abstraction; network TCP default | Accepted | 2026-06-01 | printing, platform, testing |
 
 ## Conventions
 
