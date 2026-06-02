@@ -23,8 +23,10 @@ public partial class LogsPage : ContentPage
         KitchenLogsCollectionView.ItemsSource = _kitchenLogs;
         ServiceLogsCollectionView.ItemsSource = _serviceLogs;
 
-        // Subscribe to log changes
-        _requestLogService.Logs.CollectionChanged += OnLogsCollectionChanged;
+        // Subscribe to log changes (cast: ReadOnlyObservableCollection implements
+        // INotifyCollectionChanged explicitly — CollectionChanged isn't directly accessible).
+        ((System.Collections.Specialized.INotifyCollectionChanged)_requestLogService.Logs).CollectionChanged +=
+            OnLogsCollectionChanged;
 
         // Initial population
         RefreshLogs();
@@ -34,7 +36,8 @@ public partial class LogsPage : ContentPage
     {
         base.OnDisappearing();
         // Unsubscribe to prevent memory leaks
-        _requestLogService.Logs.CollectionChanged -= OnLogsCollectionChanged;
+        ((System.Collections.Specialized.INotifyCollectionChanged)_requestLogService.Logs).CollectionChanged -=
+            OnLogsCollectionChanged;
     }
 
     private void OnLogsCollectionChanged(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs e)

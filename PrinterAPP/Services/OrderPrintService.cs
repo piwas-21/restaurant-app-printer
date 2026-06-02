@@ -614,7 +614,23 @@ public class OrderPrintService : IOrderPrintService
     {
         try
         {
-            // Use the Windows printer service to print raw content
+            // Network printer: when the configured target is an IP literal ("ip" or "ip:port"),
+            // send the ESC/POS bytes over TCP via the cross-platform transport (Phase 2b). This is
+            // the print path on Android and any network-attached printer; PC857 encoding (ADR-002)
+            // matches the codepage selected in the ESC/POS stream.
+            if (PrinterEndpoint.TryParse(printerName, out var ip, out var port))
+            {
+                Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+                var bytes = Encoding.GetEncoding(857).GetBytes(content);
+                // Phase-2b: transport constructed per target IP (a per-printer value), so it is not
+                // a DI singleton. A transport factory / per-printer resolution is deferred. See ADR-006.
+                IPrinterTransport transport = new NetworkTcpTransport(ip, port);
+                await transport.SendAsync(bytes, CancellationToken.None);
+                return true;
+            }
+
+            // Otherwise treat it as a Windows spooler printer name (unchanged legacy path; returns
+            // false on non-Windows since winspool is Windows-only).
             var result = await Task.Run(() =>
             {
                 return PrintToWindowsPrinter(printerName, content);

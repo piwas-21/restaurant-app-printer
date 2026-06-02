@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>PrinterAPP.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <PackageReference Include="coverlet.collector" Version="6.0.2" />
+  </ItemGroup>
+
+  <!--
+    Source-link the cross-platform transport sources rather than ProjectReference-ing the MAUI app
+    (which only multi-targets android/windows, not plain net10.0). The transport has no MAUI
+    dependency, so it compiles standalone here. Keeps "single repo, no extracted Core library"
+    (PRINTER-APP-CROSSPLATFORM-PLAN.md resolved decisions) while making the transport unit-testable
+    on any host (macOS/Linux/Windows CI), no emulator/hardware required.
+  -->
+  <ItemGroup>
+    <Compile Include="..\PrinterAPP\Services\IPrinterTransport.cs" Link="Linked\IPrinterTransport.cs" />
+    <Compile Include="..\PrinterAPP\Services\NetworkTcpTransport.cs" Link="Linked\NetworkTcpTransport.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrinterEndpoint.cs" Link="Linked\PrinterEndpoint.cs" />
+  </ItemGroup>
+
+</Project>

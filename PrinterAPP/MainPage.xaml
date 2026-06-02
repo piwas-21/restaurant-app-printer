@@ -80,6 +80,10 @@
                                 Clicked="OnRefreshPrintersClicked"/>
                     </Grid>
 
+                    <Label Text="Or network printer IP (for Android / network printers)" FontSize="12" TextColor="Gray"/>
+                    <Entry x:Name="KitchenPrinterIpEntry"
+                           Placeholder="e.g. 192.168.1.50 or 192.168.1.50:9100"/>
+
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
                         <VerticalStackLayout>
                             <Label Text="Paper Width" FontSize="14" TextColor="Gray"/>
@@ -121,6 +125,10 @@
                     <Label Text="Select Cashier Printer" FontSize="14" TextColor="Gray"/>
                     <Picker x:Name="CashierPrinterPicker"
                             Title="Choose cashier printer"/>
+
+                    <Label Text="Or network printer IP (for Android / network printers)" FontSize="12" TextColor="Gray"/>
+                    <Entry x:Name="CashierPrinterIpEntry"
+                           Placeholder="e.g. 192.168.1.50 or 192.168.1.50:9100"/>
 
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
                         <VerticalStackLayout>

@@ -11,7 +11,10 @@ Edit `PrinterAPP/PrinterAPP/PrinterAPP.csproj` and increment the version:
 
 ## Step 2: Commit and Tag
 
-GitHub Actions will automatically build the Windows `.exe` and upload it when you push a new tag.
+GitHub Actions (`build-release.yml`) builds **both platforms** on a version tag and attaches them to
+the release:
+- **Windows** (`build-windows` job) — `PrinterApp-Setup-x64.exe` / `-x86.exe` (consumed by the in-app auto-updater).
+- **Android** (`build-android` job) — `PrinterApp-Android.apk` (sideload).
 
 1. Commit your changes:
    ```bash
@@ -41,12 +44,37 @@ GitHub Actions will automatically build the Windows `.exe` and upload it when yo
 
 ## Step 5: Restaurant Can Now Update
 
-Restaurant users:
+**Windows users:**
 1. Open Printer App
 2. Click "🔄 Update" button
 3. Click "Check for Updates"
 4. If update available, click "Update Now"
 5. App automatically downloads correct version (x64 or x86), installs, and restarts
+
+**Android users (sideload):**
+1. On the tablet, download `PrinterApp-Android.apk` from the GitHub Release page.
+2. Allow "Install unknown apps" for the browser/file manager (Android settings) the first time.
+3. Open the APK and install. (No Play Store auto-update yet — that's a future Phase 5 item.)
+
+## Android signing (one-time setup)
+
+The `build-android` job signs the APK with a release keystore read from GitHub Actions secrets.
+**Until these secrets are set, the job builds a Debug-signed APK** — installable for testing, but
+**not** for production distribution (debug key + debuggable build).
+
+1. Generate a keystore (keep it safe and backed up — losing it means you can't ship updates that
+   install over an existing install):
+   ```bash
+   keytool -genkeypair -v -keystore printerapp.keystore -alias printerapp \
+     -keyalg RSA -keysize 2048 -validity 10000
+   ```
+2. In **repo Settings -> Secrets and variables -> Actions**, add:
+   - `ANDROID_KEYSTORE_BASE64` — `base64 -i printerapp.keystore` (the whole file, base64-encoded)
+   - `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (e.g. `printerapp`), `ANDROID_KEY_PASSWORD`
+3. Re-tag (or re-run the workflow); the Android job now produces a signed Release APK.
+
+> Play Store managed distribution + in-app updates are a later Phase 5 add-on; sideload covers the
+> initial Android rollout.
 
 ## Version Numbering
 
