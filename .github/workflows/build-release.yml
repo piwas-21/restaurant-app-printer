@@ -41,21 +41,20 @@ jobs:
     - name: Restore MAUI workloads
       run: dotnet workload restore PrinterAPP/PrinterAPP.csproj
 
+    # Run publish from the REPO ROOT (not `cd PrinterAPP`) so global.json — which pins the
+    # .NET 10 SDK — is in the working dir and honored. Otherwise the SDK resolver can fall
+    # back to the runner's preinstalled .NET 9, which doesn't recognize the net10.0-android
+    # TFM the multi-target restore pulls in (NETSDK1139). Mirrors the working Android job.
     - name: Build and Publish (x64)
-      run: |
-        cd PrinterAPP
-        dotnet publish PrinterAPP.csproj -c Release -f net10.0-windows10.0.19041.0 -r win-x64 --self-contained -p:PublishSingleFile=true -o ./publish/x64
+      run: dotnet publish PrinterAPP/PrinterAPP.csproj -c Release -f net10.0-windows10.0.19041.0 -r win-x64 --self-contained -p:PublishSingleFile=true -o ./publish/x64
 
     - name: Build and Publish (x86)
-      run: |
-        cd PrinterAPP
-        dotnet publish PrinterAPP.csproj -c Release -f net10.0-windows10.0.19041.0 -r win-x86 --self-contained -p:PublishSingleFile=true -o ./publish/x86
+      run: dotnet publish PrinterAPP/PrinterAPP.csproj -c Release -f net10.0-windows10.0.19041.0 -r win-x86 --self-contained -p:PublishSingleFile=true -o ./publish/x86
 
     - name: Rename Executables
       run: |
-        cd PrinterAPP/publish
-        ren x64\PrinterAPP.exe PrinterApp-Setup-x64.exe
-        ren x86\PrinterAPP.exe PrinterApp-Setup-x86.exe
+        ren publish\x64\PrinterAPP.exe PrinterApp-Setup-x64.exe
+        ren publish\x86\PrinterAPP.exe PrinterApp-Setup-x86.exe
 
     - name: Upload Windows Release Assets
       uses: softprops/action-gh-release@v1
@@ -68,8 +67,8 @@ jobs:
         # deterministic in the target repo (which has its own commit history).
         tag_name: ${{ github.ref_name }}
         files: |
-          PrinterAPP/publish/x64/PrinterApp-Setup-x64.exe
-          PrinterAPP/publish/x86/PrinterApp-Setup-x86.exe
+          publish/x64/PrinterApp-Setup-x64.exe
+          publish/x86/PrinterApp-Setup-x86.exe
         # Fine-grained PAT with Contents:read/write on piwas-21/printer-app-releases ONLY.
         # The default GITHUB_TOKEN can't reach another repo. See RELEASE_WORKFLOW.md.
         token: ${{ secrets.RELEASES_REPO_TOKEN }}
