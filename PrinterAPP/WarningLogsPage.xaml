@@ -35,7 +35,7 @@
                                HorizontalOptions="Center"/>
                         <Label Text="All warning logs will appear here"
                                FontSize="14"
-                               TextColor="Gray"
+                               TextColor="{StaticResource Gray500}"
                                HorizontalOptions="Center"
                                HorizontalTextAlignment="Center"/>
                     </VerticalStackLayout>

@@ -11,7 +11,10 @@ public class UpdateService : IUpdateService
 {
     private readonly ILogger<UpdateService> _logger;
     private readonly HttpClient _httpClient;
-    private const string GITHUB_REPO = "mgezgin/PrinterAPP";
+    // Public releases repo — source code is private (piwas-21/restaurant-app-printer),
+    // but binaries are published here so the updater works without a GitHub account.
+    // AC: piwas-21/restaurant-app-printer#22 (auto-update channel change — see CLAUDE.md §9).
+    private const string GITHUB_REPO = "piwas-21/printer-app-releases";
     private const string RELEASES_API_URL = $"https://api.github.com/repos/{GITHUB_REPO}/releases/latest";
 
     public UpdateService(ILogger<UpdateService> logger)

@@ -5,8 +5,11 @@ on:
     tags:
       - 'v*' # Trigger on version tags (e.g., v1.0.0)
 
+# Releases publish to the PUBLIC piwas-21/printer-app-releases repo via RELEASES_REPO_TOKEN
+# (a PAT), NOT the auto-provisioned GITHUB_TOKEN — which can only reach this source repo.
+# No step writes to this repo's contents, so the default read-only GITHUB_TOKEN is sufficient.
 permissions:
-  contents: write
+  contents: read
 
 # Two independent jobs so a failure in one platform still releases the other.
 # Windows -> self-contained .exe installers (consumed by the in-app auto-updater).
@@ -58,10 +61,18 @@ jobs:
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
+        # Publish to the PUBLIC releases repo so the client (and the in-app updater)
+        # can download without a GitHub account. Source stays private.
+        repository: piwas-21/printer-app-releases
+        # The tag was pushed to the source repo; name the release tag explicitly so it's
+        # deterministic in the target repo (which has its own commit history).
+        tag_name: ${{ github.ref_name }}
         files: |
           PrinterAPP/publish/x64/PrinterApp-Setup-x64.exe
           PrinterAPP/publish/x86/PrinterApp-Setup-x86.exe
-        token: ${{ secrets.GITHUB_TOKEN }}
+        # Fine-grained PAT with Contents:read/write on piwas-21/printer-app-releases ONLY.
+        # The default GITHUB_TOKEN can't reach another repo. See RELEASE_WORKFLOW.md.
+        token: ${{ secrets.RELEASES_REPO_TOKEN }}
 
   build-android:
     runs-on: ubuntu-latest
@@ -133,5 +144,7 @@ jobs:
       uses: softprops/action-gh-release@v1
       if: startsWith(github.ref, 'refs/tags/')
       with:
+        repository: piwas-21/printer-app-releases
+        tag_name: ${{ github.ref_name }}
         files: android-out/PrinterApp-Android.apk
-        token: ${{ secrets.GITHUB_TOKEN }}
+        token: ${{ secrets.RELEASES_REPO_TOKEN }}
