@@ -62,7 +62,7 @@
                                    HorizontalOptions="Center"/>
                             <Label Text="Kitchen-related SSE and printer logs will appear here"
                                    FontSize="14"
-                                   TextColor="Gray"
+                                   TextColor="{StaticResource Gray500}"
                                    HorizontalOptions="Center"
                                    HorizontalTextAlignment="Center"/>
                         </VerticalStackLayout>
@@ -362,7 +362,7 @@
                                    HorizontalOptions="Center"/>
                             <Label Text="Service-related SSE and printer logs will appear here"
                                    FontSize="14"
-                                   TextColor="Gray"
+                                   TextColor="{StaticResource Gray500}"
                                    HorizontalOptions="Center"
                                    HorizontalTextAlignment="Center"/>
                         </VerticalStackLayout>
