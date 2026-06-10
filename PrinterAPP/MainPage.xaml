@@ -19,7 +19,7 @@
                         <Label x:Name="StatusLabel"
                                Text="Loading..."
                                FontSize="14"
-                               TextColor="Gray"/>
+                               TextColor="{StaticResource Gray500}"/>
                     </VerticalStackLayout>
 
                     <Button x:Name="ServiceToggleButton"
@@ -41,7 +41,7 @@
                            FontSize="18" 
                            FontAttributes="Bold"/>
 
-                    <Label Text="API Base URL" FontSize="14" TextColor="Gray"/>
+                    <Label Text="API Base URL" FontSize="14" TextColor="{StaticResource Gray500}"/>
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                         <Entry x:Name="ApiUrlEntry"
                                Placeholder="https://localhost:44386"
@@ -68,7 +68,7 @@
                            FontSize="18"
                            FontAttributes="Bold"/>
 
-                    <Label Text="Select Kitchen Printer" FontSize="14" TextColor="Gray"/>
+                    <Label Text="Select Kitchen Printer" FontSize="14" TextColor="{StaticResource Gray500}"/>
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                         <Picker x:Name="KitchenPrinterPicker"
                                 Title="Choose kitchen printer"/>
@@ -80,13 +80,13 @@
                                 Clicked="OnRefreshPrintersClicked"/>
                     </Grid>
 
-                    <Label Text="Or network printer IP (for Android / network printers)" FontSize="12" TextColor="Gray"/>
+                    <Label Text="Or network printer IP (for Android / network printers)" FontSize="12" TextColor="{StaticResource Gray500}"/>
                     <Entry x:Name="KitchenPrinterIpEntry"
                            Placeholder="e.g. 192.168.1.50 or 192.168.1.50:9100"/>
 
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
                         <VerticalStackLayout>
-                            <Label Text="Paper Width" FontSize="14" TextColor="Gray"/>
+                            <Label Text="Paper Width" FontSize="14" TextColor="{StaticResource Gray500}"/>
                             <Picker x:Name="KitchenPaperWidthPicker">
                                 <Picker.Items>
                                     <x:String>80mm</x:String>
@@ -96,7 +96,7 @@
                         </VerticalStackLayout>
 
                         <VerticalStackLayout Grid.Column="1">
-                            <Label Text="Print Copies" FontSize="14" TextColor="Gray"/>
+                            <Label Text="Print Copies" FontSize="14" TextColor="{StaticResource Gray500}"/>
                             <Entry x:Name="KitchenPrintCopiesEntry"
                                    Text="1"
                                    Keyboard="Numeric"/>
@@ -122,17 +122,17 @@
                            FontSize="18"
                            FontAttributes="Bold"/>
 
-                    <Label Text="Select Cashier Printer" FontSize="14" TextColor="Gray"/>
+                    <Label Text="Select Cashier Printer" FontSize="14" TextColor="{StaticResource Gray500}"/>
                     <Picker x:Name="CashierPrinterPicker"
                             Title="Choose cashier printer"/>
 
-                    <Label Text="Or network printer IP (for Android / network printers)" FontSize="12" TextColor="Gray"/>
+                    <Label Text="Or network printer IP (for Android / network printers)" FontSize="12" TextColor="{StaticResource Gray500}"/>
                     <Entry x:Name="CashierPrinterIpEntry"
                            Placeholder="e.g. 192.168.1.50 or 192.168.1.50:9100"/>
 
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
                         <VerticalStackLayout>
-                            <Label Text="Paper Width" FontSize="14" TextColor="Gray"/>
+                            <Label Text="Paper Width" FontSize="14" TextColor="{StaticResource Gray500}"/>
                             <Picker x:Name="CashierPaperWidthPicker">
                                 <Picker.Items>
                                     <x:String>80mm</x:String>
@@ -142,7 +142,7 @@
                         </VerticalStackLayout>
 
                         <VerticalStackLayout Grid.Column="1">
-                            <Label Text="Print Copies" FontSize="14" TextColor="Gray"/>
+                            <Label Text="Print Copies" FontSize="14" TextColor="{StaticResource Gray500}"/>
                             <Entry x:Name="CashierPrintCopiesEntry"
                                    Text="1"
                                    Keyboard="Numeric"/>
@@ -170,7 +170,7 @@
 
                     <Label Text="Disable automatic printing during specific hours (manual printing always works)"
                            FontSize="12"
-                           TextColor="Gray"
+                           TextColor="{StaticResource Gray500}"
                            Margin="0,0,0,10"/>
 
                     <Grid ColumnDefinitions="Auto,*">
@@ -185,14 +185,14 @@
 
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
                         <VerticalStackLayout>
-                            <Label Text="Don't Auto-Print From" FontSize="14" TextColor="Gray"/>
+                            <Label Text="Don't Auto-Print From" FontSize="14" TextColor="{StaticResource Gray500}"/>
                             <TimePicker x:Name="RestrictStartTimePicker"
                                         Time="12:00:00"
                                         Format="HH:mm"/>
                         </VerticalStackLayout>
 
                         <VerticalStackLayout Grid.Column="1">
-                            <Label Text="Don't Auto-Print Until" FontSize="14" TextColor="Gray"/>
+                            <Label Text="Don't Auto-Print Until" FontSize="14" TextColor="{StaticResource Gray500}"/>
                             <TimePicker x:Name="RestrictEndTimePicker"
                                         Time="13:00:00"
                                         Format="HH:mm"/>
@@ -214,12 +214,12 @@
                            FontSize="18"
                            FontAttributes="Bold"/>
 
-                    <Label Text="Restaurant Name" FontSize="14" TextColor="Gray"/>
+                    <Label Text="Restaurant Name" FontSize="14" TextColor="{StaticResource Gray500}"/>
                     <Entry x:Name="RestaurantNameEntry"
                            Text="Your Restaurant"
                            Placeholder="Enter restaurant name"/>
 
-                    <Label Text="Kitchen Location" FontSize="14" TextColor="Gray"/>
+                    <Label Text="Kitchen Location" FontSize="14" TextColor="{StaticResource Gray500}"/>
                     <Entry x:Name="KitchenLocationEntry"
                            Text="Main Kitchen"
                            Placeholder="e.g., Main Kitchen, Bar"/>
@@ -235,7 +235,7 @@
                     
                     <Label Text="Customize font sizes and styles for different sections of kitchen and cashier receipts."
                            FontSize="12"
-                           TextColor="Gray"
+                           TextColor="{StaticResource Gray500}"
                            Margin="0,0,0,10"/>
                     
                     <Button Text="Configure Print Styles"

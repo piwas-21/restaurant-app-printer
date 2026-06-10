@@ -30,7 +30,7 @@
                         <Label x:Name="StatusLabel"
                                Text="No orders received yet"
                                FontSize="13"
-                               TextColor="Gray"/>
+                               TextColor="{StaticResource Gray500}"/>
                     </VerticalStackLayout>
 
                     <Button x:Name="ServiceStatusButton"
@@ -80,7 +80,7 @@
                                HorizontalOptions="Center"/>
                         <Label Text="Orders will appear here when received via SSE"
                                FontSize="14"
-                               TextColor="Gray"
+                               TextColor="{StaticResource Gray500}"
                                HorizontalOptions="Center"
                                HorizontalTextAlignment="Center"/>
                     </VerticalStackLayout>
@@ -105,24 +105,24 @@
                                            FontAttributes="Bold"/>
                                     <Label Text="{Binding ReceivedAtText, StringFormat='Received: {0}'}"
                                            FontSize="12"
-                                           TextColor="Gray"/>
+                                           TextColor="{StaticResource Gray500}"/>
                                 </VerticalStackLayout>
 
                                 <!-- Order Details -->
                                 <VerticalStackLayout Grid.Column="1" Grid.Row="1" Spacing="2">
                                     <Label Text="{Binding Order.CreatedAt, StringFormat='Created: {0:yyyy-MM-dd HH:mm}'}"
                                            FontSize="12"
-                                           TextColor="Gray"/>
+                                           TextColor="{StaticResource Gray500}"/>
                                     <Label Text="{Binding Order.CustomerName, StringFormat='Customer: {0}'}"
                                            FontSize="12"
-                                           TextColor="Gray"
+                                           TextColor="{StaticResource Gray500}"
                                            IsVisible="{Binding Order.CustomerName, Converter={StaticResource StringNotEmptyConverter}}"/>
                                     <Label Text="{Binding Order.Type, StringFormat='Type: {0}'}"
                                            FontSize="12"
-                                           TextColor="Gray"/>
+                                           TextColor="{StaticResource Gray500}"/>
                                     <Label Text="{Binding Order.Status, StringFormat='Status: {0}'}"
                                            FontSize="12"
-                                           TextColor="Gray"/>
+                                           TextColor="{StaticResource Gray500}"/>
                                 </VerticalStackLayout>
 
                                 <!-- Items List -->
