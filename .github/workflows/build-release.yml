@@ -45,11 +45,17 @@ jobs:
     # .NET 10 SDK — is in the working dir and honored. Otherwise the SDK resolver can fall
     # back to the runner's preinstalled .NET 9, which doesn't recognize the net10.0-android
     # TFM the multi-target restore pulls in (NETSDK1139). Mirrors the working Android job.
+    #
+    # `-p:TargetFrameworks=...windows` pins the project to the single Windows TFM for this
+    # invocation. Without it, the multi-target restore still processes net10.0-android even
+    # with `-f`, and the `-r win-x64` RID leaks into it — trying to restore an Android Mono
+    # runtime pack for win-x64 that doesn't exist (NU1102). Isolating to the Windows TFM
+    # keeps the restore Windows-only.
     - name: Build and Publish (x64)
-      run: dotnet publish PrinterAPP/PrinterAPP.csproj -c Release -f net10.0-windows10.0.19041.0 -r win-x64 --self-contained -p:PublishSingleFile=true -o ./publish/x64
+      run: dotnet publish PrinterAPP/PrinterAPP.csproj -c Release -f net10.0-windows10.0.19041.0 -p:TargetFrameworks=net10.0-windows10.0.19041.0 -r win-x64 --self-contained -p:PublishSingleFile=true -o ./publish/x64
 
     - name: Build and Publish (x86)
-      run: dotnet publish PrinterAPP/PrinterAPP.csproj -c Release -f net10.0-windows10.0.19041.0 -r win-x86 --self-contained -p:PublishSingleFile=true -o ./publish/x86
+      run: dotnet publish PrinterAPP/PrinterAPP.csproj -c Release -f net10.0-windows10.0.19041.0 -p:TargetFrameworks=net10.0-windows10.0.19041.0 -r win-x86 --self-contained -p:PublishSingleFile=true -o ./publish/x86
 
     - name: Rename Executables
       run: |
