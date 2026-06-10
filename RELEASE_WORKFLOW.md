@@ -1,8 +1,39 @@
 # How to Create a Release for Printer App (Automated)
 
+## Distribution architecture (read once)
+
+The **source** repo (`piwas-21/restaurant-app-printer`) is **private**. Private-repo release assets
+require a logged-in GitHub account with repo access, so the client can't download them and the in-app
+updater (which calls the GitHub API unauthenticated) gets a 404.
+
+To fix this, binaries are published to a separate **public** repo:
+**[`piwas-21/printer-app-releases`](https://github.com/piwas-21/printer-app-releases)**.
+
+- `build-release.yml` uploads the `.exe`/`.apk` there (`repository:` + `token:` on the release step).
+- `UpdateService.cs` (`GITHUB_REPO` const) reads latest release from there — no auth needed.
+- The link you share with the client is a stable public URL from that repo's Releases page.
+
+### One-time setup: `RELEASES_REPO_TOKEN` secret
+
+Cross-repo upload needs a Personal Access Token (the default `GITHUB_TOKEN` only reaches the repo the
+workflow runs in). Create a **fine-grained PAT** scoped to **only** `piwas-21/printer-app-releases`:
+
+1. GitHub → Settings → Developer settings → Fine-grained tokens → **Generate new token**.
+2. **Resource owner**: `piwas-21`. **Repository access**: Only select repositories → `printer-app-releases`.
+3. **Permissions**: Repository permissions → **Contents: Read and write**.
+4. Copy the token, then add it as a secret on the **source** repo:
+   ```bash
+   gh secret set RELEASES_REPO_TOKEN -R piwas-21/restaurant-app-printer
+   ```
+5. Set an expiry reminder — when the PAT expires, releases fail to upload until it's regenerated.
+
+> **Migrating existing installs**: clients on a build older than 1.0.16 still poll the old updater URL
+> and can't auto-update to the fix. They must download the new build once from the public Releases page;
+> auto-update works for every release after that.
+
 ## Step 1: Update Version Number
 
-Edit `PrinterAPP/PrinterAPP/PrinterAPP.csproj` and increment the version:
+Edit `PrinterAPP/PrinterAPP.csproj` and increment the version:
 
 ```xml
 <Version>1.0.3</Version>
