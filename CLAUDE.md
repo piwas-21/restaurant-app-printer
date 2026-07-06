@@ -85,28 +85,7 @@ The printer-app is a **strict consumer** of the backend API. Models in `PrinterA
 
 ## §4 — File length limits
 
-Enforced by [scripts/check-file-length.sh](scripts/check-file-length.sh) (pre-commit + CI `file_length` job, blocking).
-
-| File type | Max LOC | Action if exceeded |
-|---|---|---|
-| Page code-behind (`.xaml.cs`) | 200 | Move logic into a service; code-behind should only wire UI events |
-| Service class (`PrinterAPP/Services/**`) | 300 | Split by concern — one service = one responsibility |
-| Model class (`PrinterAPP/Models/**`) | 80 | Data containers only; no behaviour |
-| P/Invoke wrapper (`PrinterAPP/Platforms/Windows/**`) | 200 | Isolate native interop in a dedicated wrapper |
-| Constants file (`*Constants.cs`) | 100 | Group by category and split |
-| Converter (`PrinterAPP/Converters/**`) | 60 | One converter = one transformation |
-
-Excluded from the gate: non-Windows platform shims (`Platforms/Android`, `Platforms/iOS`, `Platforms/MacCatalyst`, `Platforms/Tizen`) since the Windows-only target (ADR-001) doesn't compile them.
-
-**Existing oversized files** are baselined in [scripts/file-length-baseline.txt](scripts/file-length-baseline.txt) (set at the current honest floor; ratchet down as the refactor track lands). New violations block the gate.
-
-**Per-file opt-out** (rare; needs reviewer sign-off): add `// FILE_LENGTH_EXEMPT: <reason>` within the first 5 lines of the file.
-
-**After a refactor lands** that brings a baselined file under its limit:
-```bash
-bash scripts/check-file-length.sh --regen-baseline
-```
-Commit the updated `scripts/file-length-baseline.txt` in the same MR.
+Enforced (blocking) by `scripts/check-file-length.sh` (pre-commit + CI) and warned in-loop by the PostToolUse checker. Max LOC: **`.xaml.cs` code-behind 200 · `Services/` 300 · `Models/` 80 · `Platforms/Windows/` P-Invoke 200 · `*Constants.cs` 100 · `Converters/` 60**. Over the limit ⇒ move logic to a service (code-behind only wires UI), one service = one concern. Excludes non-Windows platform shims (`Platforms/{Android,iOS,MacCatalyst,Tizen}`). Existing violations baselined in `scripts/file-length-baseline.txt`; opt out with `// FILE_LENGTH_EXEMPT: <reason>` (first 5 lines); after a refactor drops a file under limit run `bash scripts/check-file-length.sh --regen-baseline` and commit the baseline.
 
 ---
 
@@ -155,32 +134,12 @@ Grep for the type/method/key you're adding or modifying. List every callsite. Co
 
 ---
 
-## §7 — Quality gates
+## §7 — Quality gates (source of truth `.github/workflows/ci.yml` + `.pre-commit-config.yaml`)
 
-| Gate | When | What | Blocking? | Source of truth |
-|---|---|---|---|---|
-| Pre-commit hooks | Every `git commit` | trailing whitespace, EOF, large files, secret scan, no-commit-to-protected | yes | [.pre-commit-config.yaml](.pre-commit-config.yaml) |
-| File-length gate | Pre-commit (per-file when .cs staged) **and** CI workflow (`file_length` job) | LOC ≤ §4 limit OR file is in `scripts/file-length-baseline.txt` | yes | [scripts/check-file-length.sh](scripts/check-file-length.sh), [.pre-commit-config.yaml](.pre-commit-config.yaml), `.github/workflows/ci.yml` |
-| `dotnet build PrinterAPP.sln` | Pre-commit (when `.cs/.csproj/.sln/.xaml` staged) **and** CI workflow | 0 errors | yes | `.github/workflows/ci.yml` (see note below) |
-| Gitleaks | CI workflow | No leaked credentials (allowlist via `.gitleaks.toml`) | yes | [.gitleaks.toml](.gitleaks.toml) |
-| CodeQL (SAST) | CI workflow | Auto-injected analyzers | yes | `.github/workflows/ci.yml` |
-| `dotnet format --verify-no-changes` | Sprint 2 (planned) | 0 formatting drift | future | (not yet wired) |
-| Test suite | Sprint 3 (planned) | Unit + integration tests | future | [docs/TEST-COVERAGE-PLAN.md](docs/TEST-COVERAGE-PLAN.md) |
-| Weekly security audit | Mondays 06:00 UTC + manual dispatch | OSV-Scanner (full tree), Trivy fs (HIGH/CRITICAL), gitleaks (full history), `dotnet list package --vulnerable --include-transitive` | yes (scheduled run fails red on findings) | `.github/workflows/security-audit.yml` |
-| Trivy / dependency scan (in-PR) | Sprint 4 (planned) | NuGet supply-chain scan on every PR | future | (not yet wired) |
-
-> **Build runner caveat**: MAUI Windows-targeting builds need a Windows runner. The default GitHub-hosted runners are Linux; the MAUI workload `dotnet build` will fail on Linux for the `windows10.0.19041` target framework. Sprint 2 wires a self-hosted Windows runner; until then, the CI build job runs on best-effort and is `allow_failure: true`. Local builds via `build-windows.sh` (Git Bash) or `build-windows.ps1` are the source of truth pre-merge.
-
-### Setup for a new developer
-```powershell
-# Windows / PowerShell
-pwsh -File scripts/setup_hooks.ps1   # installs pre-commit hooks (one-time)
-.\build-windows.ps1                   # local build
-```
-```bash
-# macOS / Linux (hooks only — actual build requires Windows)
-bash scripts/setup_hooks.sh           # installs pre-commit hooks (one-time)
-```
+- **Pre-commit** (blocking): trailing-ws / EOF / large-files / secret-scan / no-commit-to-protected; file-length (§4); `dotnet build PrinterAPP.sln`.
+- **CI**: `dotnet build`, Gitleaks, CodeQL. `dotnet format` + a test suite are planned (Sprint 2/3). ⚠️ MAUI Windows-target builds need a Windows runner, so the CI build is `allow_failure: true` today — `build-windows.{sh,ps1}` is the pre-merge source of truth.
+- **Weekly** `security-audit.yml` (cron): OSV full-tree, Trivy fs (HIGH/CRITICAL), gitleaks full-history, `dotnet list package --vulnerable` — fails red on findings.
+- **New-dev setup**: `pwsh -File scripts/setup_hooks.ps1` (Windows) or `bash scripts/setup_hooks.sh` (macOS/Linux — hooks only; build needs Windows).
 
 ---
 
