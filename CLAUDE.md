@@ -148,18 +148,17 @@ Grep for the type/method/key you're adding or modifying. List every callsite. Co
 ### Branch strategy
 
 ```
-main                    ← production releases (tagged, auto-update consumes these)
-  └── develop           ← integration / pre-release branch
-       ├── feature/<x>
-       ├── fix/<x>
-       ├── chore/<x>
-       └── docs/<x>
+main                    ← default branch; feature PRs merge here; releases are tagged from here
+  ├── feature/<x>
+  ├── fix/<x>
+  ├── chore/<x>
+  └── docs/<x>
 ```
 
-- **Never push to `main` or `develop` directly** — pre-commit hook blocks this.
-- Branch off **`develop`**. Open PR to `develop`. After merge to `develop` and validation, `develop` is promoted to `main` for a release.
-- Default branch on remote: `develop`.
-- One issue = one branch. Delete branch after merge (`--remove-source-branch`).
+- **Never push to `main` directly** — pre-commit hook blocks this; all work goes through PRs.
+- Branch off **`main`**, open PR to **`main`** (develop→main promotion completed 2026-07-07 — printer #32; `develop` is legacy history, don't base new work on it).
+- Releases: tag `v*` on `main` → `build-release.yml` publishes the Windows exe + Android APK to the public releases repo (auto-update consumes these).
+- One issue = one branch. Delete branch after merge.
 - Branch naming: `feature/`, `fix/`, `chore/`, `docs/`, `test/`.
 
 ### Commit messages
