@@ -6,12 +6,14 @@ name: Security Audit (Weekly)
 # code that hasn't changed, plus secrets that predate per-PR scanning.
 #
 # Design note — NO WINDOWS RUNNER REQUIRED:
-# printer-app is a .NET MAUI 9 Windows-only app, and Windows runners are scarce
+# printer-app is a .NET MAUI 10 multi-target app (net10.0-android; Windows TFM
+# is OS-conditioned away on Linux — ADR-005), and Windows runners are scarce
 # (CodeQL is deferred for the same reason, see issue #4). Every job here runs on
-# ubuntu-latest and scans the source tree / NuGet manifest WITHOUT building the
-# MAUI app or installing the MAUI workload. The NuGet vulnerability audit restores
-# with -p:EnableWindowsTargeting=true, which lets `dotnet restore` resolve the
-# windows10.0.19041 target framework reference on Linux without the workload.
+# ubuntu-latest and scans the source tree / NuGet manifest without building the
+# app. The NuGet vulnerability audit DOES need `dotnet workload restore` first:
+# since the ADR-005 multi-target, plain restore fails NETSDK1147 (maui-android
+# workload missing) — the same workload-restore the release workflow's Android
+# job uses. On Linux only the android workload is pulled (~2 min).
 #
 # Security: this workflow uses no untrusted-input expressions (PR title/body/
 # branch/commit) in run: commands — there is no PR context on a schedule. All
@@ -92,12 +94,15 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4
         with:
-          dotnet-version: '9.0.x'
-      # Restore on Linux WITHOUT the MAUI workload: EnableWindowsTargeting=true
-      # lets the windows10.0.19041 TFM reference resolve so the assets file is
-      # written, which `dotnet list package --vulnerable` requires.
-      - name: Restore (no MAUI workload)
-        run: dotnet restore PrinterAPP/PrinterAPP.csproj -p:EnableWindowsTargeting=true
+          dotnet-version: '10.0.x' # matches global.json / net10.0 multi-target (ADR-005)
+      # Multi-target restore needs the maui-android workload (NETSDK1147
+      # otherwise); on Linux the Windows TFM is OS-conditioned away, so this
+      # pulls android only — mirrors build-release.yml's Android job. The
+      # assets file it writes is what `dotnet list package --vulnerable` reads.
+      - name: Restore MAUI workloads
+        run: dotnet workload restore PrinterAPP/PrinterAPP.csproj
+      - name: Restore
+        run: dotnet restore PrinterAPP/PrinterAPP.csproj
       - name: Audit vulnerable packages (direct + transitive)
         run: |
           dotnet list PrinterAPP/PrinterAPP.csproj package --vulnerable --include-transitive 2>&1 \
