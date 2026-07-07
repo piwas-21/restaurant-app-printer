@@ -13,6 +13,7 @@ updates:
     open-pull-requests-limit: 5
     groups:
       minor-and-patch:
+        patterns: ["*"]
         update-types: ["minor", "patch"]
     ignore:
       # MAUI/.NET majors track the pinned workload + TFM (ADR-005 multi-target)
@@ -29,3 +30,7 @@ updates:
       time: "06:00"
       timezone: Europe/Amsterdam
     open-pull-requests-limit: 3
+    groups:
+      actions-minor-and-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
