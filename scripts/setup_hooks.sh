@@ -44,6 +44,26 @@ pre-commit install
 pre-commit install --hook-type pre-push 2>/dev/null || true
 ok "Git hooks installed (.git/hooks/pre-commit, .git/hooks/pre-push)."
 
+# pre-commit's pre-push install OVERWRITES the RUMI review-gate symlink
+# (workspace discipline rule #7). The gate hook itself chains pre-commit's
+# pre-push checks, so restoring it loses nothing. Standalone clones (no
+# workspace checkout) skip this silently.
+REVIEW_GATE_INSTALL="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)/scripts/review-gate/install.sh"
+if [[ -x "$REVIEW_GATE_INSTALL" ]]; then
+  if bash "$REVIEW_GATE_INSTALL" printer-app >/dev/null 2>&1; then
+    ok "RUMI review-gate pre-push hook restored (chains pre-commit's pre-push checks)."
+  else
+    warn "review-gate hook reinstall failed — run scripts/review-gate/install.sh printer-app from the workspace root."
+  fi
+  # pre-commit parks the hook it displaced as pre-push.legacy and re-runs it
+  # from hook-impl — if that displaced hook was the gate symlink, every push
+  # would recurse (gate → pre-commit → legacy gate …). Drop it.
+  LEGACY_HOOK="$(git rev-parse --git-path hooks/pre-push.legacy 2>/dev/null)"
+  if [[ -L "$LEGACY_HOOK" && "$(readlink "$LEGACY_HOOK")" == *"review-gate/git-pre-push.sh" ]]; then
+    rm "$LEGACY_HOOK"
+  fi
+fi
+
 # ── Verify .secrets.baseline exists ──────────────────────────────────
 if [[ ! -f .secrets.baseline ]]; then
   warn ".secrets.baseline missing — generating now..."

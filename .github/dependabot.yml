@@ -1,0 +1,31 @@
+# Dependabot — security + version updates (DEV-PHASES-PLAN W0).
+# The weekly security-audit workflow reports what's vulnerable; this keeps
+# dependencies current so those reports stay small.
+version: 2
+updates:
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Amsterdam
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+    ignore:
+      # MAUI/.NET majors track the pinned workload + TFM (ADR-005 multi-target)
+      # — coordinated upgrades, not dependency PRs.
+      - dependency-name: "Microsoft.Maui.*"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "Microsoft.*"
+        update-types: ["version-update:semver-major"]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Amsterdam
+    open-pull-requests-limit: 3
