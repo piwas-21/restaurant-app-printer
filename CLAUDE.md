@@ -99,7 +99,7 @@ Enforced (blocking) by `scripts/check-file-length.sh` (pre-commit + CI) and warn
 6. **No hardcoded paths** (`C:\...`) — use `FileSystem.AppDataDirectory` or platform-appropriate APIs. The app must work for users with non-default Windows install locations.
 7. **Async methods suffix with `Async`.** `await` everything; never `.Result` / `.Wait()` (deadlock on UI thread).
 8. **PascalCase** for public members, `_camelCase` for private fields, `UPPER_SNAKE` is not used (avoid C-style).
-9. **No `null!` on model fields** — use `required` modifier or `= string.Empty` / sensible defaults. Nullable reference types are enabled per project (`<Nullable>enable</Nullable>`).
+9. **No `null!` on model fields** — use `required` modifier or `= string.Empty` / sensible defaults. Nullable reference types are enabled solution-wide via the root `Directory.Build.props` (`<Nullable>enable</Nullable>`, since DEV-PHASES W1). The MAUI app head carries pre-existing CS86xx nullable-warning debt in the HttpClient/JSON/P-Invoke service paths — burndown owed; don't add new nullable warnings.
 10. **Logging**: use `RequestLogService` for HTTP I/O, `WarningLogsPage` / `ErrorLogsPage` for user-visible error surfaces. No `Console.WriteLine` / `Debug.WriteLine` in production paths.
 
 ---
@@ -136,8 +136,8 @@ Grep for the type/method/key you're adding or modifying. List every callsite. Co
 
 ## §7 — Quality gates (source of truth `.github/workflows/ci.yml` + `.pre-commit-config.yaml`)
 
-- **Pre-commit** (blocking): trailing-ws / EOF / large-files / secret-scan / no-commit-to-protected; file-length (§4); `dotnet build PrinterAPP.sln`.
-- **CI**: `dotnet build`, Gitleaks, CodeQL. `dotnet format` + a test suite are planned (Sprint 2/3). ⚠️ MAUI Windows-target builds need a Windows runner, so the CI build is `allow_failure: true` today — `build-windows.{sh,ps1}` is the pre-merge source of truth.
+- **Pre-commit** (blocking): trailing-ws / EOF / YAML-JSON-XML checks / large-files / secret-scan (detect-secrets) / no-commit-to-protected; file-length (§4). No build gate in pre-commit — `dotnet build PrinterAPP.sln` is a manual pre-merge step on Windows.
+- **CI** (`ci.yml`): `dotnet test` on `PrinterAPP.Tests` (plain net10.0, runs on ubuntu-latest — no MAUI workloads needed, since DEV-PHASES W1), file-length (§4), Gitleaks, TruffleHog (PRs only), Trivy fs. ⚠️ `dotnet build`/`dotnet format` for the MAUI app heads still need a Windows runner (CodeQL deferred for the same reason, issue #4) — `build-windows.{sh,ps1}` is the pre-merge build source of truth.
 - **Weekly** `security-audit.yml` (cron): OSV full-tree, Trivy fs (HIGH/CRITICAL), gitleaks full-history, `dotnet list package --vulnerable` — fails red on findings.
 - **New-dev setup**: `pwsh -File scripts/setup_hooks.ps1` (Windows) or `bash scripts/setup_hooks.sh` (macOS/Linux — hooks only; build needs Windows).
 
@@ -148,18 +148,17 @@ Grep for the type/method/key you're adding or modifying. List every callsite. Co
 ### Branch strategy
 
 ```
-main                    ← production releases (tagged, auto-update consumes these)
-  └── develop           ← integration / pre-release branch
-       ├── feature/<x>
-       ├── fix/<x>
-       ├── chore/<x>
-       └── docs/<x>
+main                    ← default branch; feature PRs merge here; releases are tagged from here
+  ├── feature/<x>
+  ├── fix/<x>
+  ├── chore/<x>
+  └── docs/<x>
 ```
 
-- **Never push to `main` or `develop` directly** — pre-commit hook blocks this.
-- Branch off **`develop`**. Open PR to `develop`. After merge to `develop` and validation, `develop` is promoted to `main` for a release.
-- Default branch on remote: `develop`.
-- One issue = one branch. Delete branch after merge (`--remove-source-branch`).
+- **Never push to `main` directly** — pre-commit hook blocks this; all work goes through PRs.
+- Branch off **`main`**, open PR to **`main`** (develop→main promotion completed 2026-07-07 — printer #32; `develop` is legacy history, don't base new work on it).
+- Releases: tag `v*` on `main` → `build-release.yml` publishes the Windows exe + Android APK to the public releases repo (auto-update consumes these).
+- One issue = one branch. Delete branch after merge.
 - Branch naming: `feature/`, `fix/`, `chore/`, `docs/`, `test/`.
 
 ### Commit messages

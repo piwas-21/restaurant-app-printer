@@ -1,0 +1,14 @@
+<Project>
+
+  <!--
+    Solution-wide nullable reference types (DEV-PHASES W1).
+    Visibility first, burndown later: the MAUI app head carries pre-existing
+    CS86xx nullable-warning debt (HttpClient/JSON/P-Invoke service paths), so
+    TreatWarningsAsErrors is deliberately NOT set here. Flip to enforcement
+    only after that burndown lands.
+  -->
+  <PropertyGroup>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
