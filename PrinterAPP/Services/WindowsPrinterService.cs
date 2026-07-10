@@ -28,37 +28,9 @@ public class WindowsPrinterService : IPrinterService
     [DllImport("winspool.drv", CharSet = CharSet.Auto, SetLastError = true)]
     private static extern bool EnumPrinters(PrinterEnumFlags flags, string? name, uint level, IntPtr pPrinterEnum, uint cbBuf, ref uint pcbNeeded, ref uint pcReturned);
 
-    [DllImport("winspool.drv", SetLastError = true, CharSet = CharSet.Auto)]
-    private static extern bool OpenPrinter(string printerName, out IntPtr phPrinter, IntPtr pDefault);
-
-    [DllImport("winspool.drv", SetLastError = true)]
-    private static extern bool ClosePrinter(IntPtr hPrinter);
-
-    [DllImport("winspool.drv", SetLastError = true)]
-    private static extern bool StartDocPrinter(IntPtr hPrinter, int level, ref DOC_INFO_1 pDocInfo);
-
-    [DllImport("winspool.drv", SetLastError = true)]
-    private static extern bool EndDocPrinter(IntPtr hPrinter);
-
-    [DllImport("winspool.drv", SetLastError = true)]
-    private static extern bool StartPagePrinter(IntPtr hPrinter);
-
-    [DllImport("winspool.drv", SetLastError = true)]
-    private static extern bool EndPagePrinter(IntPtr hPrinter);
-
-    [DllImport("winspool.drv", SetLastError = true)]
-    private static extern bool WritePrinter(IntPtr hPrinter, byte[] pBuf, int cbBuf, out int pcWritten);
-
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
-    private struct DOC_INFO_1
-    {
-        [MarshalAs(UnmanagedType.LPTStr)]
-        public string pDocName;
-        [MarshalAs(UnmanagedType.LPTStr)]
-        public string? pOutputFile;
-        [MarshalAs(UnmanagedType.LPTStr)]
-        public string pDatatype;
-    }
+    // The document/write P/Invoke set (OpenPrinter/StartDocPrinter/StartPagePrinter/WritePrinter/
+    // End*/ClosePrinter + DOC_INFO_1) moved to WindowsSpoolerTransport (ADR-006 Phase 2b); only
+    // the printer-enumeration P/Invoke remains here.
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
     private struct PRINTER_INFO_2
@@ -276,7 +248,7 @@ public class WindowsPrinterService : IPrinterService
                 {
                     System.Diagnostics.Debug.WriteLine($"--- Attempt {attempt} ---");
 
-                    if (SendTextToPrinter(cleanPrinterName, receiptText))
+                    if (await SendTextToPrinterAsync(cleanPrinterName, receiptText))
                     {
                         System.Diagnostics.Debug.WriteLine($"✓ Direct RAW printing succeeded on attempt {attempt}");
                         return true;
@@ -312,72 +284,28 @@ public class WindowsPrinterService : IPrinterService
         }
     }
 
-    private bool SendTextToPrinter(string printerName, string text)
+    /// <summary>
+    /// Encodes the receipt text (PC857, matching the ESC/POS code page) and sends the raw bytes
+    /// through <see cref="WindowsSpoolerTransport"/> — the winspool.drv RAW write moved behind the
+    /// <see cref="IPrinterTransport"/> seam (ADR-006 Phase 2b). Same bytes on the wire and the
+    /// same bool semantics as the previous inline P/Invoke (any failure → false).
+    /// </summary>
+    private async Task<bool> SendTextToPrinterAsync(string printerName, string text)
     {
-        IntPtr hPrinter = IntPtr.Zero;
-        var docInfo = new DOC_INFO_1
-        {
-            pDocName = "Restaurant Order",
-            pDatatype = "RAW"
-        };
-
         try
         {
-            System.Diagnostics.Debug.WriteLine($"Attempting to open printer: {printerName}");
-
-            if (!OpenPrinter(printerName, out hPrinter, IntPtr.Zero))
-            {
-                var error = Marshal.GetLastWin32Error();
-                System.Diagnostics.Debug.WriteLine($"OpenPrinter failed with error: {error}");
-                return false;
-            }
-
-            System.Diagnostics.Debug.WriteLine("Printer opened successfully");
-
-            if (!StartDocPrinter(hPrinter, 1, ref docInfo))
-            {
-                var error = Marshal.GetLastWin32Error();
-                System.Diagnostics.Debug.WriteLine($"StartDocPrinter failed with error: {error}");
-                return false;
-            }
-
-            System.Diagnostics.Debug.WriteLine("Document started");
-
-            if (!StartPagePrinter(hPrinter))
-            {
-                var error = Marshal.GetLastWin32Error();
-                System.Diagnostics.Debug.WriteLine($"StartPagePrinter failed with error: {error}");
-                EndDocPrinter(hPrinter);
-                return false;
-            }
-
-            System.Diagnostics.Debug.WriteLine("Page started");
-
-            // Use PC857 (Turkish MS-DOS) encoding to match ESC/POS code page
             Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-            var encoding = Encoding.GetEncoding(857);
-            byte[] bytes = encoding.GetBytes(text);
+            var bytes = Encoding.GetEncoding(857).GetBytes(text);
             System.Diagnostics.Debug.WriteLine($"Sending {bytes.Length} bytes to printer (PC857 encoding)");
 
-            int written;
-            bool success = WritePrinter(hPrinter, bytes, bytes.Length, out written);
-
-            System.Diagnostics.Debug.WriteLine($"WritePrinter result: {success}, Bytes written: {written}");
-
-            EndPagePrinter(hPrinter);
-            EndDocPrinter(hPrinter);
-
-            return success && written == bytes.Length;
+            var transport = new WindowsSpoolerTransport(printerName);
+            await transport.SendAsync(bytes, CancellationToken.None);
+            return true;
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine($"SendTextToPrinter exception: {ex.Message}");
             return false;
-        }
-        finally
-        {
-            if (hPrinter != IntPtr.Zero)
-                ClosePrinter(hPrinter);
         }
     }
 

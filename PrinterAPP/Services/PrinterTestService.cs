@@ -1,15 +1,44 @@
 using System.Net;
 using System.Text;
+using PrinterAPP.Models;
 
 namespace PrinterAPP.Services;
 
 /// <summary>
-/// Builds and sends ESC/POS test receipts to network printers. Lives in a service (not page
-/// code-behind) per CLAUDE.md §5.2; the ESC/POS sequences come from <see cref="EscPosCommands"/>
-/// per §5.4. Phase 3 of docs/plans/PRINTER-APP-CROSSPLATFORM-PLAN.md.
+/// Builds and sends ESC/POS test receipts, routing per target kind: network targets go over
+/// <see cref="NetworkTcpTransport"/>; Windows spooler targets delegate to the legacy
+/// <see cref="IPrinterService.PrintTestReceiptAsync"/> path (thermal detection, retries,
+/// port/HTML fallbacks — byte-identical to before), whose raw spooler write goes through
+/// <see cref="WindowsSpoolerTransport"/>. Lives in a service (not page code-behind) per CLAUDE.md
+/// §5.2; the ESC/POS sequences come from <see cref="EscPosCommands"/> per §5.4. Phases 2b–3 of
+/// docs/plans/PRINTER-APP-CROSSPLATFORM-PLAN.md.
 /// </summary>
 public class PrinterTestService : IPrinterTestService
 {
+    private readonly IPrinterService _printerService;
+
+    public PrinterTestService(IPrinterService printerService)
+    {
+        _printerService = printerService;
+    }
+
+    public async Task<string> TestPrinterAsync(
+        PrinterTestTarget target, PrinterConfiguration config, string label, string display)
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(config);
+
+        if (target.Kind == PrinterTransportKind.NetworkTcp)
+        {
+            if (!target.IsValid)
+                return $"{display} printer: ✗ Invalid IP '{target.RawText}'";
+            return await TestNetworkPrinterAsync(target.Ip!, target.Port, label, display);
+        }
+
+        var success = await _printerService.PrintTestReceiptAsync(target.PrinterName!, config);
+        return $"{display} printer: {(success ? "✓ Success" : "✗ Failed")}";
+    }
+
     public async Task<string> TestNetworkPrinterAsync(IPAddress ip, int port, string label, string display)
     {
         try
