@@ -11,15 +11,23 @@ namespace PrinterAPP.Services;
 public class PrintStyleSettingsService
 {
     private const string SettingsFileName = "print_style_settings.json";
+    private const string LegacySettingsFolderName = "PrinterAPP";
     private readonly string _settingsFilePath;
     private PrintStyleSettings? _cachedSettings;
 
-    public PrintStyleSettingsService()
+    public PrintStyleSettingsService() : this(new MauiAppDataPathProvider())
     {
-        var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var appFolder = Path.Combine(appDataPath, "PrinterAPP");
-        Directory.CreateDirectory(appFolder);
-        _settingsFilePath = Path.Combine(appFolder, SettingsFileName);
+    }
+
+    public PrintStyleSettingsService(IAppDataPathProvider pathProvider)
+    {
+        Directory.CreateDirectory(pathProvider.AppDataDirectory);
+        _settingsFilePath = Path.Combine(pathProvider.AppDataDirectory, SettingsFileName);
+
+        // Copy-only migration from the pre-MAUI %APPDATA%/PrinterAPP location; the old file is
+        // deliberately left in place as the rollback path (never rewritten or deleted).
+        var legacyPath = Path.Combine(pathProvider.LegacyAppDataDirectory, LegacySettingsFolderName, SettingsFileName);
+        LegacyAppDataMigration.TryCopyLegacyFile(legacyPath, _settingsFilePath);
     }
 
     /// <summary>

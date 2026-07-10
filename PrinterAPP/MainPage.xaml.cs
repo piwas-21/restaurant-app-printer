@@ -536,10 +536,7 @@ public partial class MainPage : ContentPage
             StatusLabel.Text = "Configuration saved";
             StatusLabel.TextColor = Colors.Green;
 
-            var configPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "KitchenPrinter",
-                "config.json");
+            var configPath = _printerService.ConfigFilePath;
 
             if (apiUrlChanged)
             {
