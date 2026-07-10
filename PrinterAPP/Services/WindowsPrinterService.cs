@@ -1,5 +1,4 @@
 ﻿// PrinterAPP/Services/WindowsPrinterService.cs
-using System.Text.Json;
 using System.Runtime.InteropServices;
 using System.Text;
 using PrinterAPP.Models;
@@ -12,19 +11,14 @@ namespace PrinterAPP.Services;
 /// </summary>
 public class WindowsPrinterService : IPrinterService
 {
-    private readonly string _configPath;
+    private readonly IPrinterConfigurationStore _configStore;
 
-    public WindowsPrinterService()
+    public WindowsPrinterService(IPrinterConfigurationStore configStore)
     {
-        var appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        var configDir = Path.Combine(appDataPath, "KitchenPrinter");
-        _configPath = Path.Combine(configDir, "config.json");
-
-        if (!Directory.Exists(configDir))
-        {
-            Directory.CreateDirectory(configDir);
-        }
+        _configStore = configStore;
     }
+
+    public string ConfigFilePath => _configStore.ConfigFilePath;
 
     #region Windows API Declarations
 
@@ -743,65 +737,9 @@ public class WindowsPrinterService : IPrinterService
         }
     }
 
-    public async Task<PrinterConfiguration> LoadConfigurationAsync()
-    {
-        try
-        {
-            if (File.Exists(_configPath))
-            {
-                var json = await File.ReadAllTextAsync(_configPath);
-                var config = JsonSerializer.Deserialize<PrinterConfiguration>(json) ?? new PrinterConfiguration();
+    // Config persistence (file location, legacy-location migration, API-key secret handling)
+    // lives in PrinterConfigurationStore so it stays unit-testable without MAUI.
+    public Task<PrinterConfiguration> LoadConfigurationAsync() => _configStore.LoadAsync();
 
-                // Migration: Update old localhost:5221 URLs to https://localhost:44386
-                if (config.ApiBaseUrl == "http://localhost:5221" ||
-                    config.ApiBaseUrl == "https://localhost:5221")
-                {
-                    config.ApiBaseUrl = "https://www.rumirestaurant.ch";
-                    // Save the updated configuration
-                    await SaveConfigurationAsync(config);
-                    System.Diagnostics.Debug.WriteLine("Migrated API URL from localhost:5221 to localhost:44386");
-                }
-
-                return config;
-            }
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Error loading config: {ex.Message}");
-        }
-
-        return new PrinterConfiguration();
-    }
-
-    public async Task SaveConfigurationAsync(PrinterConfiguration config)
-    {
-        try
-        {
-            // Ensure directory exists
-            var directory = Path.GetDirectoryName(_configPath);
-            if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
-            {
-                Directory.CreateDirectory(directory);
-                System.Diagnostics.Debug.WriteLine($"Created config directory: {directory}");
-            }
-
-            var json = JsonSerializer.Serialize(config, new JsonSerializerOptions
-            {
-                WriteIndented = true
-            });
-
-            System.Diagnostics.Debug.WriteLine($"Saving config to: {_configPath}");
-            System.Diagnostics.Debug.WriteLine($"Config content: {json}");
-
-            await File.WriteAllTextAsync(_configPath, json);
-
-            System.Diagnostics.Debug.WriteLine($"Config saved successfully to: {_configPath}");
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"Error saving config: {ex.Message}");
-            System.Diagnostics.Debug.WriteLine($"Stack trace: {ex.StackTrace}");
-            throw;
-        }
-    }
+    public Task SaveConfigurationAsync(PrinterConfiguration config) => _configStore.SaveAsync(config);
 }

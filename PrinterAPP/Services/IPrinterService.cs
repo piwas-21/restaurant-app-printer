@@ -8,6 +8,9 @@ using System.Threading.Tasks;
 namespace PrinterAPP.Services;
 public interface IPrinterService
 {
+    /// <summary>Absolute path of the active config file, for display in the UI.</summary>
+    string ConfigFilePath { get; }
+
     Task<List<string>> GetAvailablePrintersAsync();
     Task<bool> PrintTestReceiptAsync(string printerName, PrinterConfiguration config);
     Task<bool> TestApiConnectionAsync(string apiUrl);

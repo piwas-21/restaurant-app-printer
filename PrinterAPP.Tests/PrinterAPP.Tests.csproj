@@ -27,6 +27,13 @@
     <Compile Include="..\PrinterAPP\Services\IPrinterTransport.cs" Link="Linked\IPrinterTransport.cs" />
     <Compile Include="..\PrinterAPP\Services\NetworkTcpTransport.cs" Link="Linked\NetworkTcpTransport.cs" />
     <Compile Include="..\PrinterAPP\Services\PrinterEndpoint.cs" Link="Linked\PrinterEndpoint.cs" />
+    <!-- Config storage + migration (MAUI-free by design; see PrinterConfigurationStore.cs). -->
+    <Compile Include="..\PrinterAPP\Models\PrinterConfiguration.cs" Link="Linked\PrinterConfiguration.cs" />
+    <Compile Include="..\PrinterAPP\Services\IAppDataPathProvider.cs" Link="Linked\IAppDataPathProvider.cs" />
+    <Compile Include="..\PrinterAPP\Services\ISecretStore.cs" Link="Linked\ISecretStore.cs" />
+    <Compile Include="..\PrinterAPP\Services\IPrinterConfigurationStore.cs" Link="Linked\IPrinterConfigurationStore.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrinterConfigurationStore.cs" Link="Linked\PrinterConfigurationStore.cs" />
+    <Compile Include="..\PrinterAPP\Services\LegacyAppDataMigration.cs" Link="Linked\LegacyAppDataMigration.cs" />
   </ItemGroup>
 
 </Project>

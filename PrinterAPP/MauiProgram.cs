@@ -21,6 +21,9 @@ namespace PrinterAPP
 #endif
 
             // Register services
+            builder.Services.AddSingleton<IAppDataPathProvider, MauiAppDataPathProvider>();
+            builder.Services.AddSingleton<ISecretStore, SecureStorageSecretStore>();
+            builder.Services.AddSingleton<IPrinterConfigurationStore, PrinterConfigurationStore>();
             builder.Services.AddSingleton<IPrinterService, WindowsPrinterService>();
             builder.Services.AddSingleton<IRequestLogService, RequestLogService>();
             builder.Services.AddSingleton<IEventStreamingService, EventStreamingService>();
