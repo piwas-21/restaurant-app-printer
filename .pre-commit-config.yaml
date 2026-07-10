@@ -6,7 +6,8 @@
 # Phase 0 scope: hygiene + secret scanning.
 # Sprint 2 (planned): format gate via `dotnet format --verify-no-changes` (needs Windows
 #          runner for the MAUI workload — see docs/QUALITY-SECURITY-PLAN.md).
-# Sprint 3 (planned): TreatWarningsAsErrors via Directory.Build.props.
+# Directory.Build.props now exists (Nullable enabled, DEV-PHASES W1); the
+#          TreatWarningsAsErrors flip in it stays deferred until the CS86xx debt burns down.
 
 repos:
   # ── General hygiene ──────────────────────────────────────────────────

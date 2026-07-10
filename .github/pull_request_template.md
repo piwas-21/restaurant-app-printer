@@ -22,6 +22,15 @@
 - [ ] `test` — tests only
 - [ ] `perf` — performance
 
+## NFR triage (DEV-PHASES-PLAN P1 — one line per touched dimension, "rest: n/a because …")
+<!--
+  D1 security · D2 performance · D3 cpu/mem (sockets, polling, disposal!) · D4 UX · D5 a11y ·
+  D6 i18n · D7 privacy/PII · D8 observability · D9 testing · D10 conventions.
+  Auth/API-key/new-endpoint changes: add 3–5 threat-model-lite bullets under D1.
+-->
+- D…:
+- Rest: n/a because …
+
 ## Acceptance criteria coverage
 <!--
   For each acceptance criterion in the linked issue / sprint task, state coverage.

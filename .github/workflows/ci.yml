@@ -4,9 +4,11 @@ name: CI
 # (DeelMarkt-borrowed: SHA-pinned actions, concurrency cancellation,
 # timeout caps, TruffleHog + Trivy filesystem scan).
 #
-# Out-of-scope today (need a Windows runner): dotnet build / format / test
-# for the MAUI Windows TFM. Sprint 2 wires those once a Windows runner is
-# available.
+# Unit tests run here on Linux: PrinterAPP.Tests targets plain net10.0 with
+# source-linked transport files, so it needs no MAUI workloads and no Windows.
+# Still out-of-scope (need a Windows runner): dotnet build / format for the
+# MAUI Windows TFM — build-windows.{sh,ps1} remains the pre-merge source of
+# truth for the app heads.
 #
 # Security: this workflow uses no untrusted-input expressions
 # (PR title/body/branch/commit) in run: commands. All inputs are
@@ -29,12 +31,28 @@ permissions:
   contents: read
 
 jobs:
+  dotnet_test:
+    name: dotnet test (PrinterAPP.Tests)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: '10.0.x' # matches global.json (10.0.101, rollForward latestFeature)
+      # Target the test .csproj, NEVER the .sln — the sln pulls in the MAUI
+      # app head, which needs workloads (and Windows for the Windows TFM).
+      # The test project is plain net10.0 and runs on a bare Linux runner.
+      # Run from repo root so global.json governs SDK resolution.
+      - name: Run unit tests
+        run: dotnet test PrinterAPP.Tests/PrinterAPP.Tests.csproj -c Release --nologo
+
   file_length:
     name: file-length (CLAUDE.md §4)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - run: bash scripts/check-file-length.sh --all
 
   gitleaks:
@@ -42,7 +60,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
       # Use the binary directly — gitleaks-action requires a paid license
@@ -67,7 +85,7 @@ jobs:
     # secret scan on every push, so coverage doesn't regress.
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
       - uses: trufflesecurity/trufflehog@cb6aeefd6e2498240d0418e63f69684d28337e7b # v3.91.0
@@ -82,7 +100,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
       - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
