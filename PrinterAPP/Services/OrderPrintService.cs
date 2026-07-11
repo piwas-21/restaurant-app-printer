@@ -619,33 +619,41 @@ public class OrderPrintService : IOrderPrintService
         return sb.ToString();
     }
 
+    /// <summary>
+    /// Sends the composed ESC/POS content to the configured printer through the
+    /// <see cref="IPrinterTransport"/> seam (ADR-006 Phase 2b): an IP-literal target goes over
+    /// <see cref="NetworkTcpTransport"/> (the print path on Android and any network-attached
+    /// printer), anything else is a Windows spooler name sent through
+    /// <see cref="WindowsSpoolerTransport"/> — the winspool.drv RAW write that used to live inline
+    /// here. Same bytes on the wire and the same bool semantics as before (any failure → false;
+    /// non-Windows spooler sends fail via <see cref="PlatformNotSupportedException"/>).
+    /// </summary>
     private async Task<bool> PrintRawContentAsync(string printerName, string content)
     {
         try
         {
-            // Network printer: when the configured target is an IP literal ("ip" or "ip:port"),
-            // send the ESC/POS bytes over TCP via the cross-platform transport (Phase 2b). This is
-            // the print path on Android and any network-attached printer; PC857 encoding (ADR-002)
-            // matches the codepage selected in the ESC/POS stream.
-            if (PrinterEndpoint.TryParse(printerName, out var ip, out var port))
+            // PC857 encoding (ADR-002) matches the codepage selected in the ESC/POS stream — the
+            // exact encode both legacy branches performed, hoisted (byte-identical payloads).
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            var bytes = Encoding.GetEncoding(857).GetBytes(content);
+
+            // Phase-2b: transport constructed per configured target (a per-printer value), so it
+            // is not a DI singleton. See ADR-006 / PrinterTransportResolver.
+            IPrinterTransport transport = PrinterTransportResolver.Resolve(printerName);
+
+            if (transport is WindowsSpoolerTransport)
             {
-                Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-                var bytes = Encoding.GetEncoding(857).GetBytes(content);
-                // Phase-2b: transport constructed per target IP (a per-printer value), so it is not
-                // a DI singleton. A transport factory / per-printer resolution is deferred. See ADR-006.
-                IPrinterTransport transport = new NetworkTcpTransport(ip, port);
+                // The spooler transport's winspool calls are synchronous Win32; keep them off the
+                // caller's context exactly as the legacy Task.Run(PrintToWindowsPrinter) did (an
+                // in-transport offload was deliberately declined in PR #47).
+                await Task.Run(() => transport.SendAsync(bytes, CancellationToken.None));
+            }
+            else
+            {
                 await transport.SendAsync(bytes, CancellationToken.None);
-                return true;
             }
 
-            // Otherwise treat it as a Windows spooler printer name (unchanged legacy path; returns
-            // false on non-Windows since winspool is Windows-only).
-            var result = await Task.Run(() =>
-            {
-                return PrintToWindowsPrinter(printerName, content);
-            });
-
-            return result;
+            return true;
         }
         catch (Exception ex)
         {
@@ -653,87 +661,4 @@ public class OrderPrintService : IOrderPrintService
             return false;
         }
     }
-
-    private bool PrintToWindowsPrinter(string printerName, string content)
-    {
-#if WINDOWS
-        // Use PC857 (Turkish MS-DOS) encoding for Turkish + Western European character support
-        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-        var encoding = Encoding.GetEncoding(857); // PC857 (Turkish MS-DOS) - supports Turkish ç,ğ,ı,ö,ş,ü AND Western European è,é,à,ò
-        var bytes = encoding.GetBytes(content);
-
-        var docInfo = new DOCINFOA
-        {
-            pDocName = "Restaurant Order",
-            pDataType = "RAW"
-        };
-
-        if (OpenPrinter(printerName, out IntPtr hPrinter, IntPtr.Zero))
-        {
-            try
-            {
-                if (StartDocPrinter(hPrinter, 1, ref docInfo))
-                {
-                    try
-                    {
-                        if (StartPagePrinter(hPrinter))
-                        {
-                            try
-                            {
-                                WritePrinter(hPrinter, bytes, bytes.Length, out int bytesWritten);
-                                return bytesWritten == bytes.Length;
-                            }
-                            finally
-                            {
-                                EndPagePrinter(hPrinter);
-                            }
-                        }
-                    }
-                    finally
-                    {
-                        EndDocPrinter(hPrinter);
-                    }
-                }
-            }
-            finally
-            {
-                ClosePrinter(hPrinter);
-            }
-        }
-#endif
-        return false;
-    }
-
-#if WINDOWS
-    // P/Invoke declarations for Windows printing
-    [System.Runtime.InteropServices.DllImport("winspool.drv", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
-    private static extern bool OpenPrinter(string pPrinterName, out IntPtr phPrinter, IntPtr pDefault);
-
-    [System.Runtime.InteropServices.DllImport("winspool.drv")]
-    private static extern bool ClosePrinter(IntPtr hPrinter);
-
-    [System.Runtime.InteropServices.DllImport("winspool.drv", CharSet = System.Runtime.InteropServices.CharSet.Auto)]
-    private static extern bool StartDocPrinter(IntPtr hPrinter, int level, ref DOCINFOA pDocInfo);
-
-    [System.Runtime.InteropServices.DllImport("winspool.drv")]
-    private static extern bool EndDocPrinter(IntPtr hPrinter);
-
-    [System.Runtime.InteropServices.DllImport("winspool.drv")]
-    private static extern bool StartPagePrinter(IntPtr hPrinter);
-
-    [System.Runtime.InteropServices.DllImport("winspool.drv")]
-    private static extern bool EndPagePrinter(IntPtr hPrinter);
-
-    [System.Runtime.InteropServices.DllImport("winspool.drv")]
-    private static extern bool WritePrinter(IntPtr hPrinter, byte[] pBytes, int dwCount, out int dwWritten);
-
-    [System.Runtime.InteropServices.StructLayout(System.Runtime.InteropServices.LayoutKind.Sequential, CharSet = System.Runtime.InteropServices.CharSet.Auto)]
-    private struct DOCINFOA
-    {
-        public string pDocName;
-        public string? pOutputFile;
-        public string pDataType;
-    }
-#endif
-
 }

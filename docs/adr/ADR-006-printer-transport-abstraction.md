@@ -36,7 +36,7 @@ It is covered by **golden-byte unit tests** against an in-process `TcpListener` 
 
 This ADR introduces the abstraction and the network transport **only**. The follow-up (Phase 2b) refactors the existing Windows P/Invoke into a `WindowsSpoolerTransport : IPrinterTransport` (`#if WINDOWS`), points `OrderPrintService` at the resolved transport per printer, and adds the DI wiring + a `PrinterTransportKind` config field — that change touches the live Windows print path and must be verified on Windows, so it is kept separate.
 
-> **Phase 2b status (2026-07-10):** first slice landed — `WindowsSpoolerTransport` exists (the winspool RAW write moved verbatim behind the seam) and the **Test-Print path** routes through it (`PrinterTestTarget` resolution + `PrinterTestService`, with a `PrinterTransportKind` enum). Still pending: migrating `OrderPrintService`'s duplicate spooler P/Invoke to the transport and persisting a `PrinterTransportKind` per configured printer.
+> **Phase 2b status (2026-07-11):** first slice (2026-07-10) — `WindowsSpoolerTransport` exists (the winspool RAW write moved verbatim behind the seam) and the **Test-Print path** routes through it (`PrinterTestTarget` resolution + `PrinterTestService`, with a `PrinterTransportKind` enum). Second slice (2026-07-11) — the **live order-print path** routes through the seam too: `OrderPrintService.PrintRawContentAsync` resolves per configured printer name via `PrinterTransportResolver` (IP literal → `NetworkTcpTransport`, otherwise → `WindowsSpoolerTransport`) and its duplicate winspool P/Invoke block is deleted. Still pending: persisting a `PrinterTransportKind` per configured printer.
 
 ## Consequences
 
