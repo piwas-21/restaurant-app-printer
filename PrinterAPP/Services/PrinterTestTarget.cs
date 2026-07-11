@@ -44,7 +44,7 @@ public sealed class PrinterTestTarget
     /// <summary>
     /// Resolves the two settings-screen inputs for one printer into a target, or <c>null</c> when
     /// neither is configured. <paramref name="spoolerPrinterName"/> mirrors the picker's
-    /// <c>SelectedItem?.ToString()</c> (null iff nothing is selected).
+    /// <c>SelectedItem?.ToString()</c> (null iff nothing is selected; blank/whitespace names are treated as not configured — a spooler transport can't be built from them).
     /// </summary>
     public static PrinterTestTarget? Resolve(string? networkAddress, string? spoolerPrinterName)
     {
@@ -57,7 +57,7 @@ public sealed class PrinterTestTarget
                 NetworkTcpTransport.DefaultPort, printerName: null, trimmed);
         }
 
-        if (spoolerPrinterName != null)
+        if (!string.IsNullOrWhiteSpace(spoolerPrinterName))
             return new(PrinterTransportKind.WindowsSpooler, isValid: true, ip: null,
                 NetworkTcpTransport.DefaultPort, spoolerPrinterName, spoolerPrinterName);
 

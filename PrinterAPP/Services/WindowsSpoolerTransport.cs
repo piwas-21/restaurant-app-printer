@@ -42,7 +42,7 @@ public sealed class WindowsSpoolerTransport : IPrinterTransport
         return Task.CompletedTask;
 #else
         throw new PlatformNotSupportedException(
-            "The Windows print spooler transport is only available on Windows.");
+            $"The Windows print spooler transport is only available on Windows (printer '{_printerName}').");
 #endif
     }
 
@@ -56,7 +56,7 @@ public sealed class WindowsSpoolerTransport : IPrinterTransport
         return Task.FromResult(true);
 #else
         throw new PlatformNotSupportedException(
-            "The Windows print spooler transport is only available on Windows.");
+            $"The Windows print spooler transport is only available on Windows (printer '{_printerName}').");
 #endif
     }
 
@@ -115,7 +115,11 @@ public sealed class WindowsSpoolerTransport : IPrinterTransport
     [DllImport("winspool.drv", SetLastError = true)]
     private static extern bool ClosePrinter(IntPtr hPrinter);
 
-    [DllImport("winspool.drv", SetLastError = true)]
+    // CharSet must match DOC_INFO_1's CharSet.Auto (both resolve Unicode on modern Windows);
+    // without it the function bound the ANSI entry point while the struct marshalled Unicode
+    // strings — a latent pre-existing mismatch (Gemini, PR #46). The same fix is owed to
+    // OrderPrintService's duplicate P/Invoke block when it migrates onto this transport.
+    [DllImport("winspool.drv", SetLastError = true, CharSet = CharSet.Auto)]
     private static extern bool StartDocPrinter(IntPtr hPrinter, int level, ref DOC_INFO_1 pDocInfo);
 
     [DllImport("winspool.drv", SetLastError = true)]
