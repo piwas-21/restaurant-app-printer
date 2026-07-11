@@ -27,6 +27,16 @@
     <Compile Include="..\PrinterAPP\Services\IPrinterTransport.cs" Link="Linked\IPrinterTransport.cs" />
     <Compile Include="..\PrinterAPP\Services\NetworkTcpTransport.cs" Link="Linked\NetworkTcpTransport.cs" />
     <Compile Include="..\PrinterAPP\Services\PrinterEndpoint.cs" Link="Linked\PrinterEndpoint.cs" />
+    <!-- Test-print routing seam (spooler test-print transport migration; ADR-006 Phase 2b).
+         WindowsSpoolerTransport compiles here without the WINDOWS symbol, i.e. as its
+         cross-platform stub surface — the P/Invoke body only compiles in the Windows TFM. -->
+    <Compile Include="..\PrinterAPP\Services\EscPosCommands.cs" Link="Linked\EscPosCommands.cs" />
+    <Compile Include="..\PrinterAPP\Services\IPrinterService.cs" Link="Linked\IPrinterService.cs" />
+    <Compile Include="..\PrinterAPP\Services\IPrinterTestService.cs" Link="Linked\IPrinterTestService.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrinterTestService.cs" Link="Linked\PrinterTestService.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrinterTestTarget.cs" Link="Linked\PrinterTestTarget.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrinterTransportKind.cs" Link="Linked\PrinterTransportKind.cs" />
+    <Compile Include="..\PrinterAPP\Services\WindowsSpoolerTransport.cs" Link="Linked\WindowsSpoolerTransport.cs" />
     <!-- Config storage + migration (MAUI-free by design; see PrinterConfigurationStore.cs). -->
     <Compile Include="..\PrinterAPP\Models\PrinterConfiguration.cs" Link="Linked\PrinterConfiguration.cs" />
     <Compile Include="..\PrinterAPP\Services\IAppDataPathProvider.cs" Link="Linked\IAppDataPathProvider.cs" />
