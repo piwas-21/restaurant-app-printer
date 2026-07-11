@@ -290,7 +290,7 @@ public class WindowsPrinterService : IPrinterService
     /// <see cref="IPrinterTransport"/> seam (ADR-006 Phase 2b). Same bytes on the wire and the
     /// same bool semantics as the previous inline P/Invoke (any failure → false).
     /// </summary>
-    private async Task<bool> SendTextToPrinterAsync(string printerName, string text)
+    private static async Task<bool> SendTextToPrinterAsync(string printerName, string text)
     {
         try
         {

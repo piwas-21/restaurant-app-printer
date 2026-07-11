@@ -16,6 +16,9 @@ public class PrinterTestTargetTests
     [InlineData(null, null)]
     [InlineData("", null)]
     [InlineData("   ", null)]
+    [InlineData(null, "")]
+    [InlineData(null, "   ")]
+    [InlineData("", "   ")]
     public void Resolve_returns_null_when_nothing_configured(string? networkAddress, string? spoolerName)
     {
         Assert.Null(PrinterTestTarget.Resolve(networkAddress, spoolerName));
