@@ -9,7 +9,7 @@
 - ...
 
 ## Sprint task / issue
-<!-- Link the sprint task (docs/SPRINT-PLAN.md task ID) or GitLab issue number. -->
+<!-- Link the sprint task (docs/SPRINT-PLAN.md task ID) or GitHub issue number. -->
 - Closes #
 - Sprint task:
 
@@ -63,7 +63,7 @@
 - [ ] No `null!` on model fields (use `required` or sensible default)
 - [ ] Sibling file conventions matched (DI registration, naming)
 - [ ] Pre-commit hooks pass locally (`pre-commit run --all-files`)
-- [ ] Branch is off `develop`; MR targets `develop`
+- [ ] Branch is off `develop`; MR targets `develop` (releases ship via a `develop` → `main` release PR — CLAUDE.md §8)
 
 ## Test plan
 <!-- Manual testing steps; specific scenarios to verify. The app talks to a thermal printer — physical hardware testing is required for any printing-path change. -->
