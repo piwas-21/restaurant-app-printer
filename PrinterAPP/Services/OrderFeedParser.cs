@@ -99,9 +99,14 @@ public static class OrderFeedParser
         if (element.ValueKind == JsonValueKind.Object
             && TryGetPropertyIgnoreCase(element, "orderNumber", out var orderNumber))
         {
-            return orderNumber.ValueKind == JsonValueKind.String
-                ? orderNumber.GetString()
-                : orderNumber.ToString();
+            // Only String/Number are real order numbers. ToString() on Null/Bool/Object/Array would emit
+            // misleading raw JSON ("null", "true", "{}") into diagnostics, so treat those as "no number".
+            return orderNumber.ValueKind switch
+            {
+                JsonValueKind.String => orderNumber.GetString(),
+                JsonValueKind.Number => orderNumber.ToString(),
+                _ => null
+            };
         }
 
         return null;

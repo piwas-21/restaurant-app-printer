@@ -150,4 +150,18 @@ public class OrderFeedParserTests
         var error = Assert.Single(result.Errors);
         Assert.Equal("202607190099", error.OrderNumber);
     }
+
+    [Fact]
+    public void Non_scalar_order_number_is_not_extracted()
+    {
+        // orderNumber as an object (or any non-string/non-number kind) must NOT leak a raw "{...}" into
+        // diagnostics — it's reported as an indexed failure with no number.
+        const string badOrderObjectNumber = """{ "orderNumber": { "x": 1 }, "deliveryAddress": "a string" }""";
+
+        var result = OrderFeedParser.Parse(Feed(badOrderObjectNumber));
+
+        var error = Assert.Single(result.Errors);
+        Assert.Equal(0, error.Index);
+        Assert.Null(error.OrderNumber);
+    }
 }

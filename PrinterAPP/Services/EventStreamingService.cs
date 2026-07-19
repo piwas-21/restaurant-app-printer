@@ -636,17 +636,21 @@ public class EventStreamingService : IEventStreamingService
 
                 foreach (var failure in parseResult.Errors)
                 {
-                    // If the bad order has an extractable number, run it through the same dedup window as
-                    // good orders so a re-emitted bad order doesn't re-log the identical error every 5s and
-                    // flood the Errors/Diagnostics page. Unidentifiable failures can't be deduped, so they
-                    // log each poll (rare — a whole-body/envelope failure, not a routine per-order drift).
+                    // If the bad order has an extractable number, dedupe the error log through the same
+                    // window as good orders so a re-emitted bad order doesn't re-log the identical error
+                    // every 5s and flood the Errors/Diagnostics page. The key is prefixed "error:" so it
+                    // stays isolated from the print-dedup pool: if the backend later fixes the order and
+                    // re-emits it, it must still print rather than be skipped as an already-processed
+                    // duplicate. Unidentifiable failures can't be deduped, so they log each poll (rare — a
+                    // whole-body/envelope failure, not a routine per-order drift).
                     if (!string.IsNullOrEmpty(failure.OrderNumber))
                     {
-                        if (IsOrderAlreadyProcessed(failure.OrderNumber))
+                        var errorKey = "error:" + failure.OrderNumber;
+                        if (IsOrderAlreadyProcessed(errorKey))
                         {
                             continue;
                         }
-                        MarkOrderAsProcessed(failure.OrderNumber);
+                        MarkOrderAsProcessed(errorKey);
                     }
 
                     var who = !string.IsNullOrEmpty(failure.OrderNumber)
