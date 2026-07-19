@@ -570,7 +570,9 @@ public class EventStreamingService : IEventStreamingService
                 await Task.Delay(TimeSpan.FromSeconds(pollingIntervalSeconds), cancellationToken);
 
                 pollCount++;
-                // Use dedicated printer-feed endpoint (no auth required)
+                // Dedicated printer-feed endpoint. Auth is the X-Api-Key header added below —
+                // required in production (per-tenant key set in Settings); a missing/incorrect key
+                // returns 401, surfaced as "Poll failed: Unauthorized" and logged to the Errors page.
                 var pollUrl = $"{baseUrl}/api/orders/printer-feed?modifiedSince={_lastPollTime:o}";
 
                 _logger.LogInformation("🔄 Poll #{Count} - Fetching orders since {Since}", pollCount, _lastPollTime);
@@ -601,7 +603,18 @@ public class EventStreamingService : IEventStreamingService
                 if (!response.IsSuccessStatusCode)
                 {
                     var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-                    _logger.LogWarning("❌ Polling failed: {StatusCode} - {Body}", response.StatusCode, errorBody.Substring(0, Math.Min(200, errorBody.Length)));
+                    var bodyPreview = errorBody.Substring(0, Math.Min(200, errorBody.Length));
+                    _logger.LogWarning("❌ Polling failed: {StatusCode} - {Body}", response.StatusCode, bodyPreview);
+
+                    // Also surface poll failures on the Errors page. Previously these went only to the
+                    // ILogger, so the Errors tab stayed empty while the feed silently 401'd — leaving
+                    // the field with no diagnostic trail. A 401 is almost always a missing/incorrect
+                    // API key, so spell that out to make it actionable.
+                    var detail = response.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                        ? "The API key is missing or incorrect. Enter the printer API key in Settings, then Save."
+                        : bodyPreview;
+                    _requestLogService.LogError("Order Polling", $"Poll failed: {response.StatusCode}", detail);
+
                     OnConnectionStatusChanged($"Poll failed: {response.StatusCode}");
                     continue;
                 }
@@ -661,6 +674,7 @@ public class EventStreamingService : IEventStreamingService
             catch (HttpRequestException httpEx)
             {
                 _logger.LogError(httpEx, "❌ Network error during polling");
+                _requestLogService.LogError("Order Polling", "Network error while polling for orders", httpEx.Message);
                 OnConnectionStatusChanged($"Network error: {httpEx.Message}");
             }
             catch (Exception ex)

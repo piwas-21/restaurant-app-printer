@@ -19,13 +19,19 @@ public partial class ErrorLogsPage : ContentPage
 
         // Bind to filtered collection
         ErrorLogsCollectionView.ItemsSource = _errorLogs;
+    }
 
-        // Subscribe to log changes (cast: ReadOnlyObservableCollection implements
-        // INotifyCollectionChanged explicitly — CollectionChanged isn't directly accessible).
-        ((System.Collections.Specialized.INotifyCollectionChanged)_requestLogService.Logs).CollectionChanged +=
-            OnLogsCollectionChanged;
-
-        // Initial population
+    protected override void OnAppearing()
+    {
+        base.OnAppearing();
+        // Re-subscribe and reload every time the page is shown. The log service is a singleton that
+        // keeps collecting while this page is off-screen; subscribing only in the constructor (and
+        // unsubscribing in OnDisappearing) left the page deaf after the first tab switch, so errors
+        // logged in the background — e.g. a failing poll — never appeared. Unsubscribe first to keep
+        // the handler registered exactly once.
+        var logs = (System.Collections.Specialized.INotifyCollectionChanged)_requestLogService.Logs;
+        logs.CollectionChanged -= OnLogsCollectionChanged;
+        logs.CollectionChanged += OnLogsCollectionChanged;
         RefreshLogs();
     }
 
