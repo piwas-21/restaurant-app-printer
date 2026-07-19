@@ -57,9 +57,9 @@ public class PrinterConfiguration
     // Service Status
     public bool IsServiceRunning { get; set; } = false;
 
-    // Fleet observability: the control-plane tenant this device belongs to (seeded at provisioning)
-    // and a human label for the admin panel ("Kitchen tablet"). Used for telemetry + Sentry tagging;
-    // never a secret. See docs/plans/PRINTER-APP-FLEET-OBSERVABILITY-PLAN.md.
+    // Fleet observability: the control-plane tenant this device belongs to, seeded at provisioning,
+    // plus a human-readable device label shown in the admin panel. Used for telemetry and Sentry
+    // tagging; never a secret. See docs/plans/PRINTER-APP-FLEET-OBSERVABILITY-PLAN.md.
     public string TenantSlug { get; set; } = "";
     public string DeviceLabel { get; set; } = "";
 }
