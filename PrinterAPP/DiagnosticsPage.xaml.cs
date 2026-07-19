@@ -51,19 +51,30 @@ public partial class DiagnosticsPage : ContentPage
     {
         MainThread.BeginInvokeOnMainThread(() =>
         {
-            if (e.Action == NotifyCollectionChangedAction.Add && e.NewItems is not null)
+            switch (e.Action)
             {
-                foreach (LogEntry log in e.NewItems)
-                {
-                    if (Matches(log))
+                case NotifyCollectionChangedAction.Add when e.NewItems is not null:
+                    foreach (LogEntry log in e.NewItems)
                     {
-                        _view.Insert(0, log); // newest first, matching the source collection
+                        if (Matches(log))
+                        {
+                            _view.Insert(0, log); // newest first, matching the source collection
+                        }
                     }
-                }
-            }
-            else if (e.Action == NotifyCollectionChangedAction.Reset)
-            {
-                RefreshLogs();
+                    break;
+
+                // The log service caps at 200 by evicting the oldest entry (a Remove); drop it here
+                // too so _view can't grow unbounded or show entries that no longer exist.
+                case NotifyCollectionChangedAction.Remove when e.OldItems is not null:
+                    foreach (LogEntry log in e.OldItems)
+                    {
+                        _view.Remove(log);
+                    }
+                    break;
+
+                default: // Reset (Clear) / Replace / Move — rebuild to stay consistent with the source
+                    RefreshLogs();
+                    break;
             }
         });
     }
@@ -90,7 +101,13 @@ public partial class DiagnosticsPage : ContentPage
 
     private void UpdateChipStyles()
     {
-        var primary = (Color)Application.Current!.Resources["Primary"];
+        var res = Application.Current!.Resources;
+        var primary = (Color)res["Primary"];
+        // Inactive chips are outline-only on the page background, so in dark mode use the lighter
+        // terracotta (maroon-on-aubergine is too low-contrast). Active chips stay maroon + white.
+        var accent = Application.Current.RequestedTheme == AppTheme.Dark
+            ? (Color)res["PrimaryDark"]
+            : primary;
         foreach (var (chip, name) in new[]
                  {
                      (ChipAll, "All"), (ChipOrders, "Orders"), (ChipErrors, "Errors"), (ChipWarnings, "Warnings"),
@@ -98,8 +115,8 @@ public partial class DiagnosticsPage : ContentPage
         {
             var active = _filter == name;
             chip.BackgroundColor = active ? primary : Colors.Transparent;
-            chip.TextColor = active ? Colors.White : primary;
-            chip.BorderColor = primary;
+            chip.TextColor = active ? Colors.White : accent;
+            chip.BorderColor = accent;
             chip.BorderWidth = 1;
         }
     }
