@@ -57,6 +57,13 @@
                            FontSize="12"
                            TextColor="Orange"
                            IsVisible="False"/>
+
+                    <Label Text="API Key" FontSize="14" TextColor="{StaticResource Gray500}" Margin="0,6,0,0"/>
+                    <Entry x:Name="ApiKeyEntry"
+                           Placeholder="Paste the printer API key for this restaurant"/>
+                    <Label Text="Required to receive orders. Get it from your Sofra / RUMI admin, then tap 'Test' and 'Save'."
+                           FontSize="11"
+                           TextColor="{StaticResource Gray500}"/>
                 </VerticalStackLayout>
             </Frame>
 
