@@ -43,6 +43,8 @@
          backend-DTO mirror after a string-vs-object drift on deliveryAddress wedged the prod poll. -->
     <Compile Include="..\PrinterAPP\Models\Order.cs" Link="Linked\Order.cs" />
     <Compile Include="..\PrinterAPP\Models\DeliveryAddress.cs" Link="Linked\DeliveryAddress.cs" />
+    <!-- Resilient per-order feed parser (MAUI-free): one bad order must not wedge the whole poll batch. -->
+    <Compile Include="..\PrinterAPP\Services\OrderFeedParser.cs" Link="Linked\OrderFeedParser.cs" />
     <!-- Config storage + migration (MAUI-free by design; see PrinterConfigurationStore.cs). -->
     <Compile Include="..\PrinterAPP\Models\PrinterConfiguration.cs" Link="Linked\PrinterConfiguration.cs" />
     <Compile Include="..\PrinterAPP\Services\IAppDataPathProvider.cs" Link="Linked\IAppDataPathProvider.cs" />

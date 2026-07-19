@@ -627,19 +627,50 @@ public class EventStreamingService : IEventStreamingService
                 var json = await response.Content.ReadAsStringAsync(cancellationToken);
                 _logger.LogInformation("   Response length: {Length} bytes", json.Length);
 
-                var result = JsonSerializer.Deserialize<OrdersApiResponse>(json, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                });
+                // Deserialise each order independently. Before PR #61 the whole batch was deserialised in
+                // one call, so a single un-readable order (e.g. deliveryAddress typed string vs object)
+                // threw for the entire batch; _lastPollTime never advanced, so every 5s poll re-threw on
+                // the same order forever and nothing printed until restart. Now one bad order is logged +
+                // skipped (surfaced on the Errors/Diagnostics page) and the rest of the batch still prints.
+                var parseResult = OrderFeedParser.Parse(json);
 
-                var itemCount = result?.Data?.Items?.Count ?? 0;
+                foreach (var failure in parseResult.Errors)
+                {
+                    // If the bad order has an extractable number, dedupe the error log through the same
+                    // window as good orders so a re-emitted bad order doesn't re-log the identical error
+                    // every 5s and flood the Errors/Diagnostics page. The key is prefixed "error:" so it
+                    // stays isolated from the print-dedup pool: if the backend later fixes the order and
+                    // re-emits it, it must still print rather than be skipped as an already-processed
+                    // duplicate. Unidentifiable failures can't be deduped, so they log each poll (rare — a
+                    // whole-body/envelope failure, not a routine per-order drift).
+                    if (!string.IsNullOrEmpty(failure.OrderNumber))
+                    {
+                        var errorKey = "error:" + failure.OrderNumber;
+                        if (IsOrderAlreadyProcessed(errorKey))
+                        {
+                            continue;
+                        }
+                        MarkOrderAsProcessed(errorKey);
+                    }
+
+                    var who = !string.IsNullOrEmpty(failure.OrderNumber)
+                        ? $"order {failure.OrderNumber}"
+                        : failure.Index >= 0 ? $"order at index {failure.Index}" : "the feed response";
+                    _logger.LogError("⚠️ Skipping un-deserialisable {Who}: {Message}", who, failure.Message);
+                    _requestLogService.LogError(
+                        "Order Polling",
+                        $"Skipped an order that could not be read from the feed ({who})",
+                        failure.Message);
+                }
+
+                var itemCount = parseResult.Orders.Count;
                 _logger.LogInformation("   Orders found: {Count}", itemCount);
 
-                if (result?.Data?.Items != null && result.Data.Items.Count > 0)
+                if (parseResult.Orders.Count > 0)
                 {
-                    _logger.LogInformation("📦 Found {Count} confirmed orders!", result.Data.Items.Count);
+                    _logger.LogInformation("📦 Found {Count} confirmed orders!", parseResult.Orders.Count);
 
-                    foreach (var order in result.Data.Items)
+                    foreach (var order in parseResult.Orders)
                     {
                         _logger.LogInformation("   Processing order: {OrderNumber} (Status: {Status})",
                             order.OrderNumber, order.Status);
@@ -690,18 +721,5 @@ public class EventStreamingService : IEventStreamingService
         }
 
         _logger.LogInformation("🛑 Polling service stopped");
-    }
-
-    /// <summary>
-    /// Response wrapper for orders API
-    /// </summary>
-    private class OrdersApiResponse
-    {
-        public OrdersPagedResult? Data { get; set; }
-    }
-
-    private class OrdersPagedResult
-    {
-        public List<Order>? Items { get; set; }
     }
 }
