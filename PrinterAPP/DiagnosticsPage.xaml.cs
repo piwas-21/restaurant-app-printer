@@ -19,8 +19,8 @@ public partial class DiagnosticsPage : ContentPage
 
     // Re-subscribe and reload each time the page is shown. The log service is a singleton that keeps
     // collecting while this page is off-screen, so subscribing only in the constructor left the old
-    // separate log pages permanently deaf after the first tab switch (the bug this unified page also
-    // fixes). Unsubscribe first so the handler stays registered exactly once.
+    // separate log pages permanently deaf once the user changed tabs — the same defect this unified
+    // page also fixes. Unsubscribe first so the handler stays registered exactly once.
     protected override void OnAppearing()
     {
         base.OnAppearing();
