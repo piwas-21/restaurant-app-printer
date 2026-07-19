@@ -145,20 +145,22 @@ Grep for the type/method/key you're adding or modifying. List every callsite. Co
 
 ## §8 — Git workflow
 
-### Branch strategy
+### Branch strategy (GitFlow — updated 2026-07-10; supersedes the retired 2026-06-30 main-based model)
 
 ```
-main                    ← default branch; feature PRs merge here; releases are tagged from here
-  ├── feature/<x>
-  ├── fix/<x>
-  ├── chore/<x>
-  └── docs/<x>
+develop                 ← DEFAULT + integration branch; all feature work targets it
+  ├── feature/<x>       → PR to develop
+  ├── fix/<x>           → PR to develop
+  ├── chore/<x>         → PR to develop
+  └── docs/<x>          → PR to develop
+
+main                    ← production RELEASES ONLY; updated solely via a develop→main release PR
 ```
 
-- **Never push to `main` directly** — pre-commit hook blocks this; all work goes through PRs.
-- Branch off **`main`**, open PR to **`main`** (develop→main promotion completed 2026-07-07 — printer #32; `develop` is legacy history, don't base new work on it).
-- Releases: tag `v*` on `main` → `build-release.yml` publishes the Windows exe + Android APK to the public releases repo (auto-update consumes these).
-- One issue = one branch. Delete branch after merge.
+- **Never push directly to `main` or `develop`** — a GitHub **Ruleset** (`main-develop`, **no bypass**) blocks it server-side (direct push / force-push / deletion), and the pre-commit `no-commit-to-branch` hook blocks it locally. Always open a PR.
+- **Branch off `develop`; open every `feature/`·`fix/`·`chore/`·`docs/`·`test/` PR to `develop`.** Merge only when **all CI checks are green and review comments are resolved** (the ruleset requires it).
+- **Releases:** open a PR **`develop` → `main`**, then tag `v*` on `main` → `build-release.yml` publishes the Windows exe + Android APK to the public releases repo.
+- One issue = one branch. Delete branch after merge (`gh pr merge --delete-branch`).
 - Branch naming: `feature/`, `fix/`, `chore/`, `docs/`, `test/`.
 
 ### Commit messages

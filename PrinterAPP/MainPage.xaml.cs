@@ -536,10 +536,7 @@ public partial class MainPage : ContentPage
             StatusLabel.Text = "Configuration saved";
             StatusLabel.TextColor = Colors.Green;
 
-            var configPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "KitchenPrinter",
-                "config.json");
+            var configPath = _printerService.ConfigFilePath;
 
             if (apiUrlChanged)
             {
@@ -570,11 +567,13 @@ public partial class MainPage : ContentPage
     {
         try
         {
-            bool anyConfigured = KitchenPrinterPicker.SelectedItem != null
-                || CashierPrinterPicker.SelectedItem != null
-                || !string.IsNullOrWhiteSpace(KitchenPrinterIpEntry.Text)
-                || !string.IsNullOrWhiteSpace(CashierPrinterIpEntry.Text);
-            if (!anyConfigured)
+            // Resolve each printer's UI inputs into a transport target (network IP entry wins
+            // over the spooler picker; null = not configured). Routing lives in the services.
+            var kitchenTarget = PrinterTestTarget.Resolve(
+                KitchenPrinterIpEntry.Text, KitchenPrinterPicker.SelectedItem?.ToString());
+            var cashierTarget = PrinterTestTarget.Resolve(
+                CashierPrinterIpEntry.Text, CashierPrinterPicker.SelectedItem?.ToString());
+            if (kitchenTarget is null && cashierTarget is null)
             {
                 await DisplayAlert("Error", "Please select a printer or enter a network printer IP first", "OK");
                 return;
@@ -594,36 +593,13 @@ public partial class MainPage : ContentPage
 
             var results = new List<string>();
 
-            // Test kitchen printer — a configured network IP goes straight over TCP (works on
-            // Android); otherwise fall back to the Windows spooler test path.
-            if (!string.IsNullOrWhiteSpace(KitchenPrinterIpEntry.Text))
-            {
-                if (PrinterEndpoint.TryParse(KitchenPrinterIpEntry.Text, out var kIp, out var kPort))
-                    results.Add(await _printerTestService.TestNetworkPrinterAsync(kIp, kPort, "KITCHEN", "Kitchen"));
-                else
-                    results.Add($"Kitchen printer: ✗ Invalid IP '{KitchenPrinterIpEntry.Text.Trim()}'");
-            }
-            else if (KitchenPrinterPicker.SelectedItem != null)
-            {
-                var printerName = KitchenPrinterPicker.SelectedItem.ToString();
-                var success = await _printerService.PrintTestReceiptAsync(printerName!, _config);
-                results.Add($"Kitchen printer: {(success ? "✓ Success" : "✗ Failed")}");
-            }
+            // PrinterTestService routes per target kind (network TCP vs Windows spooler) through
+            // the IPrinterTransport seam — no transport special-casing here (ADR-006 Phase 2b).
+            if (kitchenTarget is not null)
+                results.Add(await _printerTestService.TestPrinterAsync(kitchenTarget, _config, "KITCHEN", "Kitchen"));
 
-            // Test cashier printer
-            if (!string.IsNullOrWhiteSpace(CashierPrinterIpEntry.Text))
-            {
-                if (PrinterEndpoint.TryParse(CashierPrinterIpEntry.Text, out var cIp, out var cPort))
-                    results.Add(await _printerTestService.TestNetworkPrinterAsync(cIp, cPort, "CASHIER", "Cashier"));
-                else
-                    results.Add($"Cashier printer: ✗ Invalid IP '{CashierPrinterIpEntry.Text.Trim()}'");
-            }
-            else if (CashierPrinterPicker.SelectedItem != null)
-            {
-                var printerName = CashierPrinterPicker.SelectedItem.ToString();
-                var success = await _printerService.PrintTestReceiptAsync(printerName!, _config);
-                results.Add($"Cashier printer: {(success ? "✓ Success" : "✗ Failed")}");
-            }
+            if (cashierTarget is not null)
+                results.Add(await _printerTestService.TestPrinterAsync(cashierTarget, _config, "CASHIER", "Cashier"));
 
             StatusLabel.Text = "Test receipts printed";
             StatusLabel.TextColor = Colors.Green;

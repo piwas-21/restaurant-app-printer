@@ -370,3 +370,14 @@ FodyWeavers.xsd
 # Local CI-parity APK publish output
 android-publish/
 android-out/
+
+# Secrets / local env — never commit (repo is public; mirrors §9 refusal list)
+.env
+.env.*
+!.env.example
+*.key
+*.p12
+*.cer
+*.snk
+*.keystore
+*.jks

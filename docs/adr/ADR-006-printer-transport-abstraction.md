@@ -9,7 +9,8 @@
 - [PrinterAPP/Services/IPrinterTransport.cs](../../PrinterAPP/Services/IPrinterTransport.cs)
 - [PrinterAPP/Services/NetworkTcpTransport.cs](../../PrinterAPP/Services/NetworkTcpTransport.cs)
 - [PrinterAPP.Tests/NetworkTcpTransportTests.cs](../../PrinterAPP.Tests/NetworkTcpTransportTests.cs)
-- [PrinterAPP/Services/WindowsPrinterService.cs](../../PrinterAPP/Services/WindowsPrinterService.cs) (the existing Windows path, to be refactored behind this seam)
+- [PrinterAPP/Services/WindowsSpoolerTransport.cs](../../PrinterAPP/Services/WindowsSpoolerTransport.cs) (Phase 2b, first slice: the spooler RAW write behind the seam)
+- [PrinterAPP/Services/WindowsPrinterService.cs](../../PrinterAPP/Services/WindowsPrinterService.cs) (the existing Windows path; its test-print send now delegates to the spooler transport)
 
 ---
 
@@ -34,6 +35,8 @@ The first implementation is **`NetworkTcpTransport`** (cross-platform, the defau
 It is covered by **golden-byte unit tests** against an in-process `TcpListener` (byte-exact incl. PC857 Turkish bytes, large-payload ordering, the refused-then-succeeds retry, write/probe semantics, constructor validation) — no printer hardware required, runnable on any host.
 
 This ADR introduces the abstraction and the network transport **only**. The follow-up (Phase 2b) refactors the existing Windows P/Invoke into a `WindowsSpoolerTransport : IPrinterTransport` (`#if WINDOWS`), points `OrderPrintService` at the resolved transport per printer, and adds the DI wiring + a `PrinterTransportKind` config field — that change touches the live Windows print path and must be verified on Windows, so it is kept separate.
+
+> **Phase 2b status (2026-07-11):** first slice (2026-07-10) — `WindowsSpoolerTransport` exists (the winspool RAW write moved verbatim behind the seam) and the **Test-Print path** routes through it (`PrinterTestTarget` resolution + `PrinterTestService`, with a `PrinterTransportKind` enum). Second slice (2026-07-11) — the **live order-print path** routes through the seam too: `OrderPrintService.PrintRawContentAsync` resolves per configured printer name via `PrinterTransportResolver` (IP literal → `NetworkTcpTransport`, otherwise → `WindowsSpoolerTransport`) and its duplicate winspool P/Invoke block is deleted. Still pending: persisting a `PrinterTransportKind` per configured printer.
 
 ## Consequences
 
