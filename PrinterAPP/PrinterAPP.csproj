@@ -51,6 +51,18 @@
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.70" />
     <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
     <PackageReference Include="System.Text.Encoding.CodePages" Version="10.0.0" />
+    <PackageReference Include="Sentry.Maui" Version="6.6.0" />
+  </ItemGroup>
+
+  <!-- Sentry DSN injected at build time (write-only ingest key, kept out of source). Empty by
+       default → Sentry stays inert, matching the env-gated backend/frontend/sofra pattern
+       (DEV-PHASES W3). Release CI passes -p:SentryDsn=$SENTRY_DSN from a secret; local/dev builds
+       leave it empty so no telemetry leaves the machine. See PRINTER-APP-FLEET-OBSERVABILITY-PLAN. -->
+  <PropertyGroup>
+    <SentryDsn Condition="'$(SentryDsn)' == ''"></SentryDsn>
+  </PropertyGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="SentryDsn" Value="$(SentryDsn)" />
   </ItemGroup>
 
   <!-- Windows-only dependencies (WMI printer enumeration). Not referenced on Android. -->

@@ -3,6 +3,7 @@ using Microsoft.Maui.Controls;
 using Microsoft.Extensions.Logging;
 using PrinterAPP.Models;
 using PrinterAPP.Services;
+using Sentry;
 
 namespace PrinterAPP;
 
@@ -14,6 +15,7 @@ public partial class MainPage : ContentPage
     private readonly IOrderHistoryService _orderHistoryService;
     private readonly IUpdateService _updateService;
     private readonly IPrinterTestService _printerTestService;
+    private readonly IDeviceIdentityService _deviceIdentity;
     private readonly ILogger<MainPage> _logger;
     private PrinterConfiguration _config;
     private bool _isServiceRunning = false;
@@ -25,6 +27,7 @@ public partial class MainPage : ContentPage
         IOrderHistoryService orderHistoryService,
         IUpdateService updateService,
         IPrinterTestService printerTestService,
+        IDeviceIdentityService deviceIdentity,
         ILogger<MainPage> logger)
     {
         InitializeComponent();
@@ -34,6 +37,7 @@ public partial class MainPage : ContentPage
         _orderHistoryService = orderHistoryService;
         _updateService = updateService;
         _printerTestService = printerTestService;
+        _deviceIdentity = deviceIdentity;
         _logger = logger;
         _config = new PrinterConfiguration();
 
@@ -55,6 +59,10 @@ public partial class MainPage : ContentPage
 
             // Load saved configuration
             _config = await _printerService.LoadConfigurationAsync();
+
+            // Tag Sentry events with this device + tenant so fleet errors are attributable (no-op when
+            // Sentry is inert). Here — after startup + config load — so the lazy device-id persists.
+            _deviceIdentity.ApplySentryTags(_config.TenantSlug);
 
             // Debug logging
             _logger.LogInformation("Loaded API URL from config: {ApiUrl}", _config.ApiBaseUrl);
@@ -126,6 +134,9 @@ public partial class MainPage : ContentPage
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Failed to auto-start order feed");
+                    // Surface a failed feed start to the fleet dashboard — this is the class of
+                    // failure behind the 2026-07-19 incident. No-op when Sentry is inert.
+                    SentrySdk.CaptureException(ex);
                     StatusLabel.Text = "Failed to auto-start service";
                     StatusLabel.TextColor = Colors.Orange;
                 }
