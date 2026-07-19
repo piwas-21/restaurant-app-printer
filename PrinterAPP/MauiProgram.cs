@@ -67,9 +67,7 @@ namespace PrinterAPP
             // Register pages
             builder.Services.AddSingleton<MainPage>();
             builder.Services.AddSingleton<OrderManagementPage>();
-            builder.Services.AddSingleton<LogsPage>();
-            builder.Services.AddSingleton<ErrorLogsPage>();
-            builder.Services.AddSingleton<WarningLogsPage>();
+            builder.Services.AddSingleton<DiagnosticsPage>();
             builder.Services.AddTransient<UpdaterWindow>();
 
             // Sentry scope tags (device id, platform, version, tenant slug) are set from MainPage once

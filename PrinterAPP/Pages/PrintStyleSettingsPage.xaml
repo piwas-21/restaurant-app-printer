@@ -20,14 +20,14 @@
                             Text="Reset to Defaults"
                             Clicked="OnResetClicked"
                             BackgroundColor="{StaticResource Secondary}"
-                            TextColor="White"
+                            TextColor="{StaticResource TextPrimary}"
                             Padding="15,8"/>
                 </Grid>
             </Border>
 
             <Label Text="Configure font sizes, styles, and alignment for each section of your receipts."
                    FontSize="14"
-                   TextColor="{StaticResource Gray600}"/>
+                   TextColor="{AppThemeBinding Light={StaticResource TextSecondary}, Dark={StaticResource TextSecondaryDark}}"/>
 
             <!-- Tabs for Kitchen vs Cashier -->
             <Grid ColumnDefinitions="*,*" 

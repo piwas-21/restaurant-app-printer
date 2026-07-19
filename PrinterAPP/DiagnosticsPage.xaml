@@ -1,0 +1,103 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:services="clr-namespace:PrinterAPP.Services"
+             xmlns:converters="clr-namespace:PrinterAPP.Converters"
+             x:Class="PrinterAPP.DiagnosticsPage"
+             Title="Diagnostics"
+             BackgroundColor="{AppThemeBinding Light={StaticResource PageBackground}, Dark={StaticResource PageBackgroundDark}}">
+    <Grid RowDefinitions="Auto,Auto,*" Padding="20">
+
+        <!-- Header -->
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,12">
+            <Label Text="🩺 Diagnostics"
+                   FontSize="24"
+                   FontAttributes="Bold"
+                   VerticalOptions="Center"
+                   TextColor="{AppThemeBinding Light={StaticResource TextPrimary}, Dark={StaticResource TextPrimaryDark}}"/>
+            <Button Grid.Column="1"
+                    Text="Clear"
+                    Clicked="OnClearLogsClicked"
+                    BackgroundColor="{StaticResource Primary}"
+                    TextColor="White"
+                    CornerRadius="18"
+                    WidthRequest="90"/>
+        </Grid>
+
+        <!-- Filter chips -->
+        <ScrollView Grid.Row="1" Orientation="Horizontal" HorizontalScrollBarVisibility="Never" Margin="0,0,0,12">
+            <HorizontalStackLayout Spacing="8">
+                <Button x:Name="ChipAll" Text="All" Clicked="OnFilterClicked" CommandParameter="All" CornerRadius="16" HeightRequest="38" Padding="18,0"/>
+                <Button x:Name="ChipOrders" Text="Orders" Clicked="OnFilterClicked" CommandParameter="Orders" CornerRadius="16" HeightRequest="38" Padding="18,0"/>
+                <Button x:Name="ChipErrors" Text="Errors" Clicked="OnFilterClicked" CommandParameter="Errors" CornerRadius="16" HeightRequest="38" Padding="18,0"/>
+                <Button x:Name="ChipWarnings" Text="Warnings" Clicked="OnFilterClicked" CommandParameter="Warnings" CornerRadius="16" HeightRequest="38" Padding="18,0"/>
+            </HorizontalStackLayout>
+        </ScrollView>
+
+        <!-- Log list -->
+        <CollectionView Grid.Row="2" x:Name="LogsCollectionView" SelectionMode="None">
+            <CollectionView.EmptyView>
+                <VerticalStackLayout HorizontalOptions="Center" VerticalOptions="Center" Spacing="10" Padding="20">
+                    <Label Text="✅" FontSize="48" HorizontalOptions="Center"/>
+                    <Label Text="Nothing to show"
+                           FontSize="18"
+                           FontAttributes="Bold"
+                           HorizontalOptions="Center"
+                           TextColor="{AppThemeBinding Light={StaticResource TextPrimary}, Dark={StaticResource TextPrimaryDark}}"/>
+                    <Label x:Name="EmptyHintLabel"
+                           Text="Order, error and warning activity will appear here."
+                           FontSize="14"
+                           TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"
+                           HorizontalOptions="Center"
+                           HorizontalTextAlignment="Center"/>
+                </VerticalStackLayout>
+            </CollectionView.EmptyView>
+
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="services:LogEntry">
+                    <Border Margin="0,0,0,8"
+                            Padding="12"
+                            StrokeThickness="1"
+                            Stroke="{Binding TypeColor}"
+                            BackgroundColor="{AppThemeBinding Light={StaticResource CardBackground}, Dark={StaticResource CardBackgroundDark}}">
+                        <Border.StrokeShape>
+                            <RoundRectangle CornerRadius="8"/>
+                        </Border.StrokeShape>
+                        <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*,Auto">
+                            <Label Grid.Row="0" Grid.Column="0"
+                                   Text="{Binding TypeIcon}"
+                                   FontSize="20"
+                                   VerticalOptions="Start"
+                                   Margin="0,0,10,0"/>
+                            <VerticalStackLayout Grid.Row="0" Grid.Column="1">
+                                <Label Text="{Binding Operation}"
+                                       FontSize="15"
+                                       FontAttributes="Bold"
+                                       TextColor="{Binding TypeColor}"/>
+                                <Label Text="{Binding Message}"
+                                       FontSize="13"
+                                       TextColor="{AppThemeBinding Light={StaticResource TextSecondary}, Dark={StaticResource TextSecondaryDark}}"/>
+                                <Label Text="{Binding Source, StringFormat='Source: {0}'}"
+                                       FontSize="11"
+                                       FontAttributes="Italic"
+                                       TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
+                            </VerticalStackLayout>
+                            <Label Grid.Row="0" Grid.Column="2"
+                                   Text="{Binding TimestampText}"
+                                   FontSize="11"
+                                   TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"
+                                   VerticalOptions="Start"/>
+                            <Label Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
+                                   Text="{Binding Details}"
+                                   FontSize="12"
+                                   Margin="0,6,0,0"
+                                   LineBreakMode="WordWrap"
+                                   TextColor="{AppThemeBinding Light={StaticResource TextSecondary}, Dark={StaticResource TextSecondaryDark}}"
+                                   IsVisible="{Binding Details, Converter={StaticResource StringNotEmptyConverter}}"/>
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+    </Grid>
+</ContentPage>

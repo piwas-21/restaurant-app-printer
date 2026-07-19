@@ -39,6 +39,10 @@
     <Compile Include="..\PrinterAPP\Services\WindowsSpoolerTransport.cs" Link="Linked\WindowsSpoolerTransport.cs" />
     <!-- Order-print routing seam (OrderPrintService spooler transport migration; ADR-006 Phase 2b). -->
     <Compile Include="..\PrinterAPP\Services\PrinterTransportResolver.cs" Link="Linked\PrinterTransportResolver.cs" />
+    <!-- Order models (MAUI-free; plain System.Text.Json records). Pinned here to guard the
+         backend-DTO mirror after a string-vs-object drift on deliveryAddress wedged the prod poll. -->
+    <Compile Include="..\PrinterAPP\Models\Order.cs" Link="Linked\Order.cs" />
+    <Compile Include="..\PrinterAPP\Models\DeliveryAddress.cs" Link="Linked\DeliveryAddress.cs" />
     <!-- Config storage + migration (MAUI-free by design; see PrinterConfigurationStore.cs). -->
     <Compile Include="..\PrinterAPP\Models\PrinterConfiguration.cs" Link="Linked\PrinterConfiguration.cs" />
     <Compile Include="..\PrinterAPP\Services\IAppDataPathProvider.cs" Link="Linked\IAppDataPathProvider.cs" />

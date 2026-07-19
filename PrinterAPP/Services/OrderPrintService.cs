@@ -592,12 +592,12 @@ public class OrderPrintService : IOrderPrintService
         }
 
         // Delivery address for delivery orders
-        if (order.Type == "Delivery" && !string.IsNullOrWhiteSpace(order.DeliveryAddress))
+        if (order.Type == "Delivery" && !string.IsNullOrWhiteSpace(order.DeliveryAddress?.FullAddress))
         {
             sb.AppendLine(new string('-', paperWidth == 80 ? 48 : 32));
             sb.Append(EXTRA_DARK_ON);
             sb.AppendLine("DELIVERY TO:");
-            sb.AppendLine(order.DeliveryAddress);
+            sb.AppendLine(order.DeliveryAddress.FullAddress);
             sb.Append(EXTRA_DARK_OFF);
             sb.AppendLine();
         }
