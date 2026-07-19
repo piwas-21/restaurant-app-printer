@@ -520,7 +520,12 @@ public class EventStreamingService : IEventStreamingService
             _logger.LogDebug("Fetching order details from: {Url}", url);
 
             using var httpClient = new HttpClient();
-            // Pass the token if available in config (future improvement)
+            // The order-details endpoint needs the same X-Api-Key as the printer feed. Without it,
+            // this fallback returns 401 and silently drops the enrichment for item-less events.
+            if (!string.IsNullOrWhiteSpace(config.ApiKey))
+            {
+                httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.ApiKey);
+            }
 
             var response = await httpClient.GetAsync(url);
             if (!response.IsSuccessStatusCode)

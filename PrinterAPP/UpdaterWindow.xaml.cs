@@ -7,6 +7,7 @@ public partial class UpdaterWindow : ContentPage
 {
     private readonly IUpdateService _updateService;
     private UpdateInfo? _updateInfo;
+    private bool _autoChecked;
 
     public UpdaterWindow(IUpdateService updateService)
     {
@@ -15,6 +16,16 @@ public partial class UpdaterWindow : ContentPage
 
         // Show current version immediately
         CurrentVersionLabel.Text = _updateService.GetCurrentVersion();
+    }
+
+    // Check as soon as the updater opens so the user doesn't have to tap "Check" first — the
+    // manual Update button and the startup update prompt both land here.
+    protected override void OnAppearing()
+    {
+        base.OnAppearing();
+        if (_autoChecked) return;
+        _autoChecked = true;
+        OnCheckForUpdatesClicked(this, EventArgs.Empty);
     }
 
     private async void OnCheckForUpdatesClicked(object sender, EventArgs e)
