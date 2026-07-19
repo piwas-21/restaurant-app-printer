@@ -17,10 +17,10 @@ public partial class DiagnosticsPage : ContentPage
         LogsCollectionView.ItemsSource = _view;
     }
 
-    // Re-subscribe + reload each time the page is shown. The log service is a singleton that keeps
-    // collecting while this page is off-screen; subscribing only in the constructor left the old
-    // Logs/Errors/Warnings pages permanently deaf after the first tab switch (the bug this unified
-    // page also fixes). Unsubscribe first so the handler stays registered exactly once.
+    // Re-subscribe and reload each time the page is shown. The log service is a singleton that keeps
+    // collecting while this page is off-screen, so subscribing only in the constructor left the old
+    // separate log pages permanently deaf after the first tab switch (the bug this unified page also
+    // fixes). Unsubscribe first so the handler stays registered exactly once.
     protected override void OnAppearing()
     {
         base.OnAppearing();
@@ -82,12 +82,9 @@ public partial class DiagnosticsPage : ContentPage
     private void RefreshLogs()
     {
         _view.Clear();
-        foreach (var log in _requestLogService.Logs)
+        foreach (var log in _requestLogService.Logs.Where(Matches))
         {
-            if (Matches(log))
-            {
-                _view.Add(log);
-            }
+            _view.Add(log);
         }
     }
 
