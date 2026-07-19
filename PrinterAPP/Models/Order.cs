@@ -35,7 +35,7 @@ public class Order
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
     public string? Notes { get; set; }
-    public string? DeliveryAddress { get; set; }
+    public DeliveryAddress? DeliveryAddress { get; set; }
     public List<OrderItem> Items { get; set; } = new();
     public List<Payment>? Payments { get; set; }
     public List<OrderStatusHistory>? StatusHistory { get; set; }
