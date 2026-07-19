@@ -56,26 +56,24 @@ public class UpdateService : IUpdateService
             updateInfo.ReleaseName = response.Name ?? "";
             updateInfo.ReleaseNotes = response.Body ?? "";
 
-            // Determine system architecture
+            // Pick the asset for this platform: the .apk on Android, the arch-specific .exe on Windows.
+#if ANDROID
+            var asset = response.Assets?.FirstOrDefault(a =>
+                a.Name?.EndsWith(".apk", StringComparison.OrdinalIgnoreCase) == true);
+#else
             bool is64Bit = Environment.Is64BitOperatingSystem;
             string arch = is64Bit ? "x64" : "x86";
-
-            // Find the best matching exe asset
-            var exeAsset = response.Assets?.FirstOrDefault(a =>
+            var asset = response.Assets?.FirstOrDefault(a =>
                 a.Name?.Contains(arch, StringComparison.OrdinalIgnoreCase) == true &&
+                a.Name?.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) == true)
+                ?? response.Assets?.FirstOrDefault(a =>
                 a.Name?.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) == true);
+#endif
 
-            // Fallback: If no arch-specific found, take any .exe (legacy support)
-            if (exeAsset == null)
+            if (asset != null)
             {
-                exeAsset = response.Assets?.FirstOrDefault(a =>
-                    a.Name?.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) == true);
-            }
-
-            if (exeAsset != null)
-            {
-                updateInfo.DownloadUrl = exeAsset.BrowserDownloadUrl ?? "";
-                updateInfo.FileSize = exeAsset.Size;
+                updateInfo.DownloadUrl = asset.BrowserDownloadUrl ?? "";
+                updateInfo.FileSize = asset.Size;
             }
 
             // Compare versions
@@ -99,8 +97,12 @@ public class UpdateService : IUpdateService
         {
             _logger.LogInformation("Starting download from {Url}", updateInfo.DownloadUrl);
 
-            // Download to temp file
+            // Download to a temp file (Android uses the cache dir so the FileProvider can share it).
+#if ANDROID
+            var tempFile = Path.Combine(FileSystem.CacheDirectory, "PrinterApp_Update.apk");
+#else
             var tempFile = Path.Combine(Path.GetTempPath(), "PrinterApp_Update.exe");
+#endif
 
             using (var response = await _httpClient.GetAsync(updateInfo.DownloadUrl, HttpCompletionOption.ResponseHeadersRead))
             {
@@ -151,6 +153,10 @@ public class UpdateService : IUpdateService
 
     private async Task<bool> InstallUpdateAsync(string updateFilePath)
     {
+#if ANDROID
+        await Task.CompletedTask;
+        return InstallApkAndroid(updateFilePath);
+#else
         try
         {
             var currentExePath = Process.GetCurrentProcess().MainModule?.FileName;
@@ -285,7 +291,37 @@ REM Self-delete and exit
             _logger.LogError(ex, "Error installing update");
             return false;
         }
+#endif
     }
+
+#if ANDROID
+    // Android can't silently self-update; hand the downloaded APK to the system package installer,
+    // which prompts the user (and, the first time, to allow "install unknown apps" for this app).
+    // The APK is signed with the same key as the running app, so it installs in place as an update.
+    private bool InstallApkAndroid(string apkPath)
+    {
+        try
+        {
+            var context = Android.App.Application.Context;
+            var apkFile = new Java.IO.File(apkPath);
+            var authority = context.PackageName + ".fileprovider";
+            var apkUri = AndroidX.Core.Content.FileProvider.GetUriForFile(context, authority, apkFile);
+
+            var intent = new Android.Content.Intent(Android.Content.Intent.ActionView);
+            intent.SetDataAndType(apkUri, "application/vnd.android.package-archive");
+            intent.AddFlags(Android.Content.ActivityFlags.NewTask | Android.Content.ActivityFlags.GrantReadUriPermission);
+            context.StartActivity(intent);
+
+            _logger.LogInformation("Launched the Android package installer for {Apk}", apkPath);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to launch the Android APK installer");
+            return false;
+        }
+    }
+#endif
 
     private int CompareVersions(string version1, string version2)
     {

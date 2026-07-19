@@ -146,6 +146,10 @@ public partial class MainPage : ContentPage
                 StatusLabel.Text = $"Configuration loaded - API: {_config.ApiBaseUrl}";
                 StatusLabel.TextColor = Colors.Green;
             }
+
+            // Auto-check for an app update in the background so the customer no longer needs a
+            // release link or a manual reinstall — if a newer version is out, we offer it.
+            _ = CheckForUpdatesOnStartupAsync();
         }
         catch (Exception ex)
         {
@@ -730,6 +734,30 @@ public partial class MainPage : ContentPage
         catch (Exception ex)
         {
             await DisplayAlert("Error", $"Failed to open updater: {ex.Message}", "OK");
+        }
+    }
+
+    private async Task CheckForUpdatesOnStartupAsync()
+    {
+        try
+        {
+            await Task.Delay(4000); // let the UI settle and the feed start first
+            var info = await _updateService.CheckForUpdateAsync();
+            if (!info.UpdateAvailable || string.IsNullOrWhiteSpace(info.DownloadUrl))
+                return;
+
+            var update = await DisplayAlert(
+                "Update available",
+                $"Version {info.LatestVersion} is available (you have {info.CurrentVersion}). Update now?",
+                "Update", "Later");
+            if (update)
+            {
+                await Navigation.PushModalAsync(new UpdaterWindow(_updateService));
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Startup update check failed");
         }
     }
 }
