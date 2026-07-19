@@ -56,9 +56,13 @@ public class MauiDeviceIdentityService : IDeviceIdentityService
 
     private string ResolveDeviceId()
     {
-        var path = Path.Combine(_paths.AppDataDirectory, DeviceIdFileName);
+        // Path resolution is inside the try too: IAppDataPathProvider.AppDataDirectory could in
+        // principle throw, and this method must genuinely never throw (later phases read DeviceId
+        // outside ApplySentryTags' guard).
+        string? path = null;
         try
         {
+            path = Path.Combine(_paths.AppDataDirectory, DeviceIdFileName);
             if (File.Exists(path))
             {
                 var existing = File.ReadAllText(path).Trim();
@@ -68,17 +72,20 @@ public class MauiDeviceIdentityService : IDeviceIdentityService
         }
         catch
         {
-            // Unreadable → regenerate below. Never throw from identity resolution.
+            // Unreadable / invalid path → regenerate below. Never throw from identity resolution.
         }
 
         var generated = Guid.NewGuid().ToString("N");
-        try
+        if (path is not null)
         {
-            File.WriteAllText(path, generated);
-        }
-        catch
-        {
-            // Best-effort: an unwritable store just means a fresh id next launch, never a crash.
+            try
+            {
+                File.WriteAllText(path, generated);
+            }
+            catch
+            {
+                // Best-effort: an unwritable store just means a fresh id next launch, never a crash.
+            }
         }
         return generated;
     }
