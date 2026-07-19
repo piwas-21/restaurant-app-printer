@@ -2,11 +2,11 @@
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="PrinterAPP.MainPage">
-    <ScrollView Padding="20" BackgroundColor="#F5F5F5">
+    <ScrollView Padding="20" BackgroundColor="{AppThemeBinding Light={StaticResource PageBackground}, Dark={StaticResource PageBackgroundDark}}">
         <VerticalStackLayout Spacing="15">
 
             <!-- Header -->
-            <Frame BackgroundColor="White" Padding="20" CornerRadius="10" HasShadow="True">
+            <Frame BackgroundColor="{AppThemeBinding Light={StaticResource CardBackground}, Dark={StaticResource CardBackgroundDark}}" Padding="20" CornerRadius="10" HasShadow="True">
                 <Grid ColumnDefinitions="Auto,*,Auto">
                     <Image Source="sofra_logo.png"
                            HeightRequest="50"
@@ -19,7 +19,7 @@
                         <Label x:Name="StatusLabel"
                                Text="Loading..."
                                FontSize="14"
-                               TextColor="{StaticResource Gray500}"/>
+                               TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
                     </VerticalStackLayout>
 
                     <Button x:Name="ServiceToggleButton"
@@ -34,13 +34,13 @@
             </Frame>
 
             <!-- API Configuration -->
-            <Frame BackgroundColor="White" Padding="20" CornerRadius="10" HasShadow="True">
+            <Frame BackgroundColor="{AppThemeBinding Light={StaticResource CardBackground}, Dark={StaticResource CardBackgroundDark}}" Padding="20" CornerRadius="10" HasShadow="True">
                 <VerticalStackLayout Spacing="10">
                     <Label Text="API Configuration" 
                            FontSize="18" 
                            FontAttributes="Bold"/>
 
-                    <Label Text="API Base URL" FontSize="14" TextColor="{StaticResource Gray500}"/>
+                    <Label Text="API Base URL" FontSize="14" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                         <Entry x:Name="ApiUrlEntry"
                                Placeholder="https://localhost:44386"
@@ -58,23 +58,23 @@
                            TextColor="Orange"
                            IsVisible="False"/>
 
-                    <Label Text="API Key" FontSize="14" TextColor="{StaticResource Gray500}" Margin="0,6,0,0"/>
+                    <Label Text="API Key" FontSize="14" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}" Margin="0,6,0,0"/>
                     <Entry x:Name="ApiKeyEntry"
                            Placeholder="Paste the printer API key for this restaurant"/>
                     <Label Text="Required to receive orders. Get it from your Sofra / RUMI admin, then tap 'Test' and 'Save'."
                            FontSize="11"
-                           TextColor="{StaticResource Gray500}"/>
+                           TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
                 </VerticalStackLayout>
             </Frame>
 
             <!-- Kitchen Printer Settings -->
-            <Frame BackgroundColor="White" Padding="20" CornerRadius="10" HasShadow="True">
+            <Frame BackgroundColor="{AppThemeBinding Light={StaticResource CardBackground}, Dark={StaticResource CardBackgroundDark}}" Padding="20" CornerRadius="10" HasShadow="True">
                 <VerticalStackLayout Spacing="10">
                     <Label Text="🍳 Kitchen Printer Settings"
                            FontSize="18"
                            FontAttributes="Bold"/>
 
-                    <Label Text="Select Kitchen Printer" FontSize="14" TextColor="{StaticResource Gray500}"/>
+                    <Label Text="Select Kitchen Printer" FontSize="14" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                         <Picker x:Name="KitchenPrinterPicker"
                                 Title="Choose kitchen printer"/>
@@ -86,13 +86,13 @@
                                 Clicked="OnRefreshPrintersClicked"/>
                     </Grid>
 
-                    <Label Text="Or network printer IP (for Android / network printers)" FontSize="12" TextColor="{StaticResource Gray500}"/>
+                    <Label Text="Or network printer IP (for Android / network printers)" FontSize="12" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
                     <Entry x:Name="KitchenPrinterIpEntry"
                            Placeholder="e.g. 192.168.1.50 or 192.168.1.50:9100"/>
 
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
                         <VerticalStackLayout>
-                            <Label Text="Paper Width" FontSize="14" TextColor="{StaticResource Gray500}"/>
+                            <Label Text="Paper Width" FontSize="14" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
                             <Picker x:Name="KitchenPaperWidthPicker">
                                 <Picker.Items>
                                     <x:String>80mm</x:String>
@@ -102,7 +102,7 @@
                         </VerticalStackLayout>
 
                         <VerticalStackLayout Grid.Column="1">
-                            <Label Text="Print Copies" FontSize="14" TextColor="{StaticResource Gray500}"/>
+                            <Label Text="Print Copies" FontSize="14" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
                             <Entry x:Name="KitchenPrintCopiesEntry"
                                    Text="1"
                                    Keyboard="Numeric"/>
@@ -122,23 +122,23 @@
             </Frame>
 
             <!-- Cashier Printer Settings -->
-            <Frame BackgroundColor="White" Padding="20" CornerRadius="10" HasShadow="True">
+            <Frame BackgroundColor="{AppThemeBinding Light={StaticResource CardBackground}, Dark={StaticResource CardBackgroundDark}}" Padding="20" CornerRadius="10" HasShadow="True">
                 <VerticalStackLayout Spacing="10">
                     <Label Text="💰 Cashier Printer Settings"
                            FontSize="18"
                            FontAttributes="Bold"/>
 
-                    <Label Text="Select Cashier Printer" FontSize="14" TextColor="{StaticResource Gray500}"/>
+                    <Label Text="Select Cashier Printer" FontSize="14" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
                     <Picker x:Name="CashierPrinterPicker"
                             Title="Choose cashier printer"/>
 
-                    <Label Text="Or network printer IP (for Android / network printers)" FontSize="12" TextColor="{StaticResource Gray500}"/>
+                    <Label Text="Or network printer IP (for Android / network printers)" FontSize="12" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
                     <Entry x:Name="CashierPrinterIpEntry"
                            Placeholder="e.g. 192.168.1.50 or 192.168.1.50:9100"/>
 
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
                         <VerticalStackLayout>
-                            <Label Text="Paper Width" FontSize="14" TextColor="{StaticResource Gray500}"/>
+                            <Label Text="Paper Width" FontSize="14" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
                             <Picker x:Name="CashierPaperWidthPicker">
                                 <Picker.Items>
                                     <x:String>80mm</x:String>
@@ -148,7 +148,7 @@
                         </VerticalStackLayout>
 
                         <VerticalStackLayout Grid.Column="1">
-                            <Label Text="Print Copies" FontSize="14" TextColor="{StaticResource Gray500}"/>
+                            <Label Text="Print Copies" FontSize="14" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
                             <Entry x:Name="CashierPrintCopiesEntry"
                                    Text="1"
                                    Keyboard="Numeric"/>
@@ -168,7 +168,7 @@
             </Frame>
 
             <!-- Time Restriction Settings -->
-            <Frame BackgroundColor="White" Padding="20" CornerRadius="10" HasShadow="True">
+            <Frame BackgroundColor="{AppThemeBinding Light={StaticResource CardBackground}, Dark={StaticResource CardBackgroundDark}}" Padding="20" CornerRadius="10" HasShadow="True">
                 <VerticalStackLayout Spacing="10">
                     <Label Text="⏰ Auto-Print Time Restrictions"
                            FontSize="18"
@@ -176,7 +176,7 @@
 
                     <Label Text="Disable automatic printing during specific hours (manual printing always works)"
                            FontSize="12"
-                           TextColor="{StaticResource Gray500}"
+                           TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"
                            Margin="0,0,0,10"/>
 
                     <Grid ColumnDefinitions="Auto,*">
@@ -191,14 +191,14 @@
 
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
                         <VerticalStackLayout>
-                            <Label Text="Don't Auto-Print From" FontSize="14" TextColor="{StaticResource Gray500}"/>
+                            <Label Text="Don't Auto-Print From" FontSize="14" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
                             <TimePicker x:Name="RestrictStartTimePicker"
                                         Time="12:00:00"
                                         Format="HH:mm"/>
                         </VerticalStackLayout>
 
                         <VerticalStackLayout Grid.Column="1">
-                            <Label Text="Don't Auto-Print Until" FontSize="14" TextColor="{StaticResource Gray500}"/>
+                            <Label Text="Don't Auto-Print Until" FontSize="14" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
                             <TimePicker x:Name="RestrictEndTimePicker"
                                         Time="13:00:00"
                                         Format="HH:mm"/>
@@ -214,18 +214,18 @@
             </Frame>
 
             <!-- Restaurant Information -->
-            <Frame BackgroundColor="White" Padding="20" CornerRadius="10" HasShadow="True">
+            <Frame BackgroundColor="{AppThemeBinding Light={StaticResource CardBackground}, Dark={StaticResource CardBackgroundDark}}" Padding="20" CornerRadius="10" HasShadow="True">
                 <VerticalStackLayout Spacing="10">
                     <Label Text="Restaurant Information"
                            FontSize="18"
                            FontAttributes="Bold"/>
 
-                    <Label Text="Restaurant Name" FontSize="14" TextColor="{StaticResource Gray500}"/>
+                    <Label Text="Restaurant Name" FontSize="14" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
                     <Entry x:Name="RestaurantNameEntry"
                            Text="Your Restaurant"
                            Placeholder="Enter restaurant name"/>
 
-                    <Label Text="Kitchen Location" FontSize="14" TextColor="{StaticResource Gray500}"/>
+                    <Label Text="Kitchen Location" FontSize="14" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
                     <Entry x:Name="KitchenLocationEntry"
                            Text="Main Kitchen"
                            Placeholder="e.g., Main Kitchen, Bar"/>
@@ -233,7 +233,7 @@
             </Frame>
 
             <!-- Print Styles Settings -->
-            <Frame BackgroundColor="White" Padding="20" CornerRadius="10" HasShadow="True">
+            <Frame BackgroundColor="{AppThemeBinding Light={StaticResource CardBackground}, Dark={StaticResource CardBackgroundDark}}" Padding="20" CornerRadius="10" HasShadow="True">
                 <VerticalStackLayout Spacing="10">
                     <Label Text="🎨 Print Styles"
                            FontSize="18"
@@ -241,7 +241,7 @@
                     
                     <Label Text="Customize font sizes and styles for different sections of kitchen and cashier receipts."
                            FontSize="12"
-                           TextColor="{StaticResource Gray500}"
+                           TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"
                            Margin="0,0,0,10"/>
                     
                     <Button Text="Configure Print Styles"

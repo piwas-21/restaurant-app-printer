@@ -4,7 +4,7 @@
              x:Class="PrinterAPP.OrderManagementPage"
              Title="Order Management">
 
-    <Grid Padding="20" BackgroundColor="#F5F5F5">
+    <Grid Padding="20" BackgroundColor="{AppThemeBinding Light={StaticResource PageBackground}, Dark={StaticResource PageBackgroundDark}}">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="*"/>
@@ -18,7 +18,7 @@
           single-row layout used fixed button widths (100+120+150dp) that overflowed a
           ~411dp phone and clipped the Refresh button off-screen with no way to scroll.
         -->
-        <Frame Grid.Row="0" BackgroundColor="White" Padding="20" CornerRadius="10" HasShadow="True" Margin="0,0,0,15">
+        <Frame Grid.Row="0" BackgroundColor="{AppThemeBinding Light={StaticResource CardBackground}, Dark={StaticResource CardBackgroundDark}}" Padding="20" CornerRadius="10" HasShadow="True" Margin="0,0,0,15">
             <Grid RowDefinitions="Auto,Auto" RowSpacing="14">
 
                 <!-- Title + service status -->
@@ -30,7 +30,7 @@
                         <Label x:Name="StatusLabel"
                                Text="No orders received yet"
                                FontSize="13"
-                               TextColor="{StaticResource Gray500}"/>
+                               TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
                     </VerticalStackLayout>
 
                     <Button x:Name="ServiceStatusButton"
@@ -68,7 +68,7 @@
         </Frame>
 
         <!-- Orders List -->
-        <Frame Grid.Row="1" BackgroundColor="White" Padding="10" CornerRadius="10" HasShadow="True">
+        <Frame Grid.Row="1" BackgroundColor="{AppThemeBinding Light={StaticResource CardBackground}, Dark={StaticResource CardBackgroundDark}}" Padding="10" CornerRadius="10" HasShadow="True">
             <CollectionView x:Name="OrdersCollectionView"
                             SelectionMode="None">
                 <CollectionView.EmptyView>
@@ -80,7 +80,7 @@
                                HorizontalOptions="Center"/>
                         <Label Text="Orders will appear here when received via SSE"
                                FontSize="14"
-                               TextColor="{StaticResource Gray500}"
+                               TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"
                                HorizontalOptions="Center"
                                HorizontalTextAlignment="Center"/>
                     </VerticalStackLayout>
@@ -88,7 +88,7 @@
 
                 <CollectionView.ItemTemplate>
                     <DataTemplate>
-                        <Frame Padding="15" Margin="5" CornerRadius="10" HasShadow="True" BackgroundColor="WhiteSmoke">
+                        <Frame Padding="15" Margin="5" CornerRadius="10" HasShadow="True" BackgroundColor="{AppThemeBinding Light={StaticResource CardBackground}, Dark={StaticResource CardBackgroundDark}}">
                             <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="15" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
 
                                 <!-- Status Indicator -->
@@ -105,24 +105,24 @@
                                            FontAttributes="Bold"/>
                                     <Label Text="{Binding ReceivedAtText, StringFormat='Received: {0}'}"
                                            FontSize="12"
-                                           TextColor="{StaticResource Gray500}"/>
+                                           TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
                                 </VerticalStackLayout>
 
                                 <!-- Order Details -->
                                 <VerticalStackLayout Grid.Column="1" Grid.Row="1" Spacing="2">
                                     <Label Text="{Binding Order.CreatedAt, StringFormat='Created: {0:yyyy-MM-dd HH:mm}'}"
                                            FontSize="12"
-                                           TextColor="{StaticResource Gray500}"/>
+                                           TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
                                     <Label Text="{Binding Order.CustomerName, StringFormat='Customer: {0}'}"
                                            FontSize="12"
-                                           TextColor="{StaticResource Gray500}"
+                                           TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"
                                            IsVisible="{Binding Order.CustomerName, Converter={StaticResource StringNotEmptyConverter}}"/>
                                     <Label Text="{Binding Order.Type, StringFormat='Type: {0}'}"
                                            FontSize="12"
-                                           TextColor="{StaticResource Gray500}"/>
+                                           TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
                                     <Label Text="{Binding Order.Status, StringFormat='Status: {0}'}"
                                            FontSize="12"
-                                           TextColor="{StaticResource Gray500}"/>
+                                           TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
                                 </VerticalStackLayout>
 
                                 <!-- Items List -->
