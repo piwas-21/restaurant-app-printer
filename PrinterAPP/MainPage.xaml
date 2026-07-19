@@ -29,8 +29,7 @@
                             TextColor="White"
                             CornerRadius="20"
                             WidthRequest="120"
-                            Clicked="OnServiceToggleClicked"
-                            IsVisible="{OnPlatform WinUI=True, Default=False}"/>
+                            Clicked="OnServiceToggleClicked"/>
                 </Grid>
             </Frame>
 

@@ -94,16 +94,28 @@ public partial class MainPage : ContentPage
             if (PrinterEndpoint.TryParse(_config.CashierPrinterName, out _, out _))
                 CashierPrinterIpEntry.Text = _config.CashierPrinterName;
 
-            // Update service status (Windows only)
+            // Reflect the current feed state (cross-platform).
             UpdateServiceStatus();
 
-            // Auto-start service if it was running before (Windows only)
+            // Auto-start the order feed on launch. Windows keeps honouring the persisted
+            // IsServiceRunning flag (unchanged). On Android the manual Start control was historically
+            // absent and existing installs could never persist IsServiceRunning=true, so a configured
+            // ApiBaseUrl is treated as intent to listen. ApiBaseUrl defaults to a non-empty value, so
+            // in practice the Android feed always comes up on launch — the intended behaviour for an
+            // always-on printer appliance (a Stop tap lasts the session, not across restarts). Without
+            // this the feed never starts on Android and no orders are ever fetched; the feed is plain
+            // HTTP, not Windows-specific, so it is safe to run everywhere.
+            bool autoStartFeed =
 #if WINDOWS
-            if (_config.IsServiceRunning && !_eventStreamingService.IsListening)
+                _config.IsServiceRunning;
+#else
+                _config.IsServiceRunning || !string.IsNullOrWhiteSpace(_config.ApiBaseUrl);
+#endif
+            if (autoStartFeed && !_eventStreamingService.IsListening)
             {
                 try
                 {
-                    _logger.LogInformation("Auto-starting SSE service based on saved configuration");
+                    _logger.LogInformation("Auto-starting order feed based on saved configuration");
                     await _eventStreamingService.StartListeningAsync();
                     _isServiceRunning = true;
                     UpdateServiceStatus();
@@ -112,7 +124,7 @@ public partial class MainPage : ContentPage
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Failed to auto-start SSE service");
+                    _logger.LogError(ex, "Failed to auto-start order feed");
                     StatusLabel.Text = "Failed to auto-start service";
                     StatusLabel.TextColor = Colors.Orange;
                 }
@@ -122,10 +134,6 @@ public partial class MainPage : ContentPage
                 StatusLabel.Text = $"Configuration loaded - API: {_config.ApiBaseUrl}";
                 StatusLabel.TextColor = Colors.Green;
             }
-#else
-            StatusLabel.Text = $"Configuration loaded - API: {_config.ApiBaseUrl}";
-            StatusLabel.TextColor = Colors.Green;
-#endif
         }
         catch (Exception ex)
         {
@@ -204,7 +212,6 @@ public partial class MainPage : ContentPage
 
     private void UpdateServiceStatus()
     {
-#if WINDOWS
         _isServiceRunning = _eventStreamingService.IsListening;
 
         if (_isServiceRunning)
@@ -221,10 +228,6 @@ public partial class MainPage : ContentPage
             ServiceToggleButton.Text = "Start Service";
             ServiceToggleButton.BackgroundColor = Colors.Green;
         }
-#else
-        StatusLabel.Text = "Ready";
-        StatusLabel.TextColor = Colors.Green;
-#endif
     }
 
     // Event Handlers
@@ -249,7 +252,6 @@ public partial class MainPage : ContentPage
 
     private async void OnServiceToggleClicked(object sender, EventArgs e)
     {
-#if WINDOWS
         try
         {
             ServiceToggleButton.IsEnabled = false;
@@ -292,7 +294,6 @@ public partial class MainPage : ContentPage
         {
             ServiceToggleButton.IsEnabled = true;
         }
-#endif
     }
 
     private void OnOrderReceived(object? sender, OrderEvent orderEvent)
