@@ -47,36 +47,38 @@ public partial class DiagnosticsPage : ContentPage
         }
     }
 
+    // Run synchronously — RequestLogService already raises CollectionChanged on the main thread
+    // (it marshals every Add/Clear via MainThread.IsMainThread), so this handler is always on the
+    // UI thread. Deferring it again with BeginInvokeOnMainThread reordered a Clear-then-Add pair:
+    // the queued Reset's RefreshLogs picked up the already-added entry, then the queued Add inserted
+    // it a second time — a duplicate row. Handling the events inline keeps _view in lockstep.
     private void OnLogsChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        MainThread.BeginInvokeOnMainThread(() =>
+        switch (e.Action)
         {
-            switch (e.Action)
-            {
-                case NotifyCollectionChangedAction.Add when e.NewItems is not null:
-                    foreach (LogEntry log in e.NewItems)
+            case NotifyCollectionChangedAction.Add when e.NewItems is not null:
+                foreach (LogEntry log in e.NewItems)
+                {
+                    if (Matches(log))
                     {
-                        if (Matches(log))
-                        {
-                            _view.Insert(0, log); // newest first, matching the source collection
-                        }
+                        _view.Insert(0, log); // newest first, matching the source collection
                     }
-                    break;
+                }
+                break;
 
-                // The log service caps at 200 by evicting the oldest entry (a Remove); drop it here
-                // too so _view can't grow unbounded or show entries that no longer exist.
-                case NotifyCollectionChangedAction.Remove when e.OldItems is not null:
-                    foreach (LogEntry log in e.OldItems)
-                    {
-                        _view.Remove(log);
-                    }
-                    break;
+            // The log service caps at 200 by evicting the oldest entry (a Remove); drop it here
+            // too so _view can't grow unbounded or show entries that no longer exist.
+            case NotifyCollectionChangedAction.Remove when e.OldItems is not null:
+                foreach (LogEntry log in e.OldItems)
+                {
+                    _view.Remove(log);
+                }
+                break;
 
-                default: // Reset (Clear) / Replace / Move — rebuild to stay consistent with the source
-                    RefreshLogs();
-                    break;
-            }
-        });
+            default: // Reset (Clear) / Replace / Move — rebuild to stay consistent with the source
+                RefreshLogs();
+                break;
+        }
     }
 
     private void RefreshLogs()
@@ -98,7 +100,13 @@ public partial class DiagnosticsPage : ContentPage
 
     private void UpdateChipStyles()
     {
-        var res = Application.Current!.Resources;
+        // Application.Current is null in teardown/unit-test lifecycle states; bail rather than NRE.
+        if (Application.Current is null)
+        {
+            return;
+        }
+
+        var res = Application.Current.Resources;
         var primary = (Color)res["Primary"];
         // Inactive chips are outline-only on the page background, so in dark mode use the lighter
         // terracotta (maroon-on-aubergine is too low-contrast). Active chips stay maroon + white.
