@@ -52,10 +52,10 @@ jobs:
     # runtime pack for win-x64 that doesn't exist (NU1102). Isolating to the Windows TFM
     # keeps the restore Windows-only.
     - name: Build and Publish (x64)
-      run: dotnet publish PrinterAPP/PrinterAPP.csproj -c Release -f net10.0-windows10.0.19041.0 -p:TargetFrameworks=net10.0-windows10.0.19041.0 -r win-x64 --self-contained -p:PublishSingleFile=true -o ./publish/x64
+      run: dotnet publish PrinterAPP/PrinterAPP.csproj -c Release -f net10.0-windows10.0.19041.0 -p:TargetFrameworks=net10.0-windows10.0.19041.0 -r win-x64 --self-contained -p:PublishSingleFile=true -p:SentryDsn="${{ secrets.SENTRY_DSN }}" -o ./publish/x64
 
     - name: Build and Publish (x86)
-      run: dotnet publish PrinterAPP/PrinterAPP.csproj -c Release -f net10.0-windows10.0.19041.0 -p:TargetFrameworks=net10.0-windows10.0.19041.0 -r win-x86 --self-contained -p:PublishSingleFile=true -o ./publish/x86
+      run: dotnet publish PrinterAPP/PrinterAPP.csproj -c Release -f net10.0-windows10.0.19041.0 -p:TargetFrameworks=net10.0-windows10.0.19041.0 -r win-x86 --self-contained -p:PublishSingleFile=true -p:SentryDsn="${{ secrets.SENTRY_DSN }}" -o ./publish/x86
 
     - name: Rename Executables
       run: |
@@ -122,6 +122,7 @@ jobs:
       run: |
         dotnet publish PrinterAPP/PrinterAPP.csproj -c Release -f net10.0-android \
           -p:AndroidPackageFormat=apk \
+          -p:SentryDsn="${{ secrets.SENTRY_DSN }}" \
           -p:AndroidKeyStore=true \
           -p:AndroidSigningKeyStore="$RUNNER_TEMP/printerapp.keystore" \
           -p:AndroidSigningKeyAlias="$KEY_ALIAS" \
