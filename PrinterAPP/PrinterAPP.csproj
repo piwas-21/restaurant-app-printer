@@ -23,7 +23,7 @@
     <SingleProject>true</SingleProject>
     <ImplicitUsings>enable</ImplicitUsings>
 
-    <ApplicationTitle>PrinterAPP</ApplicationTitle>
+    <ApplicationTitle>SP-PrinterApp</ApplicationTitle>
     <!-- TODO(Phase 1, deploy): Android Play Console package id is `ch.rumirestaurant.printer`.
          Kept as-is here to avoid changing the live Windows app identity in a code-only PR;
          the rename is a deploy/Play-Console-registration step (needs the Play account). -->
@@ -40,8 +40,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#512BD4" />
-    <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#512BD4" BaseSize="128,128" />
+    <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.png" Color="#fcf6e6" />
+    <MauiSplashScreen Include="Resources\Splash\splash.png" Color="#fcf6e6" BaseSize="300,300" />
     <MauiImage Include="Resources\Images\*" />
     <MauiFont Include="Resources\Fonts\*" />
     <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />

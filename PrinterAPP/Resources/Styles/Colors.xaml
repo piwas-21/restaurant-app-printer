@@ -6,16 +6,16 @@
 
     <!-- Note: For Android please see also Platforms\Android\Resources\values\colors.xml -->
 
-    <Color x:Key="Primary">#512BD4</Color>
-    <Color x:Key="PrimaryDark">#ac99ea</Color>
-    <Color x:Key="PrimaryDarkText">#242424</Color>
-    <Color x:Key="Secondary">#DFD8F7</Color>
-    <Color x:Key="SecondaryDarkText">#9880e5</Color>
-    <Color x:Key="Tertiary">#2B0B98</Color>
+    <!-- SofraPiwas craft palette (was the .NET default purple). See DESIGN.md "Artisanal Kitchen". -->
+    <Color x:Key="Primary">#89341a</Color>
+    <Color x:Key="PrimaryDark">#ffb59f</Color>
+    <Color x:Key="PrimaryDarkText">#241912</Color>
+    <Color x:Key="Secondary">#ffc55f</Color>
+    <Color x:Key="SecondaryDarkText">#7d5700</Color>
+    <Color x:Key="Tertiary">#4c532c</Color>
 
     <Color x:Key="White">White</Color>
     <Color x:Key="Black">Black</Color>
-    <Color x:Key="Magenta">#D600AA</Color>
     <Color x:Key="MidnightBlue">#190649</Color>
     <Color x:Key="OffBlack">#1f1f1f</Color>
     <Color x:Key="Success">#28A745</Color>
