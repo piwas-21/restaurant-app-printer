@@ -8,8 +8,8 @@
             <!-- Header -->
             <Frame BackgroundColor="White" Padding="20" CornerRadius="10" HasShadow="True">
                 <Grid ColumnDefinitions="Auto,*,Auto">
-                    <Image Source="dotnet_bot.png" 
-                           HeightRequest="50" 
+                    <Image Source="sofra_logo.png"
+                           HeightRequest="50"
                            WidthRequest="50"/>
 
                     <VerticalStackLayout Grid.Column="1" Margin="15,0">
