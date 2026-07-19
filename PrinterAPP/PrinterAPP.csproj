@@ -23,15 +23,15 @@
     <SingleProject>true</SingleProject>
     <ImplicitUsings>enable</ImplicitUsings>
 
-    <ApplicationTitle>PrinterAPP</ApplicationTitle>
+    <ApplicationTitle>SP-PrinterApp</ApplicationTitle>
     <!-- TODO(Phase 1, deploy): Android Play Console package id is `ch.rumirestaurant.printer`.
          Kept as-is here to avoid changing the live Windows app identity in a code-only PR;
          the rename is a deploy/Play-Console-registration step (needs the Play account). -->
     <ApplicationId>com.companyname.printerapp</ApplicationId>
-    <ApplicationDisplayVersion>1.0.18</ApplicationDisplayVersion>
+    <ApplicationDisplayVersion>1.0.19</ApplicationDisplayVersion>
     <!-- Android versionCode (integer) — must strictly increase each release so updates install. -->
-    <ApplicationVersion>18</ApplicationVersion>
-    <Version>1.0.18</Version>
+    <ApplicationVersion>19</ApplicationVersion>
+    <Version>1.0.19</Version>
 
     <WindowsPackageType>None</WindowsPackageType>
 
@@ -40,8 +40,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.svg" Color="#512BD4" />
-    <MauiSplashScreen Include="Resources\Splash\splash.svg" Color="#512BD4" BaseSize="128,128" />
+    <MauiIcon Include="Resources\AppIcon\appicon.svg" ForegroundFile="Resources\AppIcon\appiconfg.png" Color="#fcf6e6" />
+    <MauiSplashScreen Include="Resources\Splash\splash.png" Color="#fcf6e6" BaseSize="300,300" />
     <MauiImage Include="Resources\Images\*" />
     <MauiFont Include="Resources\Fonts\*" />
     <MauiAsset Include="Resources\Raw\**" LogicalName="%(RecursiveDir)%(Filename)%(Extension)" />
@@ -51,6 +51,18 @@
     <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.70" />
     <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
     <PackageReference Include="System.Text.Encoding.CodePages" Version="10.0.0" />
+    <PackageReference Include="Sentry.Maui" Version="6.6.0" />
+  </ItemGroup>
+
+  <!-- Sentry DSN injected at build time (write-only ingest key, kept out of source). Empty by
+       default → Sentry stays inert, matching the env-gated backend/frontend/sofra pattern
+       (DEV-PHASES W3). Release CI passes -p:SentryDsn=$SENTRY_DSN from a secret; local/dev builds
+       leave it empty so no telemetry leaves the machine. See PRINTER-APP-FLEET-OBSERVABILITY-PLAN. -->
+  <PropertyGroup>
+    <SentryDsn Condition="'$(SentryDsn)' == ''"></SentryDsn>
+  </PropertyGroup>
+  <ItemGroup>
+    <AssemblyMetadata Include="SentryDsn" Value="$(SentryDsn)" />
   </ItemGroup>
 
   <!-- Windows-only dependencies (WMI printer enumeration). Not referenced on Android. -->

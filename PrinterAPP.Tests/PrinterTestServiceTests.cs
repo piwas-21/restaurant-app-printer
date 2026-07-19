@@ -33,7 +33,8 @@ public class PrinterTestServiceTests
 
         public Task<List<string>> GetAvailablePrintersAsync() => Task.FromResult(new List<string>());
 
-        public Task<bool> TestApiConnectionAsync(string apiUrl) => Task.FromResult(false);
+        public Task<System.Net.HttpStatusCode?> TestPrinterFeedAsync(string apiUrl, string? apiKey)
+            => Task.FromResult<System.Net.HttpStatusCode?>(null);
 
         public Task<PrinterConfiguration> LoadConfigurationAsync() => Task.FromResult(new PrinterConfiguration());
 

@@ -3,6 +3,7 @@ using Microsoft.Maui.Controls;
 using Microsoft.Extensions.Logging;
 using PrinterAPP.Models;
 using PrinterAPP.Services;
+using Sentry;
 
 namespace PrinterAPP;
 
@@ -14,6 +15,7 @@ public partial class MainPage : ContentPage
     private readonly IOrderHistoryService _orderHistoryService;
     private readonly IUpdateService _updateService;
     private readonly IPrinterTestService _printerTestService;
+    private readonly IDeviceIdentityService _deviceIdentity;
     private readonly ILogger<MainPage> _logger;
     private PrinterConfiguration _config;
     private bool _isServiceRunning = false;
@@ -25,6 +27,7 @@ public partial class MainPage : ContentPage
         IOrderHistoryService orderHistoryService,
         IUpdateService updateService,
         IPrinterTestService printerTestService,
+        IDeviceIdentityService deviceIdentity,
         ILogger<MainPage> logger)
     {
         InitializeComponent();
@@ -34,6 +37,7 @@ public partial class MainPage : ContentPage
         _orderHistoryService = orderHistoryService;
         _updateService = updateService;
         _printerTestService = printerTestService;
+        _deviceIdentity = deviceIdentity;
         _logger = logger;
         _config = new PrinterConfiguration();
 
@@ -56,12 +60,17 @@ public partial class MainPage : ContentPage
             // Load saved configuration
             _config = await _printerService.LoadConfigurationAsync();
 
+            // Tag Sentry events with this device + tenant so fleet errors are attributable (no-op when
+            // Sentry is inert). Here — after startup + config load — so the lazy device-id persists.
+            _deviceIdentity.ApplySentryTags(_config.TenantSlug);
+
             // Debug logging
             _logger.LogInformation("Loaded API URL from config: {ApiUrl}", _config.ApiBaseUrl);
             System.Diagnostics.Debug.WriteLine($"DEBUG: Loaded API URL = {_config.ApiBaseUrl}");
 
             // Update UI with loaded configuration
             ApiUrlEntry.Text = _config.ApiBaseUrl;
+            ApiKeyEntry.Text = _config.ApiKey;
 
             // Debug logging
             _logger.LogInformation("Set ApiUrlEntry.Text to: {ApiUrl}", ApiUrlEntry.Text);
@@ -125,6 +134,9 @@ public partial class MainPage : ContentPage
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Failed to auto-start order feed");
+                    // Surface a failed feed start to the fleet dashboard — this is the class of
+                    // failure behind the 2026-07-19 incident. No-op when Sentry is inert.
+                    SentrySdk.CaptureException(ex);
                     StatusLabel.Text = "Failed to auto-start service";
                     StatusLabel.TextColor = Colors.Orange;
                 }
@@ -354,26 +366,44 @@ public partial class MainPage : ContentPage
             StatusLabel.Text = "Testing API connection...";
             StatusLabel.TextColor = Colors.Orange;
 
-            var apiUrl = ApiUrlEntry.Text;
+            var apiUrl = ApiUrlEntry.Text?.Trim();
             if (string.IsNullOrWhiteSpace(apiUrl))
             {
                 await DisplayAlert("Error", "Please enter an API URL", "OK");
                 return;
             }
 
-            var success = await _printerService.TestApiConnectionAsync(apiUrl);
+            // Test the actual order feed the app polls, using the entered key. This catches the real
+            // production failure mode — a 401 from a missing/incorrect key — which the previous
+            // events-endpoint check masked by treating 401 as success.
+            var status = await _printerService.TestPrinterFeedAsync(apiUrl, ApiKeyEntry.Text?.Trim());
 
-            if (success)
-            {
-                StatusLabel.Text = "API connection successful";
-                StatusLabel.TextColor = Colors.Green;
-                await DisplayAlert("Success", "API connection successful!", "OK");
-            }
-            else
+            if (status is null)
             {
                 StatusLabel.Text = "API connection failed";
                 StatusLabel.TextColor = Colors.Red;
-                await DisplayAlert("Error", "Failed to connect to API. Please check the URL and try again.", "OK");
+                await DisplayAlert("Connection failed",
+                    "Could not reach the server. Check the API URL and the tablet's internet connection.", "OK");
+            }
+            else if ((int)status >= 200 && (int)status < 300)
+            {
+                StatusLabel.Text = "API connection successful";
+                StatusLabel.TextColor = Colors.Green;
+                await DisplayAlert("Success", "Connected and the API key was accepted. The app can receive orders.", "OK");
+            }
+            else if (status == System.Net.HttpStatusCode.Unauthorized)
+            {
+                StatusLabel.Text = "API key missing or incorrect";
+                StatusLabel.TextColor = Colors.Red;
+                await DisplayAlert("Unauthorized (401)",
+                    "Connected to the server, but the API key is missing or incorrect. Paste the printer API key for this restaurant, then tap Save.", "OK");
+            }
+            else
+            {
+                StatusLabel.Text = $"API returned {(int)status}";
+                StatusLabel.TextColor = Colors.Red;
+                await DisplayAlert("Unexpected response",
+                    $"The server responded with {(int)status} ({status}). Check the API URL.", "OK");
             }
         }
         catch (Exception ex)
@@ -477,6 +507,7 @@ public partial class MainPage : ContentPage
 
             // Update configuration from UI
             _config.ApiBaseUrl = newApiUrl;
+            _config.ApiKey = ApiKeyEntry.Text?.Trim() ?? string.Empty;
             _config.RestaurantName = RestaurantNameEntry.Text;
             _config.KitchenLocation = KitchenLocationEntry.Text;
 
@@ -635,6 +666,7 @@ public partial class MainPage : ContentPage
 
                 // Update UI
                 ApiUrlEntry.Text = _config.ApiBaseUrl;
+                ApiKeyEntry.Text = _config.ApiKey;
                 RestaurantNameEntry.Text = _config.RestaurantName;
                 KitchenLocationEntry.Text = _config.KitchenLocation;
 
