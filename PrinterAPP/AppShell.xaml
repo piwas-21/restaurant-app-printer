@@ -20,22 +20,10 @@
             Route="OrderManagementPage" />
 
         <ShellContent
-            Title="Logs"
-            Icon="tab_logs.png"
-            ContentTemplate="{DataTemplate local:LogsPage}"
-            Route="LogsPage" />
-
-        <ShellContent
-            Title="Errors"
-            Icon="tab_errors.png"
-            ContentTemplate="{DataTemplate local:ErrorLogsPage}"
-            Route="ErrorLogsPage" />
-
-        <ShellContent
-            Title="Warnings"
-            Icon="tab_warnings.png"
-            ContentTemplate="{DataTemplate local:WarningLogsPage}"
-            Route="WarningLogsPage" />
+            Title="Diagnostics"
+            Icon="tab_diagnostics.png"
+            ContentTemplate="{DataTemplate local:DiagnosticsPage}"
+            Route="DiagnosticsPage" />
     </TabBar>
 
 </Shell>

@@ -191,7 +191,7 @@ public class OrderHistoryItem : INotifyPropertyChanged
         }
     }
 
-    public string DisplayText => $"Order #{Order.OrderNumber} - {Order.Type} - Table {Order.TableNumber} - {Order.Items.Count} items - ${Order.Total:F2}";
+    public string DisplayText => $"Order #{Order.OrderNumber} - {Order.TypeDisplay} - {Order.Items.Count} items - ${Order.Total:F2}";
     public string ReceivedAtText => ReceivedAt.ToLocalTime().ToString("HH:mm:ss");
     public string StatusColor => KitchenPrinted && CashierPrinted ? "Green" : CashierPrinted || KitchenPrinted ? "Orange" : "Red";
 

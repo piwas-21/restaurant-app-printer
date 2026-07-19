@@ -14,6 +14,21 @@
     <Color x:Key="SecondaryDarkText">#7d5700</Color>
     <Color x:Key="Tertiary">#4c532c</Color>
 
+    <!-- SofraPiwas craft surfaces — light ("Warm Kitchen") + dark ("Late Evening").
+         Paired tokens consumed via {AppThemeBinding Light={StaticResource X}, Dark={StaticResource XDark}}. -->
+    <Color x:Key="PageBackground">#fff8f5</Color>
+    <Color x:Key="PageBackgroundDark">#211a16</Color>
+    <Color x:Key="CardBackground">#fffcf8</Color>
+    <Color x:Key="CardBackgroundDark">#2b2019</Color>
+    <Color x:Key="CardBorder">#e6d7cd</Color>
+    <Color x:Key="CardBorderDark">#3d302a</Color>
+    <Color x:Key="TextPrimary">#241912</Color>
+    <Color x:Key="TextPrimaryDark">#ffede4</Color>
+    <Color x:Key="TextSecondary">#56423d</Color>
+    <Color x:Key="TextSecondaryDark">#cbb8b0</Color>
+    <Color x:Key="TextMuted">#89726c</Color>
+    <Color x:Key="TextMutedDark">#a3908a</Color>
+
     <Color x:Key="White">White</Color>
     <Color x:Key="Black">Black</Color>
     <Color x:Key="MidnightBlue">#190649</Color>

@@ -11,6 +11,14 @@ public class Order
     public string? CustomerPhone { get; set; }
     public string Type { get; set; } = string.Empty; // DineIn, TakeAway, Delivery
     public int? TableNumber { get; set; } // Nullable for Takeaway/Delivery orders
+
+    // Type, with the table appended only when one actually applies (a seated order). Takeaway/
+    // Delivery have no table, so we show just the type instead of a dangling "Table" with a blank
+    // number. Mirrors the receipt's guard in OrderPrintService (TableNumber.HasValue && > 0).
+    [JsonIgnore]
+    public string TypeDisplay => TableNumber.HasValue && TableNumber.Value > 0
+        ? $"{Type} - Table {TableNumber}"
+        : Type;
     public decimal SubTotal { get; set; }
     public decimal Tax { get; set; }
     public decimal DeliveryFee { get; set; }
