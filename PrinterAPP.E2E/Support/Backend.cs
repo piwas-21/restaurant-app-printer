@@ -1,3 +1,4 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
 
@@ -47,6 +48,25 @@ public static class Backend
         using var response = await Http.SendAsync(request);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync();
+    }
+
+    /// <summary>
+    /// True if the printer-feed rejects an unauthenticated request (401) — i.e. the backend enforces the
+    /// X-Api-Key. Lets the positive feed test SKIP (not red-fail) when no key is configured against an
+    /// enforcing backend, while a configured-but-wrong key still fails loudly. Any non-401 (incl. an open
+    /// dev backend's 200, or an unreachable host) returns false → the test proceeds.
+    /// </summary>
+    public static async Task<bool> FeedEnforcesKeyAsync()
+    {
+        try
+        {
+            using var response = await Http.GetAsync($"{Root}/api/orders/printer-feed");
+            return response.StatusCode == HttpStatusCode.Unauthorized;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     /// <summary>

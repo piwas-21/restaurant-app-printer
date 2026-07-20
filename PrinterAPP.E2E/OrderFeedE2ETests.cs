@@ -54,6 +54,11 @@ public class OrderFeedE2ETests
     public async Task OrderFeed_RealService_PollsRealBackend_AndAdvancesTimestamp()
     {
         Skip.IfNot(await Backend.IsReachableAsync(), $"No backend at {E2EConfig.ApiBaseUrl}");
+        // Symmetric with the negative test: if no key is configured but the feed enforces one, the
+        // positive path can't be exercised — skip rather than red-fail. (A configured-but-wrong key is
+        // NOT skipped — it fails loudly below, which is real auth-drift detection.)
+        Skip.If(string.IsNullOrWhiteSpace(E2EConfig.ApiKey) && await Backend.FeedEnforcesKeyAsync(),
+            "feed enforces X-Api-Key but PRINTERAPP_E2E_API_KEY is unset — nothing to prove");
 
         var feed = NewFeed(Config(), out _);
         try
