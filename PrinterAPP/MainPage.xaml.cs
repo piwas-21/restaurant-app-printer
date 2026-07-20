@@ -16,6 +16,7 @@ public partial class MainPage : ContentPage
     private readonly IUpdateService _updateService;
     private readonly IPrinterTestService _printerTestService;
     private readonly IDeviceIdentityService _deviceIdentity;
+    private readonly ITelemetryScheduler _telemetryScheduler;
     private readonly ILogger<MainPage> _logger;
     private PrinterConfiguration _config;
     private bool _isServiceRunning = false;
@@ -28,6 +29,7 @@ public partial class MainPage : ContentPage
         IUpdateService updateService,
         IPrinterTestService printerTestService,
         IDeviceIdentityService deviceIdentity,
+        ITelemetryScheduler telemetryScheduler,
         ILogger<MainPage> logger)
     {
         InitializeComponent();
@@ -38,6 +40,7 @@ public partial class MainPage : ContentPage
         _updateService = updateService;
         _printerTestService = printerTestService;
         _deviceIdentity = deviceIdentity;
+        _telemetryScheduler = telemetryScheduler;
         _logger = logger;
         _config = new PrinterConfiguration();
 
@@ -63,6 +66,10 @@ public partial class MainPage : ContentPage
             // Tag Sentry events with this device + tenant so fleet errors are attributable (no-op when
             // Sentry is inert). Here — after startup + config load — so the lazy device-id persists.
             _deviceIdentity.ApplySentryTags(_config.TenantSlug);
+
+            // Begin periodic heartbeats. Runs regardless of feed state so a stopped/wedged feed is
+            // remotely visible (the 2026-07-19 incident's blind spot). Idempotent + self-guarding.
+            _telemetryScheduler.Start();
 
             // Debug logging
             _logger.LogInformation("Loaded API URL from config: {ApiUrl}", _config.ApiBaseUrl);

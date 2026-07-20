@@ -52,6 +52,17 @@
     <Compile Include="..\PrinterAPP\Services\IPrinterConfigurationStore.cs" Link="Linked\IPrinterConfigurationStore.cs" />
     <Compile Include="..\PrinterAPP\Services\PrinterConfigurationStore.cs" Link="Linked\PrinterConfigurationStore.cs" />
     <Compile Include="..\PrinterAPP\Services\LegacyAppDataMigration.cs" Link="Linked\LegacyAppDataMigration.cs" />
+    <!-- Fleet telemetry (MAUI-free): the HTTP client + pure payload builder + request model.
+         The scheduler + MAUI wiring stay in the app head; the risk-bearing HTTP/payload logic is
+         unit-tested here (headers, URL, error handling, and the "no API key in the body" contract). -->
+    <Compile Include="..\PrinterAPP\Models\HeartbeatRequest.cs" Link="Linked\HeartbeatRequest.cs" />
+    <Compile Include="..\PrinterAPP\Services\ITelemetryClient.cs" Link="Linked\ITelemetryClient.cs" />
+    <Compile Include="..\PrinterAPP\Services\TelemetryClient.cs" Link="Linked\TelemetryClient.cs" />
+    <Compile Include="..\PrinterAPP\Services\TelemetryPayloads.cs" Link="Linked\TelemetryPayloads.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
   </ItemGroup>
 
 </Project>
