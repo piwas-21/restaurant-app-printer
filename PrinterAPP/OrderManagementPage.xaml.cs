@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using PrinterAPP.Converters;
 using PrinterAPP.Services;
 
 namespace PrinterAPP;
@@ -55,7 +56,8 @@ public partial class OrderManagementPage : ContentPage
     {
         var isRunning = _eventStreamingService.IsListening;
         ServiceStatusButton.Text = isRunning ? "Service: Running" : "Service: Stopped";
-        ServiceStatusButton.BackgroundColor = isRunning ? Colors.Green : Colors.Orange;
+        // Craft: running → olive (go), stopped → saffron (warn). Theme-aware via CraftColors.
+        ServiceStatusButton.BackgroundColor = isRunning ? CraftColors.Olive : CraftColors.Token("AccentText", "AccentDark");
     }
 
     private void UpdateStatusLabel()
