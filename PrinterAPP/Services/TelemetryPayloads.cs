@@ -80,9 +80,12 @@ public static class TelemetryPayloads
         // "Would print" = a printer is configured AND auto-print is on; otherwise the device didn't
         // (and wasn't going to) print → Skipped, not a fabricated Printed.
         var willPrint = !string.IsNullOrWhiteSpace(printerName) && autoPrint;
-        var status = !willPrint
-            ? DevicePrintStatus.Skipped
-            : success ? DevicePrintStatus.Printed : DevicePrintStatus.Failed;
+        var status = (willPrint, success) switch
+        {
+            (false, _) => DevicePrintStatus.Skipped,   // no printer or auto-print off → didn't print
+            (true, true) => DevicePrintStatus.Printed,
+            (true, false) => DevicePrintStatus.Failed,
+        };
 
         return new PrintAck
         {
