@@ -17,6 +17,7 @@ public class TelemetryScheduler : ITelemetryScheduler
     private readonly IEventStreamingService _feed;
     private readonly ILogger<TelemetryScheduler> _logger;
 
+    private readonly object _gate = new();
     private CancellationTokenSource? _cts;
     private Task? _loop;
 
@@ -36,11 +37,15 @@ public class TelemetryScheduler : ITelemetryScheduler
 
     public void Start()
     {
-        if (_loop is not null)
-            return;
+        // Locked so a stray concurrent Start can't spin up a second loop + leak the first's CTS.
+        lock (_gate)
+        {
+            if (_loop is not null)
+                return;
 
-        _cts = new CancellationTokenSource();
-        _loop = RunAsync(_cts.Token);
+            _cts = new CancellationTokenSource();
+            _loop = RunAsync(_cts.Token);
+        }
     }
 
     private async Task RunAsync(CancellationToken cancellationToken)
@@ -81,12 +86,28 @@ public class TelemetryScheduler : ITelemetryScheduler
 
     public async Task StopAsync()
     {
-        _cts?.Cancel();
-        if (_loop is not null)
+        // Capture + clear state under the lock, then await/dispose OUTSIDE it (never await holding a
+        // lock). A concurrent Stop sees the nulled fields and no-ops; a concurrent Start sees them
+        // cleared and starts fresh.
+        CancellationTokenSource? cts;
+        Task? loop;
+        lock (_gate)
+        {
+            cts = _cts;
+            loop = _loop;
+            _cts = null;
+            _loop = null;
+        }
+
+        if (cts is null)
+            return;
+
+        cts.Cancel();
+        if (loop is not null)
         {
             try
             {
-                await _loop;
+                await loop;
             }
             catch
             {
@@ -94,8 +115,6 @@ public class TelemetryScheduler : ITelemetryScheduler
             }
         }
 
-        _cts?.Dispose();
-        _cts = null;
-        _loop = null;
+        cts.Dispose();
     }
 }
