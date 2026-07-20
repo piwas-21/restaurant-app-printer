@@ -58,15 +58,25 @@ live staging — **plus the order-feed suite** (`OrderFeedE2ETests`): the real `
 polling a real backend (positive: a successful poll advances `LastSuccessfulPollAt`; negative: a wrong
 `X-Api-Key` never polls + surfaces the auth error; delivery: a Confirmed DineIn order created via
 `POST /api/orders` reaches `OrderReceived`). The MAUI-`Color` coupling that blocked source-linking the feed
-was removed by moving `LogType`→`Color` off `LogEntry` into a UI converter. **Next iterations:**
-(1) **missed-order reconciliation** (create a Confirmed order via `POST /api/orders`, ack one and not the
-other, assert `GET /api/devices/missed-orders`) — needs a seeded product catalogue, so it pairs with a
-spun-up/seeded backend; (2) **print-to-sink** (`OrderPrintService` → loopback `TcpListener` asserting
-ESC/POS) — needs the `PrintStyleSettingsService` injection seam.
+was removed by moving `LogType`→`Color` off `LogEntry` into a UI converter — **plus missed-order
+reconciliation** (`MissedOrderReconciliationE2ETests`): create two Confirmed orders, ack one as `Printed`
+through the real `TelemetryClient`, and assert the acked one is **not** in `GET /api/devices/missed-orders`
+while the unacked one **is** (membership assertions, never list size). Needs a seeded backend + admin JWT;
+skips otherwise.
 
-> The order-feed delivery test + the negative auth path need a seeded, key-enforcing backend to run for
-> real; against a keyless/open or product-less backend they **skip** (never red-fail). The true green pass
-> is the `e2e.yml` CI job (which carries the `X-Api-Key` + admin JWT secrets) or a seeded demo backend.
+**Print-to-sink lives in `PrinterAPP.Tests`, not here** (`OrderPrintToSinkTests`): it needs no backend, so
+it runs on **every PR** (a print regression shouldn't wait for the weekly E2E cadence). The real
+`OrderPrintService` composes a receipt and sends it over `NetworkTcpTransport` to a loopback `TcpListener`,
+asserting the ESC/POS bytes (init + cut + order content). Enabled by injecting `IAppDataPathProvider` into
+`OrderPrintService` (was `new PrintStyleSettingsService()` with a MAUI default), making the compose path
+source-linkable headless.
+
+**Next iterations:** the emulator-level Track-B spike (real MAUI app + a frontend-placed order), still open.
+
+> The order-feed delivery test, the negative auth path, and the reconciliation test need a seeded,
+> key-enforcing backend to run for real; against a keyless/open or product-less backend they **skip**
+> (never red-fail). The true green pass is the `e2e.yml` CI job (which carries the `X-Api-Key` + admin JWT
+> secrets) or a seeded demo backend.
 
 ## Environment parameterization (run against any environment)
 
