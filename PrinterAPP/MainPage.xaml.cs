@@ -1,6 +1,7 @@
 ﻿// MainPage.xaml.cs
 using Microsoft.Maui.Controls;
 using Microsoft.Extensions.Logging;
+using PrinterAPP.Converters;
 using PrinterAPP.Models;
 using PrinterAPP.Services;
 using Sentry;
@@ -61,7 +62,7 @@ public partial class MainPage : ContentPage
         {
             // Show loading state
             StatusLabel.Text = "Loading configuration...";
-            StatusLabel.TextColor = Colors.Gray;
+            StatusLabel.TextColor = CraftColors.Muted;
 
             // Load saved configuration
             _config = await _printerService.LoadConfigurationAsync();
@@ -139,7 +140,7 @@ public partial class MainPage : ContentPage
                     _isServiceRunning = true;
                     UpdateServiceStatus();
                     StatusLabel.Text = $"Service auto-started - API: {_config.ApiBaseUrl}";
-                    StatusLabel.TextColor = Colors.Green;
+                    StatusLabel.TextColor = CraftColors.SuccessText;
                 }
                 catch (Exception ex)
                 {
@@ -148,13 +149,13 @@ public partial class MainPage : ContentPage
                     // failure behind the 2026-07-19 incident. No-op when Sentry is inert.
                     SentrySdk.CaptureException(ex);
                     StatusLabel.Text = "Failed to auto-start service";
-                    StatusLabel.TextColor = Colors.Orange;
+                    StatusLabel.TextColor = CraftColors.WarningText;
                 }
             }
             else
             {
                 StatusLabel.Text = $"Configuration loaded - API: {_config.ApiBaseUrl}";
-                StatusLabel.TextColor = Colors.Green;
+                StatusLabel.TextColor = CraftColors.SuccessText;
             }
 
             // Auto-check for an app update in the background so the customer no longer needs a
@@ -164,7 +165,7 @@ public partial class MainPage : ContentPage
         catch (Exception ex)
         {
             StatusLabel.Text = "Error loading configuration";
-            StatusLabel.TextColor = Colors.Red;
+            StatusLabel.TextColor = CraftColors.Error;
             await DisplayAlert("Error", $"Failed to initialize: {ex.Message}", "OK");
         }
     }
@@ -243,16 +244,16 @@ public partial class MainPage : ContentPage
         if (_isServiceRunning)
         {
             StatusLabel.Text = "SSE Service is running";
-            StatusLabel.TextColor = Colors.Green;
+            StatusLabel.TextColor = CraftColors.SuccessText;
             ServiceToggleButton.Text = "Stop Service";
-            ServiceToggleButton.BackgroundColor = Colors.Red;
+            ServiceToggleButton.BackgroundColor = CraftColors.Error;
         }
         else
         {
             StatusLabel.Text = "SSE Service is stopped";
-            StatusLabel.TextColor = Colors.Orange;
+            StatusLabel.TextColor = CraftColors.WarningText;
             ServiceToggleButton.Text = "Start Service";
-            ServiceToggleButton.BackgroundColor = Colors.Green;
+            ServiceToggleButton.BackgroundColor = CraftColors.Olive;
         }
     }
 
@@ -286,7 +287,7 @@ public partial class MainPage : ContentPage
             {
                 // Stop SSE service
                 StatusLabel.Text = "Stopping SSE service...";
-                StatusLabel.TextColor = Colors.Orange;
+                StatusLabel.TextColor = CraftColors.WarningText;
 
                 await _eventStreamingService.StopListeningAsync();
                 _isServiceRunning = false;
@@ -299,7 +300,7 @@ public partial class MainPage : ContentPage
             {
                 // Start SSE service
                 StatusLabel.Text = "Starting SSE service...";
-                StatusLabel.TextColor = Colors.Orange;
+                StatusLabel.TextColor = CraftColors.WarningText;
 
                 await _eventStreamingService.StartListeningAsync();
                 _isServiceRunning = true;
@@ -355,13 +356,13 @@ public partial class MainPage : ContentPage
                 _ = _printAckOutbox.EnqueueAsync(acks);
 
                 StatusLabel.Text = $"Order #{orderEvent.Order.OrderNumber} printed";
-                StatusLabel.TextColor = Colors.Green;
+                StatusLabel.TextColor = CraftColors.SuccessText;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error processing order");
                 StatusLabel.Text = "Error processing order";
-                StatusLabel.TextColor = Colors.Red;
+                StatusLabel.TextColor = CraftColors.Error;
             }
         });
     }
@@ -372,8 +373,8 @@ public partial class MainPage : ContentPage
         {
             StatusLabel.Text = status;
             StatusLabel.TextColor = status.Contains("Error") || status.Contains("Disconnected")
-                ? Colors.Red
-                : Colors.Green;
+                ? CraftColors.Error
+                : CraftColors.SuccessText;
         });
     }
 
@@ -385,7 +386,7 @@ public partial class MainPage : ContentPage
             if (button != null) button.IsEnabled = false;
 
             StatusLabel.Text = "Testing API connection...";
-            StatusLabel.TextColor = Colors.Orange;
+            StatusLabel.TextColor = CraftColors.WarningText;
 
             var apiUrl = ApiUrlEntry.Text?.Trim();
             if (string.IsNullOrWhiteSpace(apiUrl))
@@ -402,27 +403,27 @@ public partial class MainPage : ContentPage
             if (status is null)
             {
                 StatusLabel.Text = "API connection failed";
-                StatusLabel.TextColor = Colors.Red;
+                StatusLabel.TextColor = CraftColors.Error;
                 await DisplayAlert("Connection failed",
                     "Could not reach the server. Check the API URL and the tablet's internet connection.", "OK");
             }
             else if ((int)status >= 200 && (int)status < 300)
             {
                 StatusLabel.Text = "API connection successful";
-                StatusLabel.TextColor = Colors.Green;
+                StatusLabel.TextColor = CraftColors.SuccessText;
                 await DisplayAlert("Success", "Connected and the API key was accepted. The app can receive orders.", "OK");
             }
             else if (status == System.Net.HttpStatusCode.Unauthorized)
             {
                 StatusLabel.Text = "API key missing or incorrect";
-                StatusLabel.TextColor = Colors.Red;
+                StatusLabel.TextColor = CraftColors.Error;
                 await DisplayAlert("Unauthorized (401)",
                     "Connected to the server, but the API key is missing or incorrect. Paste the printer API key for this restaurant, then tap Save.", "OK");
             }
             else
             {
                 StatusLabel.Text = $"API returned {(int)status}";
-                StatusLabel.TextColor = Colors.Red;
+                StatusLabel.TextColor = CraftColors.Error;
                 await DisplayAlert("Unexpected response",
                     $"The server responded with {(int)status} ({status}). Check the API URL.", "OK");
             }
@@ -445,12 +446,12 @@ public partial class MainPage : ContentPage
             if (button != null) button.IsEnabled = false;
 
             StatusLabel.Text = "Refreshing printer list...";
-            StatusLabel.TextColor = Colors.Orange;
+            StatusLabel.TextColor = CraftColors.WarningText;
 
             await LoadPrintersAsync();
 
             StatusLabel.Text = "Printer list refreshed";
-            StatusLabel.TextColor = Colors.Green;
+            StatusLabel.TextColor = CraftColors.SuccessText;
         }
         catch (Exception ex)
         {
@@ -500,13 +501,13 @@ public partial class MainPage : ContentPage
                 if (!confirm)
                 {
                     StatusLabel.Text = "Configuration save cancelled";
-                    StatusLabel.TextColor = Colors.Orange;
+                    StatusLabel.TextColor = CraftColors.WarningText;
                     return;
                 }
 
                 // Stop the service
                 StatusLabel.Text = "Stopping service due to API URL change...";
-                StatusLabel.TextColor = Colors.Orange;
+                StatusLabel.TextColor = CraftColors.WarningText;
 
                 try
                 {
@@ -587,7 +588,7 @@ public partial class MainPage : ContentPage
             ApiUrlChangeLabel.IsVisible = false;
 
             StatusLabel.Text = "Configuration saved";
-            StatusLabel.TextColor = Colors.Green;
+            StatusLabel.TextColor = CraftColors.SuccessText;
 
             var configPath = _printerService.ConfigFilePath;
 
@@ -611,7 +612,7 @@ public partial class MainPage : ContentPage
         catch (Exception ex)
         {
             StatusLabel.Text = "Failed to save configuration";
-            StatusLabel.TextColor = Colors.Red;
+            StatusLabel.TextColor = CraftColors.Error;
             await DisplayAlert("Error", $"Failed to save configuration: {ex.Message}", "OK");
         }
     }
@@ -636,7 +637,7 @@ public partial class MainPage : ContentPage
             if (button != null) button.IsEnabled = false;
 
             StatusLabel.Text = "Printing test receipts...";
-            StatusLabel.TextColor = Colors.Orange;
+            StatusLabel.TextColor = CraftColors.WarningText;
 
             // Update config with current UI values
             _config.RestaurantName = RestaurantNameEntry.Text;
@@ -655,13 +656,13 @@ public partial class MainPage : ContentPage
                 results.Add(await _printerTestService.TestPrinterAsync(cashierTarget, _config, "CASHIER", "Cashier"));
 
             StatusLabel.Text = "Test receipts printed";
-            StatusLabel.TextColor = Colors.Green;
+            StatusLabel.TextColor = CraftColors.SuccessText;
             await DisplayAlert("Test Results", string.Join("\n", results), "OK");
         }
         catch (Exception ex)
         {
             StatusLabel.Text = "Print error";
-            StatusLabel.TextColor = Colors.Red;
+            StatusLabel.TextColor = CraftColors.Error;
             await DisplayAlert("Error", $"Print failed: {ex.Message}", "OK");
         }
         finally
@@ -717,7 +718,7 @@ public partial class MainPage : ContentPage
                 }
 
                 StatusLabel.Text = "Settings reset to default";
-                StatusLabel.TextColor = Colors.Orange;
+                StatusLabel.TextColor = CraftColors.WarningText;
 
                 await DisplayAlert("Success", "Settings have been reset to default values", "OK");
             }

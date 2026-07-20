@@ -25,6 +25,11 @@ public static class CraftColors
     public static Color Error => Token("Error", "ErrorDark");
     public static Color Muted => Token("TextMuted", "TextMutedDark");
 
+    // Text-safe status colours: the moss/saffron fills are too light for small text on the cream card,
+    // so status *labels* use the darker text-safe variant on light (the fill hue on dark reads fine).
+    public static Color SuccessText => Token("SuccessText", "SuccessDark");
+    public static Color WarningText => Token("WarningText", "WarningDark");
+
     // The craft re-map of the log-type accents (the palette has no blue/purple).
     public static Color ForLogType(LogType type) => type switch
     {

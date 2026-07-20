@@ -11,16 +11,15 @@
                     Background="{StaticResource Primary}"
                     Padding="15">
                 <Grid ColumnDefinitions="*,Auto">
-                    <Label Text="Customize Print Styles" 
-                           FontSize="24" 
+                    <Label Text="Customize Print Styles"
+                           FontSize="24"
                            FontAttributes="Bold"
-                           TextColor="White"
+                           TextColor="{StaticResource White}"
                            VerticalOptions="Center"/>
                     <Button Grid.Column="1"
                             Text="Reset to Defaults"
                             Clicked="OnResetClicked"
-                            BackgroundColor="{StaticResource Secondary}"
-                            TextColor="{StaticResource TextPrimary}"
+                            Style="{StaticResource WarnButton}"
                             Padding="15,8"/>
                 </Grid>
             </Border>
@@ -37,14 +36,14 @@
                         Grid.Column="0"
                         Text="🍳 Kitchen Receipts"
                         Clicked="OnKitchenTabClicked"
-                        BackgroundColor="{StaticResource Primary}"
-                        TextColor="White"/>
+                        BackgroundColor="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}"
+                        TextColor="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}"/>
                 <Button x:Name="CashierTabButton"
                         Grid.Column="1"
                         Text="💰 Cashier Receipts"
                         Clicked="OnCashierTabClicked"
-                        BackgroundColor="{StaticResource Gray300}"
-                        TextColor="{StaticResource Gray900}"/>
+                        BackgroundColor="{AppThemeBinding Light={StaticResource CardBorder}, Dark={StaticResource CardBorderDark}}"
+                        TextColor="{AppThemeBinding Light={StaticResource TextSecondary}, Dark={StaticResource TextSecondaryDark}}"/>
             </Grid>
 
             <!-- Kitchen Settings -->
@@ -55,7 +54,7 @@
                        Margin="0,10,0,5"/>
 
                 <!-- Kitchen Header -->
-                <Frame BorderColor="{StaticResource Gray300}" Padding="15">
+                <Frame Padding="15">
                     <VerticalStackLayout Spacing="10">
                         <Label Text="Kitchen Header (Front/Back Kitchen)" 
                                FontAttributes="Bold"
@@ -65,7 +64,7 @@
                 </Frame>
 
                 <!-- Kitchen Order Info -->
-                <Frame BorderColor="{StaticResource Gray300}" Padding="15">
+                <Frame Padding="15">
                     <VerticalStackLayout Spacing="10">
                         <Label Text="Order Info (ID, Date, Type)" 
                                FontAttributes="Bold"
@@ -75,7 +74,7 @@
                 </Frame>
 
                 <!-- Kitchen Order Type -->
-                <Frame BorderColor="{StaticResource Gray300}" Padding="15">
+                <Frame Padding="15">
                     <VerticalStackLayout Spacing="10">
                         <Label Text="Order Type Line" 
                                FontAttributes="Bold"
@@ -85,7 +84,7 @@
                 </Frame>
 
                 <!-- Kitchen Item Name -->
-                <Frame BorderColor="{StaticResource Gray300}" Padding="15">
+                <Frame Padding="15">
                     <VerticalStackLayout Spacing="10">
                         <Label Text="Item Names" 
                                FontAttributes="Bold"
@@ -95,7 +94,7 @@
                 </Frame>
 
                 <!-- Kitchen Item Quantity -->
-                <Frame BorderColor="{StaticResource Gray300}" Padding="15">
+                <Frame Padding="15">
                     <VerticalStackLayout Spacing="10">
                         <Label Text="Item Quantities" 
                                FontAttributes="Bold"
@@ -105,7 +104,7 @@
                 </Frame>
 
                 <!-- Kitchen Ingredients -->
-                <Frame BorderColor="{StaticResource Gray300}" Padding="15">
+                <Frame Padding="15">
                     <VerticalStackLayout Spacing="10">
                         <Label Text="Ingredients &amp; Notes" 
                                FontAttributes="Bold"
@@ -123,7 +122,7 @@
                        Margin="0,10,0,5"/>
 
                 <!-- Cashier Header -->
-                <Frame BorderColor="{StaticResource Gray300}" Padding="15">
+                <Frame Padding="15">
                     <VerticalStackLayout Spacing="10">
                         <Label Text="Restaurant Name Header" 
                                FontAttributes="Bold"
@@ -133,7 +132,7 @@
                 </Frame>
 
                 <!-- Cashier Order Info -->
-                <Frame BorderColor="{StaticResource Gray300}" Padding="15">
+                <Frame Padding="15">
                     <VerticalStackLayout Spacing="10">
                         <Label Text="Order Info (ID, Date, Customer)" 
                                FontAttributes="Bold"
@@ -143,7 +142,7 @@
                 </Frame>
 
                 <!-- Cashier Item Lines -->
-                <Frame BorderColor="{StaticResource Gray300}" Padding="15">
+                <Frame Padding="15">
                     <VerticalStackLayout Spacing="10">
                         <Label Text="Item Lines" 
                                FontAttributes="Bold"
@@ -153,7 +152,7 @@
                 </Frame>
 
                 <!-- Cashier Totals -->
-                <Frame BorderColor="{StaticResource Gray300}" Padding="15">
+                <Frame Padding="15">
                     <VerticalStackLayout Spacing="10">
                         <Label Text="Subtotal, Tax, Tip" 
                                FontAttributes="Bold"
@@ -163,7 +162,7 @@
                 </Frame>
 
                 <!-- Cashier Grand Total -->
-                <Frame BorderColor="{StaticResource Gray300}" Padding="15">
+                <Frame Padding="15">
                     <VerticalStackLayout Spacing="10">
                         <Label Text="Grand Total" 
                                FontAttributes="Bold"
@@ -176,8 +175,7 @@
             <!-- Save Button -->
             <Button Text="Save Settings"
                     Clicked="OnSaveClicked"
-                    BackgroundColor="{StaticResource Success}"
-                    TextColor="White"
+                    Style="{StaticResource GoButton}"
                     FontSize="18"
                     Padding="0,15"
                     Margin="0,20,0,0"/>
