@@ -23,7 +23,10 @@
         <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource Gray950}, Dark={StaticResource Gray200}}" />
     </Style>
 
-    <Style TargetType="Button">
+    <!-- Keyed base so the semantic variant buttons (GoButton/WarnButton/DangerButton) can BasedOn it —
+         XamlC rejects `{StaticResource {x:Type Button}}`. The implicit Button style below inherits it so
+         unstyled buttons still get the terracotta default. -->
+    <Style x:Key="ButtonBase" TargetType="Button">
         <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}" />
         <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource Primary}, Dark={StaticResource PrimaryDark}}" />
         <Setter Property="FontFamily" Value="Quicksand"/>
@@ -47,6 +50,25 @@
                 </VisualStateGroup>
             </VisualStateGroupList>
         </Setter>
+    </Style>
+
+    <!-- Implicit Button style: terracotta default for every unstyled button. -->
+    <Style TargetType="Button" BasedOn="{StaticResource ButtonBase}" />
+
+    <!-- Semantic button variants (craft palette). Default Button = terracotta (primary/info/save). These
+         cover the operator's colour-coding: go/positive = olive, warn/test = saffron, danger/stop = brick.
+         All flip to a lighter fill in dark mode, so their text goes dark (PrimaryDarkText) there. P2b, #71. -->
+    <Style x:Key="GoButton" TargetType="Button" BasedOn="{StaticResource ButtonBase}">
+        <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource Secondary}, Dark={StaticResource SecondaryDark}}" />
+        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}" />
+    </Style>
+    <Style x:Key="WarnButton" TargetType="Button" BasedOn="{StaticResource ButtonBase}">
+        <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource AccentText}, Dark={StaticResource AccentDark}}" />
+        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}" />
+    </Style>
+    <Style x:Key="DangerButton" TargetType="Button" BasedOn="{StaticResource ButtonBase}">
+        <Setter Property="BackgroundColor" Value="{AppThemeBinding Light={StaticResource Error}, Dark={StaticResource ErrorDark}}" />
+        <Setter Property="TextColor" Value="{AppThemeBinding Light={StaticResource White}, Dark={StaticResource PrimaryDarkText}}" />
     </Style>
 
     <Style TargetType="CheckBox">
