@@ -98,10 +98,12 @@ keeps the weekly run from silently red-failing on an expired token.
 If `PRINTERAPP_E2E_API_BASE_URL` is unreachable the suite **skips** (so it never red-fails a run with no
 backend) — CI provides one; a dev exports the vars to point at staging/demo.
 
-**CI targets (`e2e.yml`):** `target=staging` (default, repo-level secrets) runs the always-on subset —
-staging ships 0 products so the order-creation tests skip. `target=demo` selects the **`demo` GitHub
-Environment** (its own `X-Api-Key` + admin creds) and points at the **seeded** demo backend, so the
-delivery + missed-order-reconciliation tests actually run. Dispatch: `gh workflow run e2e.yml -f target=demo`.
+**CI target (`e2e.yml`):** staging by default (it auto-deploys `develop`, so it has the fleet
+`/api/devices` endpoints). The order-creation tests (delivery + missed-order reconciliation) run only when
+the target **also** has **seeded products** + **admin auth**; otherwise they skip. Staging ships 0
+products, so **seed it** (`frontend/e2e/seed/seed.sql`) and set the admin-cred secrets to enable the full
+run. ⚠️ `demo.sofrapiwas.com` has products but **not** the fleet endpoints (its backend isn't on
+`develop`-tip), so it can't run the full suite until it's redeployed.
 
 ## Data isolation
 
