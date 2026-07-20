@@ -96,7 +96,7 @@
                                          Grid.RowSpan="4"
                                          WidthRequest="5"
                                          CornerRadius="2"
-                                         Color="{Binding StatusColor}"/>
+                                         Color="{Binding PrintOutcome, Converter={StaticResource PrintOutcomeToColorConverter}}"/>
 
                                 <!-- Order Header -->
                                 <VerticalStackLayout Grid.Column="1" Grid.Row="0">

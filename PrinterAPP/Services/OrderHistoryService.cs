@@ -150,7 +150,7 @@ public class OrderHistoryItem : INotifyPropertyChanged
             if (_kitchenPrinted == value) return;
             _kitchenPrinted = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(StatusColor)); // derived
+            OnPropertyChanged(nameof(PrintOutcome)); // derived
         }
     }
 
@@ -163,7 +163,7 @@ public class OrderHistoryItem : INotifyPropertyChanged
             if (_cashierPrinted == value) return;
             _cashierPrinted = value;
             OnPropertyChanged();
-            OnPropertyChanged(nameof(StatusColor)); // derived
+            OnPropertyChanged(nameof(PrintOutcome)); // derived
         }
     }
 
@@ -193,7 +193,9 @@ public class OrderHistoryItem : INotifyPropertyChanged
 
     public string DisplayText => $"Order #{Order.OrderNumber} - {Order.TypeDisplay} - {Order.Items.Count} items - ${Order.Total:F2}";
     public string ReceivedAtText => ReceivedAt.ToLocalTime().ToString("HH:mm:ss");
-    public string StatusColor => KitchenPrinted && CashierPrinted ? "Green" : CashierPrinted || KitchenPrinted ? "Orange" : "Red";
+    // Semantic print outcome (data, not presentation) — PrintOutcomeToColorConverter maps it to a craft
+    // colour in the UI layer. Was a "Green"/"Orange"/"Red" colour string on the model (a presentation leak).
+    public string PrintOutcome => KitchenPrinted && CashierPrinted ? "Printed" : CashierPrinted || KitchenPrinted ? "Partial" : "None";
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
