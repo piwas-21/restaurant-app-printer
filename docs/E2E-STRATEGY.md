@@ -54,12 +54,19 @@ the real `TelemetryClient`).
   UI cosmetics → belong in unit tests or the manual emulator smoke.
 
 **Current suite:** heartbeat, print-ack, and durable-outbox (HIGH/MED telemetry) — verified green against
-live staging. **Next iterations:** (1) the **order-feed headless test** (`EventStreamingService` polling a
-real backend) — blocked on decoupling `RequestLogService`/`LogEntry` from MAUI's `Color` type so the feed
-can source-link into `net10.0`; (2) **missed-order reconciliation** (create a Confirmed order via
-`POST /api/orders`, ack one and not the other, assert `GET /api/devices/missed-orders`) — needs a seeded
-product catalogue, so it pairs with a spun-up/seeded backend; (3) **print-to-sink** (`OrderPrintService`
-→ loopback `TcpListener` asserting ESC/POS) — needs the `PrintStyleSettingsService` injection seam.
+live staging — **plus the order-feed suite** (`OrderFeedE2ETests`): the real `EventStreamingService`
+polling a real backend (positive: a successful poll advances `LastSuccessfulPollAt`; negative: a wrong
+`X-Api-Key` never polls + surfaces the auth error; delivery: a Confirmed DineIn order created via
+`POST /api/orders` reaches `OrderReceived`). The MAUI-`Color` coupling that blocked source-linking the feed
+was removed by moving `LogType`→`Color` off `LogEntry` into a UI converter. **Next iterations:**
+(1) **missed-order reconciliation** (create a Confirmed order via `POST /api/orders`, ack one and not the
+other, assert `GET /api/devices/missed-orders`) — needs a seeded product catalogue, so it pairs with a
+spun-up/seeded backend; (2) **print-to-sink** (`OrderPrintService` → loopback `TcpListener` asserting
+ESC/POS) — needs the `PrintStyleSettingsService` injection seam.
+
+> The order-feed delivery test + the negative auth path need a seeded, key-enforcing backend to run for
+> real; against a keyless/open or product-less backend they **skip** (never red-fail). The true green pass
+> is the `e2e.yml` CI job (which carries the `X-Api-Key` + admin JWT secrets) or a seeded demo backend.
 
 ## Environment parameterization (run against any environment)
 
