@@ -40,8 +40,10 @@ public class OrderFeedE2ETests
         using var cts = new CancellationTokenSource(timeout);
         while (!condition())
         {
+            // Both cancellation paths do a final condition() re-check (consistent) — the timeout may have
+            // fired in the same tick the condition became true.
             if (cts.IsCancellationRequested)
-                return false;
+                return condition();
             try { await Task.Delay(500, cts.Token); }
             catch (TaskCanceledException) { return condition(); }
         }

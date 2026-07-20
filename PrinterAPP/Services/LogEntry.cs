@@ -173,6 +173,9 @@ public class LogEntry : INotifyPropertyChanged
     public string RequestBodyJson => FormatJson(RequestBody);
     public string ResponseBodyJson => FormatJson(ResponseBody);
 
+    // Reused across every log entry's JSON formatting — avoids allocating options per call.
+    private static readonly JsonSerializerOptions IndentedJson = new() { WriteIndented = true };
+
     private static string FormatAsJson(Dictionary<string, string>? dictionary)
     {
         if (dictionary == null || !dictionary.Any())
@@ -180,7 +183,7 @@ public class LogEntry : INotifyPropertyChanged
 
         try
         {
-            var json = JsonSerializer.Serialize(dictionary, new JsonSerializerOptions { WriteIndented = true });
+            var json = JsonSerializer.Serialize(dictionary, IndentedJson);
             return json;
         }
         catch
@@ -198,7 +201,7 @@ public class LogEntry : INotifyPropertyChanged
         {
             // Try to parse and format as JSON
             using var document = JsonDocument.Parse(jsonString);
-            return JsonSerializer.Serialize(document, new JsonSerializerOptions { WriteIndented = true });
+            return JsonSerializer.Serialize(document, IndentedJson);
         }
         catch
         {
