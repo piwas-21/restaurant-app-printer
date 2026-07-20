@@ -43,8 +43,9 @@
     <Color x:Key="TextMutedDark">#a3908a</Color>
 
     <!-- Semantic — success (muted moss), warning (saffron), error (soft brick, deliberately pinker than
-         the terracotta primary so the two never read as the same colour). Each with a text-safe variant
-         for small text on light backgrounds. -->
+         the terracotta primary so the two never read as the same colour). Success + warning carry a
+         text-safe variant (*Text) for small text on light backgrounds; Sofra defines none for error.
+         SuccessDark == Success by design — globals.css uses the same moss in both light and dark. -->
     <Color x:Key="Success">#8cb89a</Color>
     <Color x:Key="SuccessDark">#8cb89a</Color>
     <Color x:Key="SuccessText">#4c7259</Color>
