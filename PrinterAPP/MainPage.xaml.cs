@@ -17,6 +17,7 @@ public partial class MainPage : ContentPage
     private readonly IPrinterTestService _printerTestService;
     private readonly IDeviceIdentityService _deviceIdentity;
     private readonly ITelemetryScheduler _telemetryScheduler;
+    private readonly IPrintAckOutbox _printAckOutbox;
     private readonly ILogger<MainPage> _logger;
     private PrinterConfiguration _config;
     private bool _isServiceRunning = false;
@@ -30,6 +31,7 @@ public partial class MainPage : ContentPage
         IPrinterTestService printerTestService,
         IDeviceIdentityService deviceIdentity,
         ITelemetryScheduler telemetryScheduler,
+        IPrintAckOutbox printAckOutbox,
         ILogger<MainPage> logger)
     {
         InitializeComponent();
@@ -41,6 +43,7 @@ public partial class MainPage : ContentPage
         _printerTestService = printerTestService;
         _deviceIdentity = deviceIdentity;
         _telemetryScheduler = telemetryScheduler;
+        _printAckOutbox = printAckOutbox;
         _logger = logger;
         _config = new PrinterConfiguration();
 
@@ -343,6 +346,13 @@ public partial class MainPage : ContentPage
                 // Update print status in history (combine kitchen results)
                 var kitchenSuccess = frontKitchenSuccess && backKitchenSuccess;
                 _orderHistoryService.UpdatePrintStatus(orderEvent.Order.Id, kitchenSuccess, cashierSuccess);
+
+                // Queue per-target print acks for the fleet backend (durable outbox → served-vs-acked
+                // missed-order reconciliation). Fire-and-forget so telemetry never blocks the print UI.
+                var acks = TelemetryPayloads.PrintAcks(
+                    orderEvent.Order, cashierSuccess, frontKitchenSuccess, backKitchenSuccess,
+                    _config, orderEvent.Timestamp);
+                _ = _printAckOutbox.EnqueueAsync(acks);
 
                 StatusLabel.Text = $"Order #{orderEvent.Order.OrderNumber} printed";
                 StatusLabel.TextColor = Colors.Green;

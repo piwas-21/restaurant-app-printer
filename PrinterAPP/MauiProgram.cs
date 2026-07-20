@@ -69,6 +69,7 @@ namespace PrinterAPP
             builder.Services.AddSingleton<ITelemetryClient>(sp => new TelemetryClient(
                 new HttpClient { Timeout = TimeSpan.FromSeconds(15) },
                 sp.GetRequiredService<ILogger<TelemetryClient>>()));
+            builder.Services.AddSingleton<IPrintAckOutbox, PrintAckOutbox>();
             builder.Services.AddSingleton<ITelemetryScheduler, TelemetryScheduler>();
 
             // Register pages

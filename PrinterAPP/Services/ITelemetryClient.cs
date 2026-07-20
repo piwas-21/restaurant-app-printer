@@ -13,4 +13,10 @@ public interface ITelemetryClient
     Task<bool> SendHeartbeatAsync(
         HeartbeatRequest request, string apiBaseUrl, string apiKey, string deviceId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>POSTs a batch of print acknowledgements. Returns a <see cref="TelemetrySendResult"/>
+    /// so the caller's outbox can drop (2xx/4xx) or retry (5xx/offline) the batch.</summary>
+    Task<TelemetrySendResult> SendPrintAcksAsync(
+        IReadOnlyList<PrintAck> acks, string apiBaseUrl, string apiKey, string deviceId,
+        CancellationToken cancellationToken = default);
 }

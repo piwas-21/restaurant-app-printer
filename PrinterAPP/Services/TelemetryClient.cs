@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -13,11 +14,12 @@ namespace PrinterAPP.Services;
 /// </summary>
 public class TelemetryClient : ITelemetryClient
 {
-    // camelCase + omit nulls, matching the backend's System.Text.Json defaults.
+    // camelCase + omit nulls + enums as their names ("FrontKitchen"/"Printed"), matching the backend.
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+        Converters = { new JsonStringEnumConverter() },
     };
 
     private readonly HttpClient _httpClient;
@@ -67,6 +69,56 @@ public class TelemetryClient : ITelemetryClient
         {
             _logger.LogWarning(ex, "Heartbeat POST failed");
             return false;
+        }
+    }
+
+    public async Task<TelemetrySendResult> SendPrintAcksAsync(
+        IReadOnlyList<PrintAck> acks, string apiBaseUrl, string apiKey, string deviceId,
+        CancellationToken cancellationToken = default)
+    {
+        if (acks.Count == 0)
+            return TelemetrySendResult.Sent;   // nothing pending → treat as done, drop from outbox.
+
+        // Can't send yet (unconfigured) — keep the batch for a later cycle rather than dropping it.
+        if (string.IsNullOrWhiteSpace(apiBaseUrl) || string.IsNullOrWhiteSpace(deviceId))
+            return TelemetrySendResult.Retry;
+
+        try
+        {
+            var url = $"{apiBaseUrl.TrimEnd('/')}/api/devices/print-acks";
+            // Shape matches RecordPrintAcksCommand { Acks }.
+            using var httpRequest = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = JsonContent.Create(new { acks }, options: JsonOptions),
+            };
+            if (!string.IsNullOrWhiteSpace(apiKey))
+                httpRequest.Headers.Add("X-Api-Key", apiKey);
+            httpRequest.Headers.Add("X-Device-Id", deviceId);
+
+            using var response = await _httpClient.SendAsync(httpRequest, cancellationToken);
+            if (response.IsSuccessStatusCode)
+                return TelemetrySendResult.Sent;
+
+            // 4xx = permanent (bad batch / auth): drop it so one bad batch can't wedge the outbox.
+            // EXCEPT 408 (timeout) + 429 (rate-limited) — those are transient 4xx, and the backend
+            // runs a rate limiter, so a busy fleet must keep and retry rather than lose acks.
+            if ((int)response.StatusCode is >= 400 and < 500
+                && response.StatusCode is not (HttpStatusCode.RequestTimeout or HttpStatusCode.TooManyRequests))
+            {
+                _logger.LogWarning("Print-acks rejected {StatusCode} — dropping batch.", response.StatusCode);
+                return TelemetrySendResult.Rejected;
+            }
+
+            return TelemetrySendResult.Retry;   // 5xx / 408 / 429 — transient.
+        }
+        catch (OperationCanceledException)
+        {
+            return TelemetrySendResult.Retry;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Print-acks POST failed");
+            return TelemetrySendResult.Retry;
         }
     }
 }
