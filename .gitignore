@@ -120,6 +120,12 @@ ipch/
 
 # Visual Studio Trace Files
 *.e2e
+# ...but NOT the E2E test project dir (collides with the trace-file glob on case-insensitive filesystems).
+# Re-include the source, then re-assert the build-artifact ignores so bin/obj stay out.
+!PrinterAPP.E2E/
+!PrinterAPP.E2E/**
+PrinterAPP.E2E/[Bb]in/
+PrinterAPP.E2E/[Oo]bj/
 
 # TFS 2012 Local Workspace
 $tf/
