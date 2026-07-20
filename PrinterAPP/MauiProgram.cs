@@ -16,6 +16,10 @@ namespace PrinterAPP
                 {
                     fonts.AddFont("OpenSans-Regular.ttf", "OpenSansRegular");
                     fonts.AddFont("OpenSans-Semibold.ttf", "OpenSansSemibold");
+                    // Sofra "craft" typography (branding P1): Quicksand body + Amatic SC display headings.
+                    fonts.AddFont("Quicksand-Regular.ttf", "Quicksand");
+                    fonts.AddFont("Quicksand-Medium.ttf", "QuicksandMedium");
+                    fonts.AddFont("AmaticSC-Bold.ttf", "AmaticSC");
                 });
 
             // Fleet observability (Phase 0): env-gated Sentry — inert unless a DSN was injected at
