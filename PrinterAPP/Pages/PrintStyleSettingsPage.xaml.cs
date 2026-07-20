@@ -13,7 +13,8 @@ public partial class PrintStyleSettingsPage : ContentPage
     public PrintStyleSettingsPage()
     {
         InitializeComponent();
-        _settingsService = new PrintStyleSettingsService();
+        // MAUI path provider constructed at the UI edge (PrintStyleSettingsService no longer defaults it).
+        _settingsService = new PrintStyleSettingsService(new MauiAppDataPathProvider());
         _currentSettings = _settingsService.LoadSettings();
 
         BuildStyleControls();

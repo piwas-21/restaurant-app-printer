@@ -39,12 +39,15 @@ public class OrderPrintService : IOrderPrintService
     public OrderPrintService(
         IPrinterService printerService,
         IRequestLogService requestLogService,
-        ILogger<OrderPrintService> logger)
+        ILogger<OrderPrintService> logger,
+        IAppDataPathProvider pathProvider)
     {
         _printerService = printerService;
         _requestLogService = requestLogService;
         _logger = logger;
-        _styleService = new PrintStyleSettingsService();
+        // Path provider injected (was `new PrintStyleSettingsService()` with a MAUI default) so this
+        // service is source-linkable into the headless print-to-sink test.
+        _styleService = new PrintStyleSettingsService(pathProvider);
         _styleSettings = _styleService.LoadSettings();
     }
 
