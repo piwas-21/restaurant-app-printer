@@ -26,6 +26,11 @@ public class EventStreamingService : IEventStreamingService
 
     public bool IsListening => _isListening;
 
+    // Advanced only after a poll completes with a 2xx (see PollForOrdersAsync). Reported in the fleet
+    // heartbeat so a "listening but not actually polling" wedge is remotely visible.
+    private DateTime? _lastSuccessfulPollAt;
+    public DateTime? LastSuccessfulPollAt => _lastSuccessfulPollAt;
+
     public EventStreamingService(
         IPrinterService printerService,
         IRequestLogService requestLogService,
@@ -700,6 +705,7 @@ public class EventStreamingService : IEventStreamingService
                 }
 
                 _lastPollTime = DateTime.UtcNow;
+                _lastSuccessfulPollAt = DateTime.UtcNow;
                 OnConnectionStatusChanged($"Connected - last poll: {DateTime.Now:HH:mm:ss}");
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
