@@ -113,8 +113,9 @@ public class OrderFeedE2ETests
     {
         Skip.IfNot(await Backend.IsReachableAsync(), $"No backend at {E2EConfig.ApiBaseUrl}");
 
-        var (orderNumber, reason) = await Backend.CreateConfirmedDineInOrderOrNullAsync();
-        Skip.If(orderNumber is null, $"couldn't create an order to deliver: {reason}");
+        var (order, reason) = await Backend.CreateConfirmedDineInOrderOrNullAsync();
+        Skip.If(order is null, $"couldn't create an order to deliver: {reason}");
+        var orderNumber = order!.Number;
 
         var received = new ConcurrentBag<Order>();
         var feed = NewFeed(Config(), out _);
@@ -124,14 +125,14 @@ public class OrderFeedE2ETests
             await feed.StartListeningAsync();
 
             var delivered = await WaitUntilAsync(
-                () => received.Any(o => o.OrderNumber == orderNumber || o.OrderNumber.EndsWith(orderNumber!)),
+                () => received.Any(o => o.OrderNumber == orderNumber || o.OrderNumber.EndsWith(orderNumber)),
                 TimeSpan.FromSeconds(40));
 
             Assert.True(delivered,
                 $"order {orderNumber} was created (Confirmed DineIn) but never reached the feed within 40s; " +
                 $"feed saw [{string.Join(", ", received.Select(o => o.OrderNumber))}]");
 
-            var match = received.First(o => o.OrderNumber == orderNumber || o.OrderNumber.EndsWith(orderNumber!));
+            var match = received.First(o => o.OrderNumber == orderNumber || o.OrderNumber.EndsWith(orderNumber));
             Assert.Equal("Confirmed", match.Status, ignoreCase: true);
         }
         finally

@@ -95,13 +95,17 @@ public static class Backend
         return string.IsNullOrEmpty(id) ? null : (id, price);
     }
 
+    /// <summary>An order created for a test: its Guid id (for print-ack correlation) + its order number
+    /// (for feed correlation).</summary>
+    public sealed record CreatedOrder(Guid Id, string Number);
+
     /// <summary>
     /// Creates a DineIn order (auto-confirms → lands in the printer-feed) via POST /api/orders and returns
-    /// its order number, or null with a reason when it can't (no admin JWT to satisfy [Authorize], no
-    /// products, or a validation reject). The app never creates orders — the customer frontend does — so
-    /// this is a legitimate direct API call, not a shortcut around the behaviour under test.
+    /// it, or null with a reason when it can't (no admin JWT to satisfy [Authorize], no products, or a
+    /// validation reject). The app never creates orders — the customer frontend does — so this is a
+    /// legitimate direct API call, not a shortcut around the behaviour under test.
     /// </summary>
-    public static async Task<(string? OrderNumber, string Reason)> CreateConfirmedDineInOrderOrNullAsync()
+    public static async Task<(CreatedOrder? Order, string Reason)> CreateConfirmedDineInOrderOrNullAsync()
     {
         if (string.IsNullOrWhiteSpace(E2EConfig.AdminJwt))
             return (null, "no PRINTERAPP_E2E_ADMIN_JWT (POST /api/orders is [Authorize])");
@@ -133,14 +137,42 @@ public static class Backend
             return (null, $"POST /api/orders → {(int)response.StatusCode}: {Truncate(payload)}");
 
         using var doc = JsonDocument.Parse(payload);
-        var orderNumber = doc.RootElement.TryGetProperty("data", out var data) &&
-                          data.TryGetProperty("orderNumber", out var num)
-            ? num.GetString()
-            : null;
+        if (doc.RootElement.TryGetProperty("data", out var data) &&
+            data.TryGetProperty("orderNumber", out var num) && num.GetString() is { Length: > 0 } orderNumber &&
+            data.TryGetProperty("id", out var idEl) && idEl.TryGetGuid(out var id))
+        {
+            return (new CreatedOrder(id, orderNumber), "created");
+        }
 
-        return string.IsNullOrEmpty(orderNumber)
-            ? (null, $"create succeeded but no orderNumber in response: {Truncate(payload)}")
-            : (orderNumber, "created");
+        return (null, $"create succeeded but response lacked id/orderNumber: {Truncate(payload)}");
+    }
+
+    /// <summary>
+    /// Order NUMBERS currently flagged as missed (Confirmed, past grace, no Printed receipt) by
+    /// GET /api/devices/missed-orders, or null when no admin JWT is configured. Admin-only read — the app
+    /// never displays it. Assert membership by number, never list size (other orders may be present).
+    /// </summary>
+    public static async Task<IReadOnlyList<string>?> MissedOrderNumbersOrNullAsync(int graceMinutes, int lookbackHours)
+    {
+        if (string.IsNullOrWhiteSpace(E2EConfig.AdminJwt))
+            return null;
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get, $"{Root}/api/devices/missed-orders?graceMinutes={graceMinutes}&lookbackHours={lookbackHours}");
+        request.Headers.Authorization =
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", E2EConfig.AdminJwt);
+        using var response = await Http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        var numbers = new List<string>();
+        if (doc.RootElement.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in data.EnumerateArray())
+                if (item.TryGetProperty("orderNumber", out var n) && n.GetString() is { Length: > 0 } s)
+                    numbers.Add(s);
+        }
+        return numbers;
     }
 
     private static string Truncate(string s) => s.Length <= 200 ? s : s[..200] + "…";
