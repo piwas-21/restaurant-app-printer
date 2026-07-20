@@ -1,3 +1,4 @@
+using PrinterAPP.Converters;
 using PrinterAPP.Models;
 using PrinterAPP.Services;
 // Disambiguate from Microsoft.Maui.FontSize (added to MAUI 10's implicit usings).
@@ -115,20 +116,24 @@ public partial class PrintStyleSettingsPage : ContentPage
     {
         KitchenSettings.IsVisible = true;
         CashierSettings.IsVisible = false;
-        KitchenTabButton.BackgroundColor = (Color)Resources["Primary"];
-        KitchenTabButton.TextColor = Colors.White;
-        CashierTabButton.BackgroundColor = (Color)Resources["Gray300"];
-        CashierTabButton.TextColor = (Color)Resources["Gray900"];
+        SetTabSelection(selected: KitchenTabButton, other: CashierTabButton);
     }
 
     private void OnCashierTabClicked(object sender, EventArgs e)
     {
         KitchenSettings.IsVisible = false;
         CashierSettings.IsVisible = true;
-        CashierTabButton.BackgroundColor = (Color)Resources["Primary"];
-        CashierTabButton.TextColor = Colors.White;
-        KitchenTabButton.BackgroundColor = (Color)Resources["Gray300"];
-        KitchenTabButton.TextColor = (Color)Resources["Gray900"];
+        SetTabSelection(selected: CashierTabButton, other: KitchenTabButton);
+    }
+
+    // Selected tab = terracotta with on-accent text; the other = muted beige. Theme-aware via CraftColors
+    // (code-behind can't use AppThemeBinding), mirroring the XAML default state.
+    private static void SetTabSelection(Button selected, Button other)
+    {
+        selected.BackgroundColor = CraftColors.Primary;
+        selected.TextColor = CraftColors.Token("White", "PrimaryDarkText");
+        other.BackgroundColor = CraftColors.Token("CardBorder", "CardBorderDark");
+        other.TextColor = CraftColors.Token("TextSecondary", "TextSecondaryDark");
     }
 
     private async void OnSaveClicked(object sender, EventArgs e)

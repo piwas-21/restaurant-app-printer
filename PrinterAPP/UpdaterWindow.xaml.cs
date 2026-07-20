@@ -1,3 +1,4 @@
+using PrinterAPP.Converters;
 using PrinterAPP.Models;
 using PrinterAPP.Services;
 
@@ -34,7 +35,7 @@ public partial class UpdaterWindow : ContentPage
         {
             CheckButton.IsEnabled = false;
             StatusLabel.Text = "Checking for updates...";
-            StatusLabel.TextColor = Colors.Gray;
+            StatusLabel.TextColor = CraftColors.Muted;
 
             _updateInfo = await _updateService.CheckForUpdateAsync();
 
@@ -52,7 +53,7 @@ public partial class UpdaterWindow : ContentPage
 
                 UpdateButton.IsVisible = true;
                 StatusLabel.Text = $"New version {_updateInfo.LatestVersion} is available!";
-                StatusLabel.TextColor = Colors.Green;
+                StatusLabel.TextColor = CraftColors.SuccessText;
             }
             else
             {
@@ -60,13 +61,13 @@ public partial class UpdaterWindow : ContentPage
                 LatestVersionLabel.Text = _updateInfo.LatestVersion;
                 LatestVersionFrame.IsVisible = true;
                 StatusLabel.Text = "You have the latest version!";
-                StatusLabel.TextColor = Colors.Green;
+                StatusLabel.TextColor = CraftColors.SuccessText;
             }
         }
         catch (Exception ex)
         {
             StatusLabel.Text = $"Error checking for updates: {ex.Message}";
-            StatusLabel.TextColor = Colors.Red;
+            StatusLabel.TextColor = CraftColors.Error;
         }
         finally
         {
@@ -87,7 +88,7 @@ public partial class UpdaterWindow : ContentPage
 
             DownloadProgressBar.IsVisible = true;
             StatusLabel.Text = "Downloading update...";
-            StatusLabel.TextColor = Colors.Blue;
+            StatusLabel.TextColor = CraftColors.Muted;
 
             var progress = new Progress<int>(percent =>
             {
@@ -103,12 +104,12 @@ public partial class UpdaterWindow : ContentPage
             if (success)
             {
                 StatusLabel.Text = "Update successful! App will restart...";
-                StatusLabel.TextColor = Colors.Green;
+                StatusLabel.TextColor = CraftColors.SuccessText;
             }
             else
             {
                 StatusLabel.Text = "Update failed. Please try again or download manually.";
-                StatusLabel.TextColor = Colors.Red;
+                StatusLabel.TextColor = CraftColors.Error;
                 UpdateButton.IsEnabled = true;
                 CheckButton.IsEnabled = true;
                 CloseButton.IsEnabled = true;
@@ -117,7 +118,7 @@ public partial class UpdaterWindow : ContentPage
         catch (Exception ex)
         {
             StatusLabel.Text = $"Error installing update: {ex.Message}";
-            StatusLabel.TextColor = Colors.Red;
+            StatusLabel.TextColor = CraftColors.Error;
             UpdateButton.IsEnabled = true;
             CheckButton.IsEnabled = true;
             CloseButton.IsEnabled = true;

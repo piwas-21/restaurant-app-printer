@@ -1,8 +1,15 @@
 # Printer-App — Sofra ("craft") Branding Alignment Plan
 
-> **Status:** planned (2026-07-20). Not started. This plan exists because the sofrapiwas design/colours
-> are only **partially and inaccurately** applied in the printer-app MAUI UI. It scopes the gap and a
-> phased path to close it.
+> **Status:** P0–P2 COMPLETE (2026-07-21). P0 (#72) · P1 (#73) · P2a (#74) · P2b-1 (#75) · **P2b-2 (this
+> PR)** all merged/open on `develop`. Every hardcoded colour site (≈96: inline XAML + C# `Colors.X` +
+> the model string) is now migrated to the craft palette across all 5 pages, 2 converters, 1 service —
+> theme-aware in both light and dark. The colour/typography/semantic work is done; **P3 (bespoke craft
+> texture) remains optional/deferred.** Owed before a `develop→main` release: a Windows-head build + an
+> on-device visual pass (macOS/CI builds Android only). Live status detail lives in the workspace memory
+> `project_printer_app_branding`.
+>
+> This plan exists because the sofrapiwas design/colours were only **partially and inaccurately** applied
+> in the printer-app MAUI UI. It scoped the gap and the phased path (below) that closed it.
 >
 > **Deliberate scope note:** the workspace CLAUDE.md frames the Sofra "craft" design system as bound to
 > **sofra** (the site/control plane) + the **tenant frontend** — *not* this internal printer utility.
