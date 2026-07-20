@@ -42,9 +42,18 @@
     <Compile Include="..\PrinterAPP\Services\IPrintAckOutbox.cs" Link="Linked\IPrintAckOutbox.cs" />
     <Compile Include="..\PrinterAPP\Services\PrintAckOutbox.cs" Link="Linked\PrintAckOutbox.cs" />
     <Compile Include="..\PrinterAPP\Services\IAppDataPathProvider.cs" Link="Linked\IAppDataPathProvider.cs" />
-    <!-- NOTE: the feed E2E (EventStreamingService against a real backend) is a FOLLOW-UP — it needs
-         RequestLogService/LogEntry decoupled from MAUI's Color type before it can source-link here.
-         See docs/E2E-STRATEGY.md. -->
+    <!-- Request-log boundary, now MAUI-free (A0): the LogType→Color map moved to a UI converter, so the
+         interface + LogEntry source-link into net10.0. This unblocks source-linking EventStreamingService
+         (the order-feed E2E, A1) which depends on IRequestLogService. See docs/E2E-STRATEGY.md. -->
+    <Compile Include="..\PrinterAPP\Services\IRequestLogService.cs" Link="Linked\IRequestLogService.cs" />
+    <Compile Include="..\PrinterAPP\Services\LogEntry.cs" Link="Linked\LogEntry.cs" />
+    <!-- Order-feed service (A1): the REAL polling loop under test. IPrinterService is the config-source
+         edge (a test double returns the PrinterConfiguration a user would type into Settings);
+         OrderFeedParser is the real per-order deser (also linked by PrinterAPP.Tests). -->
+    <Compile Include="..\PrinterAPP\Services\IPrinterService.cs" Link="Linked\IPrinterService.cs" />
+    <Compile Include="..\PrinterAPP\Services\IEventStreamingService.cs" Link="Linked\IEventStreamingService.cs" />
+    <Compile Include="..\PrinterAPP\Services\EventStreamingService.cs" Link="Linked\EventStreamingService.cs" />
+    <Compile Include="..\PrinterAPP\Services\OrderFeedParser.cs" Link="Linked\OrderFeedParser.cs" />
   </ItemGroup>
 
 </Project>
