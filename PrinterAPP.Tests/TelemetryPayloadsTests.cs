@@ -25,7 +25,7 @@ public class TelemetryPayloadsTests
         Assert.Equal("rumi", hb.TenantSlug);
         Assert.Equal("Android", hb.Platform);
         Assert.Equal("1.0.20", hb.AppVersion);
-        Assert.Equal(true, hb.FeedRunning);
+        Assert.True(hb.FeedRunning!.Value);
         Assert.Equal(pollAt, hb.LastSuccessfulPollAt);
         Assert.Equal("https://api.example.com", hb.ApiBaseUrl);
         Assert.Equal("192.168.1.51", hb.CashierPrinter);

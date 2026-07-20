@@ -102,7 +102,7 @@ public class TelemetryScheduler : ITelemetryScheduler
         if (cts is null)
             return;
 
-        cts.Cancel();
+        await cts.CancelAsync();
         if (loop is not null)
         {
             try
