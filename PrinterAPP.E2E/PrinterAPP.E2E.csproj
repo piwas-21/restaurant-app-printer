@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+    <RootNamespace>PrinterAPP.E2E</RootNamespace>
+    <!-- Opt-in E2E suite: excluded from the default `dotnet test PrinterAPP.Tests` CI job (it needs a
+         live backend). Run via .github/workflows/e2e.yml (schedule / workflow_dispatch) or locally
+         with PRINTERAPP_E2E_* env vars pointed at a backend. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5" />
+    <PackageReference Include="Xunit.SkippableFact" Version="1.5.23" />
+    <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+  </ItemGroup>
+
+  <!--
+    Source-link the REAL production services (MAUI-free at source) + their models, exactly like
+    PrinterAPP.Tests does — the suite exercises the shipping code, never a re-implementation. See
+    docs/E2E-STRATEGY.md ("No mocks of our own code").
+  -->
+  <ItemGroup>
+    <!-- Models (MAUI-free; also linked by PrinterAPP.Tests). Order/DeliveryAddress are needed because
+         TelemetryPayloads.PrintAcks(Order, ...) references them. -->
+    <Compile Include="..\PrinterAPP\Models\Order.cs" Link="Linked\Order.cs" />
+    <Compile Include="..\PrinterAPP\Models\DeliveryAddress.cs" Link="Linked\DeliveryAddress.cs" />
+    <Compile Include="..\PrinterAPP\Models\PrinterConfiguration.cs" Link="Linked\PrinterConfiguration.cs" />
+    <Compile Include="..\PrinterAPP\Models\HeartbeatRequest.cs" Link="Linked\HeartbeatRequest.cs" />
+    <Compile Include="..\PrinterAPP\Models\PrintAck.cs" Link="Linked\PrintAck.cs" />
+    <Compile Include="..\PrinterAPP\Models\DevicePrintTarget.cs" Link="Linked\DevicePrintTarget.cs" />
+    <Compile Include="..\PrinterAPP\Models\DevicePrintStatus.cs" Link="Linked\DevicePrintStatus.cs" />
+    <!-- Fleet telemetry client (the real shipping services under test) -->
+    <Compile Include="..\PrinterAPP\Services\ITelemetryClient.cs" Link="Linked\ITelemetryClient.cs" />
+    <Compile Include="..\PrinterAPP\Services\TelemetryClient.cs" Link="Linked\TelemetryClient.cs" />
+    <Compile Include="..\PrinterAPP\Services\TelemetrySendResult.cs" Link="Linked\TelemetrySendResult.cs" />
+    <Compile Include="..\PrinterAPP\Services\TelemetryPayloads.cs" Link="Linked\TelemetryPayloads.cs" />
+    <Compile Include="..\PrinterAPP\Services\IPrintAckOutbox.cs" Link="Linked\IPrintAckOutbox.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrintAckOutbox.cs" Link="Linked\PrintAckOutbox.cs" />
+    <Compile Include="..\PrinterAPP\Services\IAppDataPathProvider.cs" Link="Linked\IAppDataPathProvider.cs" />
+    <!-- NOTE: the feed E2E (EventStreamingService against a real backend) is a FOLLOW-UP — it needs
+         RequestLogService/LogEntry decoupled from MAUI's Color type before it can source-link here.
+         See docs/E2E-STRATEGY.md. -->
+  </ItemGroup>
+
+</Project>

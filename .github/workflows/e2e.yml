@@ -1,0 +1,39 @@
+# Printer-app E2E — fleet telemetry against a REAL backend (no mocks). See docs/E2E-STRATEGY.md.
+# Deliberately NOT on push/PR (keeps the fast unit job hermetic + a flaky backend from blocking
+# merges). Runs weekly for drift detection and on demand (e.g. before/after a release), and can be
+# pointed at ANY environment via the api_base_url input / repo variables.
+name: e2e (fleet telemetry)
+
+on:
+  schedule:
+    - cron: "0 4 * * 1" # Mondays 04:00 UTC
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: "Backend base URL to test against"
+        required: false
+        default: "https://staging.fooderist.com"
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: e2e (fleet telemetry)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: "10.0.x" # matches global.json
+
+      - name: Run E2E suite
+        env:
+          # Target env is dispatch input → repo var → staging default. Secrets carry the tenant
+          # X-Api-Key + (optional) admin JWT for the stronger fleet-read assertions. Unset key ⇒ the
+          # auth-gated calls 401 and the run fails loudly (that's the point — it's exercising real auth).
+          PRINTERAPP_E2E_API_BASE_URL: ${{ github.event.inputs.api_base_url || vars.PRINTERAPP_E2E_API_BASE_URL || 'https://staging.fooderist.com' }}
+          PRINTERAPP_E2E_API_KEY: ${{ secrets.PRINTERAPP_E2E_API_KEY }}
+          PRINTERAPP_E2E_ADMIN_JWT: ${{ secrets.PRINTERAPP_E2E_ADMIN_JWT }}
+          PRINTERAPP_E2E_TENANT_SLUG: ${{ vars.PRINTERAPP_E2E_TENANT_SLUG || 'rumi' }}
+        run: dotnet test PrinterAPP.E2E/PrinterAPP.E2E.csproj -c Release --nologo

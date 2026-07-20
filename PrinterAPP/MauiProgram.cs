@@ -64,6 +64,14 @@ namespace PrinterAPP
             builder.Services.AddSingleton<IUpdateService, UpdateService>();
             builder.Services.AddSingleton<IPrinterTestService, PrinterTestService>();
 
+            // Fleet telemetry: a single long-lived HttpClient (owned here — the app doesn't reference
+            // Microsoft.Extensions.Http) + the heartbeat scheduler. See the fleet-observability plan.
+            builder.Services.AddSingleton<ITelemetryClient>(sp => new TelemetryClient(
+                new HttpClient { Timeout = TimeSpan.FromSeconds(15) },
+                sp.GetRequiredService<ILogger<TelemetryClient>>()));
+            builder.Services.AddSingleton<IPrintAckOutbox, PrintAckOutbox>();
+            builder.Services.AddSingleton<ITelemetryScheduler, TelemetryScheduler>();
+
             // Register pages
             builder.Services.AddSingleton<MainPage>();
             builder.Services.AddSingleton<OrderManagementPage>();
