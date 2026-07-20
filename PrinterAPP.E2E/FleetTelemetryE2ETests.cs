@@ -22,8 +22,11 @@ public class FleetTelemetryE2ETests
         CashierPrinterName = "127.0.0.1:9100",
     };
 
-    private static TelemetryClient NewClient() =>
-        new(new HttpClient { Timeout = TimeSpan.FromSeconds(20) }, NullLogger<TelemetryClient>.Instance);
+    // One shared HttpClient (TelemetryClient sets headers per-request on the HttpRequestMessage, never
+    // on DefaultRequestHeaders, so sharing is safe) — avoids socket churn across tests.
+    private static readonly HttpClient SharedHttp = new() { Timeout = TimeSpan.FromSeconds(20) };
+
+    private static TelemetryClient NewClient() => new(SharedHttp, NullLogger<TelemetryClient>.Instance);
 
     // 🔴 HIGH — a real heartbeat registers the device + its feed state.
     [SkippableFact]

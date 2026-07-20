@@ -10,13 +10,17 @@ public static class Backend
 {
     private static string Root => E2EConfig.ApiBaseUrl.TrimEnd('/');
 
+    // One shared client; auth is set per-request (never on DefaultRequestHeaders) so it stays
+    // thread-safe and doesn't churn sockets.
+    private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
+
     /// <summary>True if the backend answers /api/health — used to skip the suite when none is up.</summary>
     public static async Task<bool> IsReachableAsync()
     {
         try
         {
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-            var response = await client.GetAsync($"{Root}/api/health");
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            var response = await Http.GetAsync($"{Root}/api/health", timeout.Token);
             return response.IsSuccessStatusCode;
         }
         catch
@@ -34,9 +38,11 @@ public static class Backend
         if (string.IsNullOrWhiteSpace(E2EConfig.AdminJwt))
             return null;
 
-        using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(15) };
-        client.DefaultRequestHeaders.Authorization =
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"{Root}/api/devices");
+        request.Headers.Authorization =
             new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", E2EConfig.AdminJwt);
-        return await client.GetStringAsync($"{Root}/api/devices");
+        using var response = await Http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadAsStringAsync();
     }
 }
