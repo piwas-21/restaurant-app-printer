@@ -43,6 +43,62 @@ public static class TelemetryPayloads
         return NullIfBlank(string.Join(", ", parts));
     }
 
+    /// <summary>
+    /// Maps one order's per-target print outcomes into acks. <c>Skipped</c> when the target has no
+    /// printer configured (mirroring OrderPrintService's fallbacks: front→cashier, back→legacy kitchen)
+    /// OR auto-print is disabled for it — the device deliberately didn't print. Otherwise
+    /// <c>Printed</c>/<c>Failed</c> from the success bool. Returns empty if the order id isn't a GUID.
+    /// <para>Known limitation: OrderPrintService returns a bare success bool that also reads <c>true</c>
+    /// for "no items routed to this kitchen" and (with time restrictions) "outside the print window",
+    /// which this can't distinguish from a real print — those still surface as <c>Printed</c>. Full
+    /// fidelity needs OrderPrintService to return a per-target status; tracked as a follow-up.</para>
+    /// </summary>
+    public static List<PrintAck> PrintAcks(
+        Order order, bool cashier, bool frontKitchen, bool backKitchen,
+        PrinterConfiguration config, DateTime receivedAt)
+    {
+        if (!Guid.TryParse(order.Id, out var orderId))
+            return new List<PrintAck>();
+
+        return new List<PrintAck>
+        {
+            BuildAck(orderId, DevicePrintTarget.Cashier, cashier,
+                config.CashierPrinterName, config.CashierAutoPrint, config.CashierPrintCopies, receivedAt),
+            BuildAck(orderId, DevicePrintTarget.FrontKitchen, frontKitchen,
+                FirstNonBlank(config.FrontKitchenPrinterName, config.CashierPrinterName),
+                config.FrontKitchenAutoPrint, config.KitchenPrintCopies, receivedAt),
+            BuildAck(orderId, DevicePrintTarget.BackKitchen, backKitchen,
+                FirstNonBlank(config.BackKitchenPrinterName, config.KitchenPrinterName),
+                config.BackKitchenAutoPrint, config.KitchenPrintCopies, receivedAt),
+        };
+    }
+
+    private static PrintAck BuildAck(
+        Guid orderId, DevicePrintTarget target, bool success,
+        string? printerName, bool autoPrint, int copies, DateTime receivedAt)
+    {
+        // "Would print" = a printer is configured AND auto-print is on; otherwise the device didn't
+        // (and wasn't going to) print → Skipped, not a fabricated Printed.
+        var willPrint = !string.IsNullOrWhiteSpace(printerName) && autoPrint;
+        var status = !willPrint
+            ? DevicePrintStatus.Skipped
+            : success ? DevicePrintStatus.Printed : DevicePrintStatus.Failed;
+
+        return new PrintAck
+        {
+            OrderId = orderId,
+            Target = target,
+            Status = status,
+            ReceivedAt = receivedAt,
+            PrintedAt = status == DevicePrintStatus.Printed ? DateTime.UtcNow : null,
+            FailureReason = status == DevicePrintStatus.Failed ? "Print failed" : null,
+            Copies = status == DevicePrintStatus.Printed ? Math.Max(1, copies) : 0,
+        };
+    }
+
+    private static string? FirstNonBlank(params string?[] values) =>
+        values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+
     private static string? NullIfBlank(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value;
 }

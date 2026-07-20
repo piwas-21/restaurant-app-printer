@@ -15,6 +15,7 @@ public class TelemetryScheduler : ITelemetryScheduler
     private readonly IPrinterService _printerService;
     private readonly IDeviceIdentityService _identity;
     private readonly IEventStreamingService _feed;
+    private readonly IPrintAckOutbox _printAckOutbox;
     private readonly ILogger<TelemetryScheduler> _logger;
 
     private readonly object _gate = new();
@@ -26,12 +27,14 @@ public class TelemetryScheduler : ITelemetryScheduler
         IPrinterService printerService,
         IDeviceIdentityService identity,
         IEventStreamingService feed,
+        IPrintAckOutbox printAckOutbox,
         ILogger<TelemetryScheduler> logger)
     {
         _client = client;
         _printerService = printerService;
         _identity = identity;
         _feed = feed;
+        _printAckOutbox = printAckOutbox;
         _logger = logger;
     }
 
@@ -51,18 +54,24 @@ public class TelemetryScheduler : ITelemetryScheduler
     private async Task RunAsync(CancellationToken cancellationToken)
     {
         // Report promptly on launch, then on the interval.
-        await SendHeartbeatAsync(cancellationToken);
+        await RunCycleAsync(cancellationToken);
 
         using var timer = new PeriodicTimer(HeartbeatInterval);
         try
         {
             while (await timer.WaitForNextTickAsync(cancellationToken))
-                await SendHeartbeatAsync(cancellationToken);
+                await RunCycleAsync(cancellationToken);
         }
         catch (OperationCanceledException)
         {
             // Expected on StopAsync.
         }
+    }
+
+    private async Task RunCycleAsync(CancellationToken cancellationToken)
+    {
+        await SendHeartbeatAsync(cancellationToken);
+        await FlushPrintAcksAsync(cancellationToken);
     }
 
     private async Task SendHeartbeatAsync(CancellationToken cancellationToken)
@@ -81,6 +90,29 @@ public class TelemetryScheduler : ITelemetryScheduler
         {
             // A telemetry cycle must never bring down the app; log and try again next tick.
             _logger.LogWarning(ex, "Heartbeat cycle failed");
+        }
+    }
+
+    private async Task FlushPrintAcksAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            var config = await _printerService.LoadConfigurationAsync();
+            var deviceId = _identity.DeviceId;
+
+            await _printAckOutbox.FlushAsync(
+                async batch =>
+                {
+                    var result = await _client.SendPrintAcksAsync(
+                        batch, config.ApiBaseUrl, config.ApiKey, deviceId, cancellationToken);
+                    // Remove the batch on Sent (2xx) or Rejected (4xx-drop); keep only on Retry.
+                    return result != TelemetrySendResult.Retry;
+                },
+                cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Print-ack flush cycle failed");
         }
     }
 
