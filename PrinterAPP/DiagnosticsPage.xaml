@@ -58,7 +58,7 @@
                     <Border Margin="0,0,0,8"
                             Padding="12"
                             StrokeThickness="1"
-                            Stroke="{Binding TypeColor}"
+                            Stroke="{Binding Type, Converter={StaticResource LogTypeToColorConverter}}"
                             BackgroundColor="{AppThemeBinding Light={StaticResource CardBackground}, Dark={StaticResource CardBackgroundDark}}">
                         <Border.StrokeShape>
                             <RoundRectangle CornerRadius="8"/>
@@ -73,7 +73,7 @@
                                 <Label Text="{Binding Operation}"
                                        FontSize="15"
                                        FontAttributes="Bold"
-                                       TextColor="{Binding TypeColor}"/>
+                                       TextColor="{Binding Type, Converter={StaticResource LogTypeToColorConverter}}"/>
                                 <Label Text="{Binding Message}"
                                        FontSize="13"
                                        TextColor="{AppThemeBinding Light={StaticResource TextSecondary}, Dark={StaticResource TextSecondaryDark}}"/>

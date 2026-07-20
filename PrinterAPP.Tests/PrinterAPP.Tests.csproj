@@ -65,6 +65,16 @@
     <Compile Include="..\PrinterAPP\Services\TelemetryPayloads.cs" Link="Linked\TelemetryPayloads.cs" />
     <Compile Include="..\PrinterAPP\Services\IPrintAckOutbox.cs" Link="Linked\IPrintAckOutbox.cs" />
     <Compile Include="..\PrinterAPP\Services\PrintAckOutbox.cs" Link="Linked\PrintAckOutbox.cs" />
+    <!-- Order-print composition (MAUI-free after the PrintStyleSettingsService path-provider seam): the
+         real ESC/POS receipt builder, driven to a loopback TcpListener for the print-to-sink test. Pulls
+         in the request-log boundary (MAUI-free since the LogEntry extraction). -->
+    <Compile Include="..\PrinterAPP\Services\IOrderPrintService.cs" Link="Linked\IOrderPrintService.cs" />
+    <Compile Include="..\PrinterAPP\Services\OrderPrintService.cs" Link="Linked\OrderPrintService.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrintStyleSettingsService.cs" Link="Linked\PrintStyleSettingsService.cs" />
+    <Compile Include="..\PrinterAPP\Models\PrintStyleSettings.cs" Link="Linked\PrintStyleSettings.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrinterType.cs" Link="Linked\PrinterType.cs" />
+    <Compile Include="..\PrinterAPP\Services\IRequestLogService.cs" Link="Linked\IRequestLogService.cs" />
+    <Compile Include="..\PrinterAPP\Services\LogEntry.cs" Link="Linked\LogEntry.cs" />
   </ItemGroup>
 
   <ItemGroup>

@@ -16,4 +16,3 @@ PrinterAPP/Services/OrderPrintService.cs
 PrinterAPP/Services/UpdateService.cs
 PrinterAPP/Services/EventStreamingService.cs
 PrinterAPP/Services/WindowsPrinterService.cs
-PrinterAPP/Services/RequestLogService.cs
