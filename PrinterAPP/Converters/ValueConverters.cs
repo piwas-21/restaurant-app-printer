@@ -15,16 +15,11 @@ public class StringNotEmptyConverter : IValueConverter
     }
 }
 
+// true → success (moss), false → error (brick), from the craft palette, theme-aware. See CraftColors.
 public class BoolToColorConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        if (value is bool boolValue)
-        {
-            return boolValue ? Colors.Green : Colors.Red;
-        }
-        return Colors.Gray;
-    }
+        => value is bool boolValue ? (boolValue ? CraftColors.Success : CraftColors.Error) : CraftColors.Muted;
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
@@ -32,25 +27,25 @@ public class BoolToColorConverter : IValueConverter
     }
 }
 
-// LogType → accent Color for the Diagnostics log list. This UI mapping used to live on LogEntry as a
-// `TypeColor` property, which coupled the (otherwise MAUI-free) model to MAUI's Color type and blocked
-// source-linking it into the net10.0 E2E harness. It belongs here, with the other value converters.
+// LogType → craft accent Color for the Diagnostics log list (the palette has no blue/purple, so the old
+// raw Colors.Blue/Purple/… are re-mapped to craft tokens). See CraftColors.ForLogType.
 public class LogTypeToColorConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-        => value is Services.LogType type
-            ? type switch
-            {
-                Services.LogType.SSE => Colors.Blue,
-                Services.LogType.Order => Colors.Purple,
-                Services.LogType.PrintRequest => Colors.Orange,
-                Services.LogType.PrintSuccess => Colors.Green,
-                Services.LogType.PrintError => Colors.Red,
-                Services.LogType.Error => Colors.DarkRed,
-                Services.LogType.Warning => Colors.DarkOrange,
-                _ => Colors.Gray
-            }
-            : Colors.Gray;
+        => value is Services.LogType type ? CraftColors.ForLogType(type) : CraftColors.Muted;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        throw new NotImplementedException();
+    }
+}
+
+// Print-outcome semantic string ("Printed"/"Partial"/"None") → craft success/warning/error, theme-aware.
+// Keeps colour presentation out of OrderHistoryItem (which now exposes the semantic PrintOutcome instead).
+public class PrintOutcomeToColorConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is string outcome ? CraftColors.ForPrintOutcome(outcome) : CraftColors.Muted;
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
