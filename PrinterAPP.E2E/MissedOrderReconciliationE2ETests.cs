@@ -22,9 +22,9 @@ public class MissedOrderReconciliationE2ETests
     public async Task MissedOrders_UnackedConfirmedOrder_IsFlagged_WhileAckedOrderIsNot()
     {
         Skip.IfNot(await Backend.IsReachableAsync(), $"No backend at {E2EConfig.ApiBaseUrl}");
-        // Both order creation and the missed-orders read are admin-only; without a JWT there's nothing to do.
-        Skip.If(string.IsNullOrWhiteSpace(E2EConfig.AdminJwt),
-            "no PRINTERAPP_E2E_ADMIN_JWT (order creation + missed-orders read are admin-only)");
+        // Both order creation and the missed-orders read are admin-only; without admin auth there's nothing to do.
+        Skip.If(await Backend.ResolveAdminJwtAsync() is null,
+            "no admin auth (set PRINTERAPP_E2E_ADMIN_{EMAIL,PASSWORD} or _JWT) — creation + missed-orders read are admin-only");
         // The print-ack ingest is X-Api-Key'd; skip on a key-enforcing backend with no key configured.
         Skip.If(string.IsNullOrWhiteSpace(E2EConfig.ApiKey) && await Backend.FeedEnforcesKeyAsync(),
             "backend enforces X-Api-Key but PRINTERAPP_E2E_API_KEY is unset — can't ingest the print-ack");

@@ -86,12 +86,22 @@ CI-spun-up backend, staging, or demo by changing env vars only (mirrors the fron
 | Env var | Purpose | Default |
 |---|---|---|
 | `PRINTERAPP_E2E_API_BASE_URL` | backend under test | `http://localhost:5221` |
-| `PRINTERAPP_E2E_API_KEY` | tenant `X-Api-Key` (printer-feed auth) | `""` (open in the test backend) |
-| `PRINTERAPP_E2E_ADMIN_JWT` | admin bearer for the `GET /api/devices*` assertions | `""` |
+| `PRINTERAPP_E2E_API_KEY` | tenant `X-Api-Key` (printer-feed / device telemetry auth) | `""` (open in the test backend) |
+| `PRINTERAPP_E2E_ADMIN_EMAIL` + `PRINTERAPP_E2E_ADMIN_PASSWORD` | admin creds; the suite **mints a fresh JWT** at runtime via `POST /api/auth/login` for the admin-only reads (`GET /api/devices*`) + order creation | `""` |
+| `PRINTERAPP_E2E_ADMIN_JWT` | optional **direct** admin-JWT override (for a one-off run; a static JWT expires, so prefer the creds above) | `""` |
 | `PRINTERAPP_E2E_TENANT_SLUG` | slug the device self-reports | `rumi` |
+
+Admin auth resolves once per run (`Backend.ResolveAdminJwtAsync`): `_JWT` override wins, else mint from
+`_EMAIL`/`_PASSWORD`, else `null` → the admin-gated tests **skip**. Minting (not a static JWT) is what
+keeps the weekly run from silently red-failing on an expired token.
 
 If `PRINTERAPP_E2E_API_BASE_URL` is unreachable the suite **skips** (so it never red-fails a run with no
 backend) — CI provides one; a dev exports the vars to point at staging/demo.
+
+**CI targets (`e2e.yml`):** `target=staging` (default, repo-level secrets) runs the always-on subset —
+staging ships 0 products so the order-creation tests skip. `target=demo` selects the **`demo` GitHub
+Environment** (its own `X-Api-Key` + admin creds) and points at the **seeded** demo backend, so the
+delivery + missed-order-reconciliation tests actually run. Dispatch: `gh workflow run e2e.yml -f target=demo`.
 
 ## Data isolation
 

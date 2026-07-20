@@ -18,6 +18,52 @@ public static class Backend
     // thread-safe and doesn't churn sockets.
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(15) };
 
+    // Admin JWT resolved once per run: a direct PRINTERAPP_E2E_ADMIN_JWT override wins; otherwise mint a
+    // fresh one from PRINTERAPP_E2E_ADMIN_{EMAIL,PASSWORD} via the real login endpoint (no static JWT to
+    // expire); null when neither is configured (admin-gated tests then skip). Cached behind a gate so the
+    // login round-trip happens at most once even under xUnit's parallel test execution.
+    private static readonly SemaphoreSlim AdminGate = new(1, 1);
+    private static bool _adminResolved;
+    private static string? _adminJwt;
+
+    public static async Task<string?> ResolveAdminJwtAsync()
+    {
+        if (_adminResolved) return _adminJwt;
+        await AdminGate.WaitAsync();
+        try
+        {
+            if (_adminResolved) return _adminJwt;
+            _adminJwt = await MintAdminJwtAsync();
+            _adminResolved = true;
+            return _adminJwt;
+        }
+        finally { AdminGate.Release(); }
+    }
+
+    private static async Task<string?> MintAdminJwtAsync()
+    {
+        if (!string.IsNullOrWhiteSpace(E2EConfig.AdminJwt))
+            return E2EConfig.AdminJwt; // direct override (e.g. a JWT pasted for a one-off run)
+
+        if (string.IsNullOrWhiteSpace(E2EConfig.AdminEmail) || string.IsNullOrWhiteSpace(E2EConfig.AdminPassword))
+            return null; // no admin auth configured → admin-gated tests skip
+
+        var body = JsonSerializer.Serialize(new { email = E2EConfig.AdminEmail, password = E2EConfig.AdminPassword });
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"{Root}/api/auth/login")
+        {
+            Content = new StringContent(body, Encoding.UTF8, "application/json"),
+        };
+        using var response = await Http.SendAsync(request);
+        if (!response.IsSuccessStatusCode)
+            return null; // bad creds / not an admin → skip rather than red-fail the whole suite
+
+        using var doc = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+        return doc.RootElement.TryGetProperty("data", out var data) &&
+               data.TryGetProperty("accessToken", out var token)
+            ? token.GetString()
+            : null;
+    }
+
     /// <summary>True if the backend answers /api/health — used to skip the suite when none is up.</summary>
     public static async Task<bool> IsReachableAsync()
     {
@@ -39,12 +85,13 @@ public static class Backend
     /// </summary>
     public static async Task<string?> DevicesJsonOrNullAsync()
     {
-        if (string.IsNullOrWhiteSpace(E2EConfig.AdminJwt))
+        var jwt = await ResolveAdminJwtAsync();
+        if (string.IsNullOrWhiteSpace(jwt))
             return null;
 
         using var request = new HttpRequestMessage(HttpMethod.Get, $"{Root}/api/devices");
         request.Headers.Authorization =
-            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", E2EConfig.AdminJwt);
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", jwt);
         using var response = await Http.SendAsync(request);
         response.EnsureSuccessStatusCode();
         return await response.Content.ReadAsStringAsync();
@@ -107,8 +154,9 @@ public static class Backend
     /// </summary>
     public static async Task<(CreatedOrder? Order, string Reason)> CreateConfirmedDineInOrderOrNullAsync()
     {
-        if (string.IsNullOrWhiteSpace(E2EConfig.AdminJwt))
-            return (null, "no PRINTERAPP_E2E_ADMIN_JWT (POST /api/orders is [Authorize])");
+        var jwt = await ResolveAdminJwtAsync();
+        if (string.IsNullOrWhiteSpace(jwt))
+            return (null, "no admin auth (set PRINTERAPP_E2E_ADMIN_{EMAIL,PASSWORD} or _JWT) — POST /api/orders is [Authorize]");
 
         var product = await FirstProductOrNullAsync();
         if (product is null)
@@ -129,7 +177,7 @@ public static class Backend
             Content = new StringContent(body, Encoding.UTF8, "application/json"),
         };
         request.Headers.Authorization =
-            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", E2EConfig.AdminJwt);
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", jwt);
 
         using var response = await Http.SendAsync(request);
         var payload = await response.Content.ReadAsStringAsync();
@@ -154,13 +202,14 @@ public static class Backend
     /// </summary>
     public static async Task<IReadOnlyList<string>?> MissedOrderNumbersOrNullAsync(int graceMinutes, int lookbackHours)
     {
-        if (string.IsNullOrWhiteSpace(E2EConfig.AdminJwt))
+        var jwt = await ResolveAdminJwtAsync();
+        if (string.IsNullOrWhiteSpace(jwt))
             return null;
 
         using var request = new HttpRequestMessage(
             HttpMethod.Get, $"{Root}/api/devices/missed-orders?graceMinutes={graceMinutes}&lookbackHours={lookbackHours}");
         request.Headers.Authorization =
-            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", E2EConfig.AdminJwt);
+            new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", jwt);
         using var response = await Http.SendAsync(request);
         response.EnsureSuccessStatusCode();
 
