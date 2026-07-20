@@ -14,6 +14,8 @@
             <!-- Value Converters -->
             <converters:StringNotEmptyConverter x:Key="StringNotEmptyConverter"/>
             <converters:BoolToColorConverter x:Key="BoolToColorConverter"/>
+            <converters:LogTypeToColorConverter x:Key="LogTypeToColorConverter"/>
+            <converters:PrintOutcomeToColorConverter x:Key="PrintOutcomeToColorConverter"/>
         </ResourceDictionary>
     </Application.Resources>
 </Application>

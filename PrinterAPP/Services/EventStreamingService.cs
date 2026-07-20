@@ -312,7 +312,9 @@ public class EventStreamingService : IEventStreamingService
                         PropertyNameCaseInsensitive = true
                     });
 
-                    if (orderEvent?.Order != null)
+                    // Pattern match (not `orderEvent?.Order != null`) so the compiler narrows orderEvent
+                    // to non-null in this block — clears CS8604 at OnOrderReceived(orderEvent) below.
+                    if (orderEvent is { Order: not null })
                     {
                         var order = orderEvent.Order;
 
@@ -368,8 +370,9 @@ public class EventStreamingService : IEventStreamingService
                                         _logger.LogInformation("Successfully fetched full details for order {OrderNumber} with {Count} items",
                                             order.OrderNumber, fullOrder.Items.Count);
                                         order = fullOrder;
-                                        // Update the wrapper reference too
-                                        if (orderEvent != null) orderEvent.Order = fullOrder;
+                                        // Update the wrapper reference too (orderEvent is non-null in this
+                                        // block — see the `is { Order: not null }` guard above).
+                                        orderEvent.Order = fullOrder;
                                     }
                                     else
                                     {

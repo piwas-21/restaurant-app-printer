@@ -54,12 +54,29 @@ the real `TelemetryClient`).
   UI cosmetics → belong in unit tests or the manual emulator smoke.
 
 **Current suite:** heartbeat, print-ack, and durable-outbox (HIGH/MED telemetry) — verified green against
-live staging. **Next iterations:** (1) the **order-feed headless test** (`EventStreamingService` polling a
-real backend) — blocked on decoupling `RequestLogService`/`LogEntry` from MAUI's `Color` type so the feed
-can source-link into `net10.0`; (2) **missed-order reconciliation** (create a Confirmed order via
-`POST /api/orders`, ack one and not the other, assert `GET /api/devices/missed-orders`) — needs a seeded
-product catalogue, so it pairs with a spun-up/seeded backend; (3) **print-to-sink** (`OrderPrintService`
-→ loopback `TcpListener` asserting ESC/POS) — needs the `PrintStyleSettingsService` injection seam.
+live staging — **plus the order-feed suite** (`OrderFeedE2ETests`): the real `EventStreamingService`
+polling a real backend (positive: a successful poll advances `LastSuccessfulPollAt`; negative: a wrong
+`X-Api-Key` never polls + surfaces the auth error; delivery: a Confirmed DineIn order created via
+`POST /api/orders` reaches `OrderReceived`). The MAUI-`Color` coupling that blocked source-linking the feed
+was removed by moving `LogType`→`Color` off `LogEntry` into a UI converter — **plus missed-order
+reconciliation** (`MissedOrderReconciliationE2ETests`): create two Confirmed orders, ack one as `Printed`
+through the real `TelemetryClient`, and assert the acked one is **not** in `GET /api/devices/missed-orders`
+while the unacked one **is** (membership assertions, never list size). Needs a seeded backend + admin JWT;
+skips otherwise.
+
+**Print-to-sink lives in `PrinterAPP.Tests`, not here** (`OrderPrintToSinkTests`): it needs no backend, so
+it runs on **every PR** (a print regression shouldn't wait for the weekly E2E cadence). The real
+`OrderPrintService` composes a receipt and sends it over `NetworkTcpTransport` to a loopback `TcpListener`,
+asserting the ESC/POS bytes (init + cut + order content). Enabled by injecting `IAppDataPathProvider` into
+`OrderPrintService` (was `new PrintStyleSettingsService()` with a MAUI default), making the compose path
+source-linkable headless.
+
+**Next iterations:** the emulator-level Track-B spike (real MAUI app + a frontend-placed order), still open.
+
+> The order-feed delivery test, the negative auth path, and the reconciliation test need a seeded,
+> key-enforcing backend to run for real; against a keyless/open or product-less backend they **skip**
+> (never red-fail). The true green pass is the `e2e.yml` CI job (which carries the `X-Api-Key` + admin JWT
+> secrets) or a seeded demo backend.
 
 ## Environment parameterization (run against any environment)
 
@@ -69,12 +86,24 @@ CI-spun-up backend, staging, or demo by changing env vars only (mirrors the fron
 | Env var | Purpose | Default |
 |---|---|---|
 | `PRINTERAPP_E2E_API_BASE_URL` | backend under test | `http://localhost:5221` |
-| `PRINTERAPP_E2E_API_KEY` | tenant `X-Api-Key` (printer-feed auth) | `""` (open in the test backend) |
-| `PRINTERAPP_E2E_ADMIN_JWT` | admin bearer for the `GET /api/devices*` assertions | `""` |
+| `PRINTERAPP_E2E_API_KEY` | tenant `X-Api-Key` (printer-feed / device telemetry auth) | `""` (open in the test backend) |
+| `PRINTERAPP_E2E_ADMIN_EMAIL` + `PRINTERAPP_E2E_ADMIN_PASSWORD` | admin creds; the suite **mints a fresh JWT** at runtime via `POST /api/auth/login` for the admin-only reads (`GET /api/devices*`) + order creation | `""` |
+| `PRINTERAPP_E2E_ADMIN_JWT` | optional **direct** admin-JWT override (for a one-off run; a static JWT expires, so prefer the creds above) | `""` |
 | `PRINTERAPP_E2E_TENANT_SLUG` | slug the device self-reports | `rumi` |
+
+Admin auth resolves once per run (`Backend.ResolveAdminJwtAsync`): `_JWT` override wins, else mint from
+`_EMAIL`/`_PASSWORD`, else `null` → the admin-gated tests **skip**. Minting (not a static JWT) is what
+keeps the weekly run from silently red-failing on an expired token.
 
 If `PRINTERAPP_E2E_API_BASE_URL` is unreachable the suite **skips** (so it never red-fails a run with no
 backend) — CI provides one; a dev exports the vars to point at staging/demo.
+
+**CI target (`e2e.yml`):** staging by default (it auto-deploys `develop`, so it has the fleet
+`/api/devices` endpoints). The order-creation tests (delivery + missed-order reconciliation) run only when
+the target **also** has **seeded products** + **admin auth**; otherwise they skip. Staging ships 0
+products, so **seed it** (`frontend/e2e/seed/seed.sql`) and set the admin-cred secrets to enable the full
+run. ⚠️ `demo.sofrapiwas.com` has products but **not** the fleet endpoints (its backend isn't on
+`develop`-tip), so it can't run the full suite until it's redeployed.
 
 ## Data isolation
 

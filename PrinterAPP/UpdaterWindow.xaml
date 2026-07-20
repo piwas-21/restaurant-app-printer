@@ -29,11 +29,11 @@
             <Frame BorderColor="{AppThemeBinding Light={StaticResource CardBorder}, Dark={StaticResource CardBorderDark}}" CornerRadius="8" Padding="15" x:Name="LatestVersionFrame" IsVisible="False">
                 <VerticalStackLayout Spacing="8">
                     <Label Text="Latest Version" FontSize="14" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
-                    <Label x:Name="LatestVersionLabel" 
-                           Text="-" 
-                           FontSize="18" 
+                    <Label x:Name="LatestVersionLabel"
+                           Text="-"
+                           FontSize="18"
                            FontAttributes="Bold"
-                           TextColor="Green"/>
+                           TextColor="{AppThemeBinding Light={StaticResource SuccessText}, Dark={StaticResource SuccessDark}}"/>
                 </VerticalStackLayout>
             </Frame>
 
@@ -67,16 +67,13 @@
                 <Button x:Name="CheckButton"
                         Text="Check for Updates"
                         Clicked="OnCheckForUpdatesClicked"
-                        BackgroundColor="#007ACC"
-                        TextColor="White"
                         WidthRequest="150"
                         HeightRequest="45"/>
-                
+
                 <Button x:Name="UpdateButton"
                         Text="Update Now"
                         Clicked="OnUpdateNowClicked"
-                        BackgroundColor="Green"
-                        TextColor="White"
+                        Style="{StaticResource GoButton}"
                         WidthRequest="150"
                         HeightRequest="45"
                         IsVisible="False"/>
@@ -86,8 +83,8 @@
             <Button x:Name="CloseButton"
                     Text="Close"
                     Clicked="OnCloseClicked"
-                    BackgroundColor="LightGray"
-                    TextColor="Black"
+                    BackgroundColor="{AppThemeBinding Light={StaticResource CardBorder}, Dark={StaticResource CardBorderDark}}"
+                    TextColor="{AppThemeBinding Light={StaticResource TextPrimary}, Dark={StaticResource TextPrimaryDark}}"
                     WidthRequest="100"
                     HeightRequest="40"
                     HorizontalOptions="Center"

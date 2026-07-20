@@ -36,8 +36,7 @@
                     <Button x:Name="ServiceStatusButton"
                             Grid.Column="1"
                             Text="Service: Stopped"
-                            BackgroundColor="Orange"
-                            TextColor="White"
+                            Style="{StaticResource WarnButton}"
                             CornerRadius="20"
                             HeightRequest="40"
                             Padding="16,0"
@@ -50,16 +49,13 @@
                 <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="12">
                     <Button Text="Refresh"
                             Grid.Column="0"
-                            BackgroundColor="#2196F3"
-                            TextColor="White"
                             CornerRadius="20"
                             HeightRequest="44"
                             Clicked="OnRefreshClicked"/>
 
                     <Button Text="Clear History"
                             Grid.Column="1"
-                            BackgroundColor="#FF9800"
-                            TextColor="White"
+                            Style="{StaticResource WarnButton}"
                             CornerRadius="20"
                             HeightRequest="44"
                             Clicked="OnClearHistoryClicked"/>
@@ -96,7 +92,7 @@
                                          Grid.RowSpan="4"
                                          WidthRequest="5"
                                          CornerRadius="2"
-                                         Color="{Binding StatusColor}"/>
+                                         Color="{Binding PrintOutcome, Converter={StaticResource PrintOutcomeToColorConverter}}"/>
 
                                 <!-- Order Header -->
                                 <VerticalStackLayout Grid.Column="1" Grid.Row="0">
@@ -157,8 +153,7 @@
                                 <!-- Action Buttons -->
                                 <VerticalStackLayout Grid.Column="2" Grid.RowSpan="4" Spacing="10" VerticalOptions="Center">
                                     <Button Text="🍳 Kitchen"
-                                            BackgroundColor="#4CAF50"
-                                            TextColor="White"
+                                            Style="{StaticResource GoButton}"
                                             CornerRadius="15"
                                             WidthRequest="100"
                                             HeightRequest="40"
@@ -167,8 +162,6 @@
                                             CommandParameter="{Binding Order.Id}"/>
 
                                     <Button Text="💰 Cashier"
-                                            BackgroundColor="#2196F3"
-                                            TextColor="White"
                                             CornerRadius="15"
                                             WidthRequest="100"
                                             HeightRequest="40"
@@ -177,8 +170,7 @@
                                             CommandParameter="{Binding Order.Id}"/>
 
                                     <Button Text="📄 Both"
-                                            BackgroundColor="#FF9800"
-                                            TextColor="White"
+                                            Style="{StaticResource WarnButton}"
                                             CornerRadius="15"
                                             WidthRequest="100"
                                             HeightRequest="40"

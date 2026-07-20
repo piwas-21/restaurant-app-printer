@@ -9,8 +9,14 @@ public static class E2EConfig
 {
     public static string ApiBaseUrl => Env("PRINTERAPP_E2E_API_BASE_URL", "http://localhost:5221");
     public static string ApiKey => Env("PRINTERAPP_E2E_API_KEY", "");
-    public static string AdminJwt => Env("PRINTERAPP_E2E_ADMIN_JWT", "");
     public static string TenantSlug => Env("PRINTERAPP_E2E_TENANT_SLUG", "rumi");
+
+    // Admin auth for the admin-only reads/creates. Prefer minting a fresh JWT from credentials (a static
+    // JWT expires and silently red-fails the weekly run) — AdminJwt is a direct override for one-off runs.
+    // See Backend.ResolveAdminJwtAsync.
+    public static string AdminJwt => Env("PRINTERAPP_E2E_ADMIN_JWT", "");
+    public static string AdminEmail => Env("PRINTERAPP_E2E_ADMIN_EMAIL", "");
+    public static string AdminPassword => Env("PRINTERAPP_E2E_ADMIN_PASSWORD", "");
 
     /// <summary>A fresh per-test device id so parallel runs + reruns never collide.</summary>
     public static string NewDeviceId() => "e2e-" + Guid.NewGuid().ToString("N");

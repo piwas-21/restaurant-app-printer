@@ -1,7 +1,15 @@
-# Printer-app E2E — fleet telemetry against a REAL backend (no mocks). See docs/E2E-STRATEGY.md.
-# Deliberately NOT on push/PR (keeps the fast unit job hermetic + a flaky backend from blocking
-# merges). Runs weekly for drift detection and on demand (e.g. before/after a release), and can be
-# pointed at ANY environment via the api_base_url input / repo variables.
+# Printer-app E2E — fleet telemetry + order-feed + reconciliation against a REAL backend (no mocks).
+# See docs/E2E-STRATEGY.md. Deliberately NOT on push/PR (keeps the fast unit job hermetic + a flaky
+# backend from blocking merges). Runs weekly for drift detection and on demand.
+#
+# Target = staging by default (auto-deploys develop, so it has the fleet /api/devices endpoints). The
+# order-creation tests (delivery + missed-order reconciliation) run only when the target ALSO has seeded
+# products + admin auth; otherwise they skip (never red-fail). Seed staging via frontend/e2e/seed/seed.sql
+# to enable the full run. Point at any other backend with the api_base_url input.
+#
+# Admin auth is minted at runtime from PRINTERAPP_E2E_ADMIN_{EMAIL,PASSWORD} via POST /api/auth/login
+# (a static JWT would expire and red-fail the weekly run); PRINTERAPP_E2E_ADMIN_JWT is an optional
+# direct override for a one-off run.
 name: e2e (fleet telemetry)
 
 on:
@@ -10,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       api_base_url:
-        description: "Backend base URL to test against"
+        description: "Backend base URL to test against (must have the /api/devices endpoints)"
         required: false
         default: "https://staging.fooderist.com"
 
@@ -29,11 +37,14 @@ jobs:
 
       - name: Run E2E suite
         env:
-          # Target env is dispatch input → repo var → staging default. Secrets carry the tenant
-          # X-Api-Key + (optional) admin JWT for the stronger fleet-read assertions. Unset key ⇒ the
-          # auth-gated calls 401 and the run fails loudly (that's the point — it's exercising real auth).
+          # Target: dispatch input → repo var → staging default.
           PRINTERAPP_E2E_API_BASE_URL: ${{ github.event.inputs.api_base_url || vars.PRINTERAPP_E2E_API_BASE_URL || 'https://staging.fooderist.com' }}
+          # Tenant X-Api-Key for the printer feed / device telemetry.
           PRINTERAPP_E2E_API_KEY: ${{ secrets.PRINTERAPP_E2E_API_KEY }}
+          # Admin auth: minted at runtime from these creds; JWT is an optional direct override. Without
+          # them, the admin-gated tests (device-read, order creation, reconciliation) skip.
+          PRINTERAPP_E2E_ADMIN_EMAIL: ${{ secrets.PRINTERAPP_E2E_ADMIN_EMAIL }}
+          PRINTERAPP_E2E_ADMIN_PASSWORD: ${{ secrets.PRINTERAPP_E2E_ADMIN_PASSWORD }}
           PRINTERAPP_E2E_ADMIN_JWT: ${{ secrets.PRINTERAPP_E2E_ADMIN_JWT }}
           PRINTERAPP_E2E_TENANT_SLUG: ${{ vars.PRINTERAPP_E2E_TENANT_SLUG || 'rumi' }}
         run: dotnet test PrinterAPP.E2E/PrinterAPP.E2E.csproj -c Release --nologo

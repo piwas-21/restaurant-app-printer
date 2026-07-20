@@ -1,40 +1,62 @@
 ﻿<?xml version="1.0" encoding="UTF-8" ?>
 <?xaml-comp compile="true" ?>
-<ResourceDictionary 
+<ResourceDictionary
     xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
     xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
 
     <!-- Note: For Android please see also Platforms\Android\Resources\values\colors.xml -->
 
-    <!-- SofraPiwas craft palette (was the .NET default purple). See DESIGN.md "Artisanal Kitchen". -->
-    <Color x:Key="Primary">#89341a</Color>
-    <Color x:Key="PrimaryDark">#ffb59f</Color>
-    <Color x:Key="PrimaryDarkText">#241912</Color>
-    <Color x:Key="Secondary">#ffc55f</Color>
-    <Color x:Key="SecondaryDarkText">#7d5700</Color>
+    <!-- Sofra "craft" palette — food-warm, flat pigment, kitchen/pantry colour names.
+         Source of truth: sofra/app/globals.css + sofra/docs/design-tokens.md.
+         Paired tokens are consumed via {AppThemeBinding Light={StaticResource X}, Dark={StaticResource XDark}}.
+         Values corrected to the real Sofra hex in the branding P0 pass (#71). -->
+
+    <!-- Primary = terracotta / paprika -->
+    <Color x:Key="Primary">#a84b2f</Color>
+    <Color x:Key="PrimaryDark">#f2b48c</Color>
+    <Color x:Key="PrimaryDarkText">#211a16</Color>
+
+    <!-- Secondary = olive branch (text-safe variant for small text on light) -->
+    <Color x:Key="Secondary">#7c8450</Color>
+    <Color x:Key="SecondaryDark">#b5bc8a</Color>
+    <Color x:Key="SecondaryDarkText">#5a6139</Color>
+
+    <!-- Accent = saffron threads (text-safe variant for small text on light) -->
+    <Color x:Key="Accent">#d9a441</Color>
+    <Color x:Key="AccentDark">#e8c87c</Color>
+    <Color x:Key="AccentText">#8a6d2b</Color>
+
     <Color x:Key="Tertiary">#4c532c</Color>
 
-    <!-- SofraPiwas craft surfaces — light ("Warm Kitchen") + dark ("Late Evening").
-         Paired tokens consumed via {AppThemeBinding Light={StaticResource X}, Dark={StaticResource XDark}}. -->
-    <Color x:Key="PageBackground">#fff8f5</Color>
+    <!-- Surfaces — light ("Warm Kitchen") + dark ("Late Evening"; a distinct atmosphere, not an invert). -->
+    <Color x:Key="PageBackground">#fff9f2</Color>
     <Color x:Key="PageBackgroundDark">#211a16</Color>
     <Color x:Key="CardBackground">#fffcf8</Color>
-    <Color x:Key="CardBackgroundDark">#2b2019</Color>
-    <Color x:Key="CardBorder">#e6d7cd</Color>
-    <Color x:Key="CardBorderDark">#3d302a</Color>
-    <Color x:Key="TextPrimary">#241912</Color>
-    <Color x:Key="TextPrimaryDark">#ffede4</Color>
+    <Color x:Key="CardBackgroundDark">#2c241f</Color>
+    <Color x:Key="CardBorder">#eae0d2</Color>
+    <Color x:Key="CardBorderDark">#3e3630</Color>
+    <Color x:Key="TextPrimary">#3b2e26</Color>
+    <Color x:Key="TextPrimaryDark">#f2e9dd</Color>
     <Color x:Key="TextSecondary">#56423d</Color>
     <Color x:Key="TextSecondaryDark">#cbb8b0</Color>
     <Color x:Key="TextMuted">#89726c</Color>
     <Color x:Key="TextMutedDark">#a3908a</Color>
 
+    <!-- Semantic — success (muted moss), warning (saffron), error (soft brick, deliberately pinker than
+         the terracotta primary so the two never read as the same colour). Success + warning carry a
+         text-safe variant (*Text) for small text on light backgrounds; Sofra defines none for error.
+         SuccessDark == Success by design — globals.css uses the same moss in both light and dark. -->
+    <Color x:Key="Success">#8cb89a</Color>
+    <Color x:Key="SuccessDark">#8cb89a</Color>
+    <Color x:Key="SuccessText">#4c7259</Color>
+    <Color x:Key="Warning">#d9a441</Color>
+    <Color x:Key="WarningDark">#e8c87c</Color>
+    <Color x:Key="WarningText">#8a6d2b</Color>
+    <Color x:Key="Error">#cc5a50</Color>
+    <Color x:Key="ErrorDark">#e8948c</Color>
+
     <Color x:Key="White">White</Color>
     <Color x:Key="Black">Black</Color>
-    <Color x:Key="MidnightBlue">#190649</Color>
-    <Color x:Key="OffBlack">#1f1f1f</Color>
-    <Color x:Key="Success">#28A745</Color>
-
 
     <Color x:Key="Gray100">#E1E1E1</Color>
     <Color x:Key="Gray200">#C8C8C8</Color>

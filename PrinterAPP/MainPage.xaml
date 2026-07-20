@@ -25,8 +25,7 @@
                     <Button x:Name="ServiceToggleButton"
                             Grid.Column="2"
                             Text="Start Service"
-                            BackgroundColor="Green"
-                            TextColor="White"
+                            Style="{StaticResource GoButton}"
                             CornerRadius="20"
                             WidthRequest="120"
                             Clicked="OnServiceToggleClicked"/>
@@ -47,15 +46,13 @@
                                TextChanged="OnApiUrlChanged"/>
                         <Button Text="Test"
                                 Grid.Column="1"
-                                BackgroundColor="#2196F3"
-                                TextColor="White"
                                 WidthRequest="80"
                                 Clicked="OnTestApiClicked"/>
                     </Grid>
                     <Label x:Name="ApiUrlChangeLabel"
                            Text=""
                            FontSize="12"
-                           TextColor="Orange"
+                           TextColor="{AppThemeBinding Light={StaticResource WarningText}, Dark={StaticResource WarningDark}}"
                            IsVisible="False"/>
 
                     <Label Text="API Key" FontSize="14" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}" Margin="0,6,0,0"/>
@@ -80,8 +77,6 @@
                                 Title="Choose kitchen printer"/>
                         <Button Text="Refresh"
                                 Grid.Column="1"
-                                BackgroundColor="#4CAF50"
-                                TextColor="White"
                                 WidthRequest="80"
                                 Clicked="OnRefreshPrintersClicked"/>
                     </Grid>
@@ -207,7 +202,7 @@
 
                     <Label Text="Example: Set 12:00 to 13:00 to disable auto-printing during lunch break. You can still print manually from Order Management page."
                            FontSize="11"
-                           TextColor="DarkOrange"
+                           TextColor="{AppThemeBinding Light={StaticResource WarningText}, Dark={StaticResource WarningDark}}"
                            FontAttributes="Italic"
                            Margin="0,5,0,0"/>
                 </VerticalStackLayout>
@@ -245,8 +240,6 @@
                            Margin="0,0,0,10"/>
                     
                     <Button Text="Configure Print Styles"
-                            BackgroundColor="#9C27B0"
-                            TextColor="White"
                             FontAttributes="Bold"
                             CornerRadius="5"
                             Clicked="OnPrintStylesClicked"/>
@@ -256,32 +249,27 @@
             <!-- Action Buttons -->
             <Grid ColumnDefinitions="*,*,*,*" ColumnSpacing="10">
                 <Button Text="Save"
-                        BackgroundColor="#4CAF50"
-                        TextColor="White"
+                        Style="{StaticResource GoButton}"
                         FontAttributes="Bold"
                         CornerRadius="25"
                         Clicked="OnSaveClicked"/>
 
                 <Button Text="Test Print"
                         Grid.Column="1"
-                        BackgroundColor="#FF9800"
-                        TextColor="White"
+                        Style="{StaticResource WarnButton}"
                         FontAttributes="Bold"
                         CornerRadius="25"
                         Clicked="OnTestPrintClicked"/>
 
                 <Button Text="Reset"
                         Grid.Column="2"
-                        BackgroundColor="#F44336"
-                        TextColor="White"
+                        Style="{StaticResource DangerButton}"
                         FontAttributes="Bold"
                         CornerRadius="25"
                         Clicked="OnResetClicked"/>
 
                 <Button Text="🔄 Update"
                         Grid.Column="3"
-                        BackgroundColor="#007ACC"
-                        TextColor="White"
                         FontAttributes="Bold"
                         CornerRadius="25"
                         Clicked="OnCheckForUpdatesClicked"/>

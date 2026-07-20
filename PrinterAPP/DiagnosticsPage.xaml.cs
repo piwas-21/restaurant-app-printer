@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using PrinterAPP.Converters;
 using PrinterAPP.Services;
 
 namespace PrinterAPP;
@@ -106,20 +107,18 @@ public partial class DiagnosticsPage : ContentPage
             return;
         }
 
-        var res = Application.Current.Resources;
-        var primary = (Color)res["Primary"];
-        // Inactive chips are outline-only on the page background, so in dark mode use the lighter
-        // terracotta (maroon-on-aubergine is too low-contrast). Active chips stay maroon + white.
-        var accent = Application.Current.RequestedTheme == AppTheme.Dark
-            ? (Color)res["PrimaryDark"]
-            : primary;
+        // Active chip fill stays maroon in both modes (white text on it reads fine); inactive chips are
+        // outline-only on the page bg, so in dark mode they use the lighter terracotta (maroon-on-aubergine
+        // is too low-contrast). Routed through CraftColors (safe token lookup) — see branding P2b, #71.
+        var activeFill = CraftColors.Token("Primary", "Primary");
+        var accent = CraftColors.Primary;
         foreach (var (chip, name) in new[]
                  {
                      (ChipAll, "All"), (ChipOrders, "Orders"), (ChipErrors, "Errors"), (ChipWarnings, "Warnings"),
                  })
         {
             var active = _filter == name;
-            chip.BackgroundColor = active ? primary : Colors.Transparent;
+            chip.BackgroundColor = active ? activeFill : Colors.Transparent;
             chip.TextColor = active ? Colors.White : accent;
             chip.BorderColor = accent;
             chip.BorderWidth = 1;

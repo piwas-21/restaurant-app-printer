@@ -15,10 +15,9 @@ public class PrintStyleSettingsService
     private readonly string _settingsFilePath;
     private PrintStyleSettings? _cachedSettings;
 
-    public PrintStyleSettingsService() : this(new MauiAppDataPathProvider())
-    {
-    }
-
+    // No parameterless (MAUI-defaulting) ctor: callers pass the IAppDataPathProvider explicitly (from DI
+    // on-device, a temp dir in tests). Keeps this class MAUI-free so OrderPrintService can be source-linked
+    // into the headless PrinterAPP.Tests print-to-sink test. See docs/E2E-STRATEGY.md.
     public PrintStyleSettingsService(IAppDataPathProvider pathProvider)
     {
         Directory.CreateDirectory(pathProvider.AppDataDirectory);
