@@ -231,16 +231,28 @@ public class OrderPipeline : IOrderPipeline
     }
 
     // A throwing subscriber must not be able to reach the pipeline's own error handling and turn a
-    // good print into a reported failure.
+    // good print into a reported failure. Invoked one subscriber at a time via GetInvocationList
+    // rather than a plain multicast call, because a plain call abandons the rest of the list at the
+    // first throw — one broken subscriber would silently deprive all the others of the event.
     private void RaiseOrderProcessed(OrderProcessedEventArgs args)
     {
-        try
+        var handler = OrderProcessed;
+        if (handler is null)
         {
-            OrderProcessed?.Invoke(this, args);
+            return;
         }
-        catch (Exception ex)
+
+        foreach (var subscriber in handler.GetInvocationList().Cast<EventHandler<OrderProcessedEventArgs>>())
         {
-            _logger.LogError(ex, "An OrderProcessed subscriber threw");
+            try
+            {
+                subscriber(this, args);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "An OrderProcessed subscriber threw");
+                SentrySdk.CaptureException(ex);
+            }
         }
     }
 }

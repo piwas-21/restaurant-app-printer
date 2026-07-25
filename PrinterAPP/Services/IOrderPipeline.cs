@@ -52,4 +52,13 @@ public class OrderProcessedEventArgs : EventArgs
 
     /// <summary>Set when the order failed to print; null when it reached the printers.</summary>
     public Exception? Error { get; init; }
+
+    /// <summary>
+    /// True only when every target reported success. A false flag is a genuine print failure:
+    /// <c>OrderPrintService</c> already returns true for the benign cases (no printer configured for
+    /// that target, auto-print off, no items routed to that kitchen, outside the print window).
+    /// Worth surfacing separately from <see cref="Error"/> — a partial print means a kitchen ticket
+    /// never came out while the cashier receipt did, which is silent unless someone is told.
+    /// </summary>
+    public bool AllPrinted => Cashier && FrontKitchen && BackKitchen;
 }

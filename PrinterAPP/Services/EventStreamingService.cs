@@ -574,6 +574,22 @@ public class EventStreamingService : IEventStreamingService
         {
             await PollForOrdersAsync(apiBaseUrl, ownCts.Token);
         }
+        catch (Exception ex)
+        {
+            // The loop guards each iteration, so reaching here means something escaped one of its own
+            // handlers (or the prologue) and the feed has stopped for good. The finally below makes
+            // that state honest; without this catch it would also be silent, since _pollingTask is
+            // never awaited — a quiet, unexplained feed is the hardest failure to support remotely.
+            // Not SentrySdk here: this file is deliberately free of both MAUI and Sentry so it can be
+            // source-linked into the plain net10.0 test project. Remote visibility is already covered
+            // — IsListening flips false below and the heartbeat reports it alongside
+            // LastSuccessfulPollAt, which is exactly the "listening but not polling" signal that
+            // pair exists to carry.
+            _logger.LogError(ex, "Poll loop terminated unexpectedly");
+            _requestLogService.LogError(
+                "Order Polling", "The order feed stopped unexpectedly and is no longer polling", ex.Message);
+            OnConnectionStatusChanged($"Stopped: {ex.Message}");
+        }
         finally
         {
             // Only if a newer StartListeningAsync has not already replaced this loop, so a late-

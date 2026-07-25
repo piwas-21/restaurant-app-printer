@@ -323,6 +323,21 @@ public partial class MainPage : ContentPage
                 return;
             }
 
+            // A partial print used to read as a plain success, so a kitchen ticket that never came
+            // out looked identical to one that did — and in a kitchen, an unnoticed missing ticket
+            // means the food is never cooked. Name the targets that failed.
+            if (!e.AllPrinted)
+            {
+                var failed = new List<string>();
+                if (!e.Cashier) failed.Add("cashier");
+                if (!e.FrontKitchen) failed.Add("front kitchen");
+                if (!e.BackKitchen) failed.Add("back kitchen");
+
+                StatusLabel.Text = $"Order #{e.Order.OrderNumber} — {string.Join(" + ", failed)} did NOT print";
+                StatusLabel.TextColor = CraftColors.WarningText;
+                return;
+            }
+
             StatusLabel.Text = $"Order #{e.Order.OrderNumber} printed";
             StatusLabel.TextColor = CraftColors.SuccessText;
         });

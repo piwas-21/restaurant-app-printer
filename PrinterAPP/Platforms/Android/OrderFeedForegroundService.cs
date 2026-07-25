@@ -4,6 +4,7 @@ using Android.Content.PM;
 using Android.OS;
 using AndroidX.Core.App;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using PrinterAPP.Services;
 using Sentry;
 
@@ -36,6 +37,8 @@ public class OrderFeedForegroundService : Service
     private CancellationTokenSource? _cts;
     private IOrderPipeline? _pipeline;
     private IEventStreamingService? _feed;
+    private ILogger<OrderFeedForegroundService>? _logger;
+    private bool _notificationFailureReported;
 
     public override IBinder? OnBind(Intent? intent) => null;
 
@@ -58,13 +61,16 @@ public class OrderFeedForegroundService : Service
         {
             _pipeline ??= services.GetService<IOrderPipeline>();
             _feed ??= services.GetService<IEventStreamingService>();
+            _logger ??= services.GetService<ILogger<OrderFeedForegroundService>>();
         }
 
         // Only begin once the pipeline has actually resolved. Starting the loop without it would
         // latch _cts and skip initialisation forever, leaving a service that holds a wake lock and
         // shows a notification while never polling — worst on the BOOT_COMPLETED path, where there is
-        // no Activity to notice. Leaving _cts null means the next start command (Sticky redelivery,
-        // a launch, a reboot) genuinely retries.
+        // no Activity to notice. Leaving _cts null lets a later start command retry — note that this
+        // means a launch or a reboot, not Sticky redelivery, which only fires if the service is
+        // actually killed. MauiApplication.OnCreate builds the container before any component starts,
+        // so an unresolved pipeline here is not a state we expect to reach.
         if (_pipeline is not null && _cts is null)
         {
             _cts = new CancellationTokenSource();
@@ -145,7 +151,19 @@ public class OrderFeedForegroundService : Service
                     // Never let one bad Notify end the loop: this notification is the only health
                     // indicator staff can see without unlocking the tablet, and a frozen one that
                     // still reads "Listening — last check 14:02" is worse than none. Keep ticking.
-                    SentrySdk.CaptureException(ex);
+                    //
+                    // Reported to Sentry ONCE per service instance. The causes that matter here
+                    // (revoked POST_NOTIFICATIONS, a deleted channel, an OEM notification-manager
+                    // quirk) are persistent, not transient, so capturing every tick would post ~2,880
+                    // copies of one fact per device per day into a Sentry project shared by the whole
+                    // fleet. One event carries the same information.
+                    if (!_notificationFailureReported)
+                    {
+                        _notificationFailureReported = true;
+                        SentrySdk.CaptureException(ex);
+                    }
+
+                    _logger?.LogWarning(ex, "Failed to refresh the order-feed notification");
                 }
             }
         }
