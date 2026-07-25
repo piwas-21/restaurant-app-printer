@@ -613,14 +613,9 @@ public class EventStreamingService : IEventStreamingService
             lock (_processedOrdersLock)
             {
                 // Never persist a cursor past the earliest still-unconfirmed order's poll window.
-                var persistedLastPoll = _lastPollTime;
-                foreach (var window in _unconfirmedPollWindows.Values)
-                {
-                    if (window < persistedLastPoll)
-                    {
-                        persistedLastPoll = window;
-                    }
-                }
+                // Min over those windows AND the live cursor, so with nothing unconfirmed it is just
+                // the cursor.
+                var persistedLastPoll = _unconfirmedPollWindows.Values.Append(_lastPollTime).Min();
 
                 snapshot = new FeedCursor
                 {
