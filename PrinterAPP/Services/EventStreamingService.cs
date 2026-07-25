@@ -9,20 +9,31 @@ public class EventStreamingService : IEventStreamingService
 {
     private readonly IPrinterService _printerService;
     private readonly IRequestLogService _requestLogService;
+    private readonly IFeedCursorStore _cursorStore;
     private readonly ILogger<EventStreamingService> _logger;
     private CancellationTokenSource? _cancellationTokenSource;
     private Task? _kitchenListeningTask;
     private bool _isListening;
 
-    // Track processed order IDs to prevent duplicate display/print (with timestamp for cleanup)
-    private readonly Dictionary<string, DateTime> _processedOrders = new();
+    // Track processed order IDs to prevent duplicate display/print (with timestamp for cleanup).
+    // Restored from disk on construction: held only in memory, every process restart began with an
+    // empty set and a UtcNow-30min cursor, so the last half hour of confirmed orders was re-fetched
+    // AND re-printed. Survivable while a restart meant a person relaunching the app; with the Android
+    // foreground service restarting itself it would put duplicate tickets on the pass.
+    private readonly Dictionary<string, DateTime> _processedOrders;
     private readonly object _processedOrdersLock = new();
     // Operation label on every poll-related entry in the request log / Errors page.
     private const string PollingLogOperation = "Order Polling";
 
     private const int MaxProcessedOrdersAge = 3600; // 1 hour in seconds
-    private DateTime _lastPollTime = DateTime.UtcNow.AddMinutes(-30);  // Start 30 min ago to avoid fetching all historical orders
+    private DateTime _lastPollTime;
     private Task? _pollingTask;  // Primary polling mechanism
+
+    // The cursor is rewritten on every advance, so the routine case is debounced; a batch that
+    // actually printed something forces an immediate write, because that is the state whose loss
+    // causes a duplicate ticket.
+    private static readonly TimeSpan CursorSaveInterval = TimeSpan.FromSeconds(60);
+    private DateTime _lastCursorSaveAt = DateTime.MinValue;
 
     public event EventHandler<OrderEvent>? OrderReceived;
     public event EventHandler<string>? ConnectionStatusChanged;
@@ -37,11 +48,20 @@ public class EventStreamingService : IEventStreamingService
     public EventStreamingService(
         IPrinterService printerService,
         IRequestLogService requestLogService,
+        IFeedCursorStore cursorStore,
         ILogger<EventStreamingService> logger)
     {
         _printerService = printerService;
         _requestLogService = requestLogService;
+        _cursorStore = cursorStore;
         _logger = logger;
+
+        // Restored here rather than in StartListeningAsync so the cursor is already correct if
+        // anything reads it before the feed starts. Load never throws; a missing or unreadable file
+        // yields the default look-back.
+        var cursor = _cursorStore.Load();
+        _lastPollTime = cursor.LastPollTime;
+        _processedOrders = cursor.ProcessedOrders;
     }
 
     public async Task StartListeningAsync(CancellationToken cancellationToken = default)
@@ -84,6 +104,10 @@ public class EventStreamingService : IEventStreamingService
 
         _logger.LogInformation("Stopping SSE listener");
         _isListening = false;
+
+        // Flush on the way down so a clean stop (user tap, app close) does not throw away up to a
+        // minute of debounced cursor and re-fetch it on the next start.
+        PersistCursor(force: true);
 
         _cancellationTokenSource?.Cancel();
 
@@ -500,6 +524,39 @@ public class EventStreamingService : IEventStreamingService
     }
 
     /// <summary>
+    /// Writes the poll cursor and the dedup set to disk so a process restart resumes instead of
+    /// re-fetching (and re-printing) the last half hour.
+    /// </summary>
+    /// <param name="force">
+    /// Bypasses the debounce. Pass true whenever the dedup set changed — that is the state whose
+    /// loss causes a duplicate ticket. The routine per-poll cursor advance is debounced because it
+    /// happens every 5 seconds and losing a little of it is harmless.
+    /// </param>
+    private void PersistCursor(bool force)
+    {
+        if (!force && DateTime.UtcNow - _lastCursorSaveAt < CursorSaveInterval)
+        {
+            return;
+        }
+
+        _lastCursorSaveAt = DateTime.UtcNow;
+
+        FeedCursor snapshot;
+        lock (_processedOrdersLock)
+        {
+            // Copied under the lock: the store serialises this, and the live dictionary is mutated by
+            // the poll loop.
+            snapshot = new FeedCursor
+            {
+                LastPollTime = _lastPollTime,
+                ProcessedOrders = new Dictionary<string, DateTime>(_processedOrders),
+            };
+        }
+
+        _cursorStore.Save(snapshot);
+    }
+
+    /// <summary>
     /// Clean up processed orders older than MaxProcessedOrdersAge
     /// </summary>
     private void CleanupOldProcessedOrders()
@@ -718,6 +775,10 @@ public class EventStreamingService : IEventStreamingService
                 var itemCount = parseResult.Orders.Count;
                 _logger.LogInformation("   Orders found: {Count}", itemCount);
 
+                // Whether this batch changed the dedup set — decides between an immediate cursor
+                // write and the debounced one below.
+                var dedupChanged = parseResult.Errors.Any(f => !string.IsNullOrEmpty(f.OrderNumber));
+
                 if (parseResult.Orders.Count > 0)
                 {
                     _logger.LogInformation("📦 Found {Count} confirmed orders!", parseResult.Orders.Count);
@@ -734,6 +795,7 @@ public class EventStreamingService : IEventStreamingService
                         }
 
                         MarkOrderAsProcessed(order.OrderNumber);
+                        dedupChanged = true;
 
                         var orderEvent = new OrderEvent
                         {
@@ -753,6 +815,13 @@ public class EventStreamingService : IEventStreamingService
 
                 _lastPollTime = DateTime.UtcNow;
                 _lastSuccessfulPollAt = DateTime.UtcNow;
+
+                // Written before the next poll can advance the cursor again. Forced when this batch
+                // marked something processed: losing that entry to a crash is what makes an order
+                // print twice, whereas losing a few seconds of cursor only costs a re-fetch that the
+                // dedup set then absorbs.
+                PersistCursor(force: dedupChanged);
+
                 OnConnectionStatusChanged($"Connected - last poll: {DateTime.Now:HH:mm:ss}");
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

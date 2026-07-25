@@ -10,12 +10,20 @@ namespace PrinterAPP.Services;
 public class DirectBackgroundRunner : IBackgroundRunner
 {
     private readonly IOrderPipeline _pipeline;
+    private readonly IFeedWatchdog _watchdog;
 
-    public DirectBackgroundRunner(IOrderPipeline pipeline)
+    public DirectBackgroundRunner(IOrderPipeline pipeline, IFeedWatchdog watchdog)
     {
         _pipeline = pipeline;
+        _watchdog = watchdog;
     }
 
-    public Task StartAsync(CancellationToken cancellationToken = default) =>
-        _pipeline.InitializeAsync(cancellationToken);
+    public async Task StartAsync(CancellationToken cancellationToken = default)
+    {
+        await _pipeline.InitializeAsync(cancellationToken);
+
+        // Started here rather than by the pipeline: the watchdog depends on IOrderPipeline, so the
+        // pipeline cannot own it without a dependency cycle. Idempotent.
+        _watchdog.Start();
+    }
 }

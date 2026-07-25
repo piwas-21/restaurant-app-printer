@@ -13,11 +13,14 @@ namespace PrinterAPP;
 public class AndroidBackgroundRunner : IBackgroundRunner
 {
     private readonly IOrderPipeline _pipeline;
+    private readonly IFeedWatchdog _watchdog;
     private readonly ILogger<AndroidBackgroundRunner> _logger;
 
-    public AndroidBackgroundRunner(IOrderPipeline pipeline, ILogger<AndroidBackgroundRunner> logger)
+    public AndroidBackgroundRunner(
+        IOrderPipeline pipeline, IFeedWatchdog watchdog, ILogger<AndroidBackgroundRunner> logger)
     {
         _pipeline = pipeline;
+        _watchdog = watchdog;
         _logger = logger;
     }
 
@@ -49,5 +52,9 @@ public class AndroidBackgroundRunner : IBackgroundRunner
         // Also initialise directly so a foreground launch does not depend on service-start timing.
         // InitializeAsync is idempotent, so the service's own call is a no-op after this.
         await _pipeline.InitializeAsync(cancellationToken);
+
+        // Started here rather than by the pipeline: the watchdog depends on IOrderPipeline, so the
+        // pipeline cannot own it without a dependency cycle. Idempotent.
+        _watchdog.Start();
     }
 }

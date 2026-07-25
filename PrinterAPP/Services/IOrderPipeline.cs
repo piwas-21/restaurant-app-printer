@@ -35,6 +35,27 @@ public interface IOrderPipeline
     Task StartAsync(CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Stops and restarts the order feed without recording it as a deliberate stop. This is the
+    /// recovery path <see cref="IFeedWatchdog"/> uses; going through <see cref="StopAsync"/> would
+    /// make the watchdog's own restart look like a person's Stop and mute it from then on.
+    /// </summary>
+    Task RestartAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// True once a person stopped the feed, until it is started again. The watchdog must never undo
+    /// that: it cannot infer intent from configuration, because on Android a configured ApiBaseUrl
+    /// counts as intent-to-listen (right at launch, wrong for a running watchdog). Not persisted —
+    /// a Stop tap lasts the session, not across restarts.
+    /// </summary>
+    bool StoppedOnPurpose { get; }
+
+    /// <summary>
+    /// When the current listening session began. The watchdog uses it as the grace-period reference
+    /// until the feed reports its first successful poll.
+    /// </summary>
+    DateTime FeedStartedAt { get; }
+
+    /// <summary>
     /// Stops the order feed. The telemetry heartbeat deliberately keeps running: a device whose feed
     /// is stopped or wedged must stay visible on the fleet dashboard — that was the blind spot in the
     /// 2026-07-19 incident.

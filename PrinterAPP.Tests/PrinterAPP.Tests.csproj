@@ -51,6 +51,11 @@
     <Compile Include="..\PrinterAPP\Services\ISecretStore.cs" Link="Linked\ISecretStore.cs" />
     <Compile Include="..\PrinterAPP\Services\IPrinterConfigurationStore.cs" Link="Linked\IPrinterConfigurationStore.cs" />
     <Compile Include="..\PrinterAPP\Services\PrinterConfigurationStore.cs" Link="Linked\PrinterConfigurationStore.cs" />
+    <!-- Feed cursor persistence (MAUI-free by design, same as the config store): stops a process
+         restart reprinting the last 30 minutes of orders. -->
+    <Compile Include="..\PrinterAPP\Models\FeedCursor.cs" Link="Linked\FeedCursor.cs" />
+    <Compile Include="..\PrinterAPP\Services\IFeedCursorStore.cs" Link="Linked\IFeedCursorStore.cs" />
+    <Compile Include="..\PrinterAPP\Services\FeedCursorStore.cs" Link="Linked\FeedCursorStore.cs" />
     <Compile Include="..\PrinterAPP\Services\LegacyAppDataMigration.cs" Link="Linked\LegacyAppDataMigration.cs" />
     <!-- Fleet telemetry (MAUI-free): the HTTP client + pure payload builder + request model.
          The scheduler + MAUI wiring stay in the app head; the risk-bearing HTTP/payload logic is
@@ -80,6 +85,9 @@
          listen, or every restart path early-returns and the feed is unrecoverable. See ADR-007. -->
     <Compile Include="..\PrinterAPP\Services\IEventStreamingService.cs" Link="Linked\IEventStreamingService.cs" />
     <Compile Include="..\PrinterAPP\Services\EventStreamingService.cs" Link="Linked\EventStreamingService.cs" />
+    <!-- Watchdog decision rules, extracted pure so they are testable without the pipeline's
+         collaborators (nor MAUI/Sentry). Auto-restarting a live feed must not misfire. -->
+    <Compile Include="..\PrinterAPP\Services\FeedWatchdogDecision.cs" Link="Linked\FeedWatchdogDecision.cs" />
   </ItemGroup>
 
   <ItemGroup>

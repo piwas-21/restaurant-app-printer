@@ -24,6 +24,20 @@ public class OrderPipeline : IOrderPipeline
     private bool _subscribed;
     private bool _initialized;
 
+    // Set by StopAsync, cleared by StartAsync. The watchdog must never undo a deliberate stop —
+    // and it cannot infer intent from the config, because ShouldAutoStartFeed treats a configured
+    // ApiBaseUrl as intent-to-listen on Android, which is true at launch but wrong here: it would
+    // restart the feed seconds after a person tapped Stop. Deliberately not persisted, matching the
+    // documented behaviour that a Stop tap lasts the session, not across restarts.
+    private bool _stoppedOnPurpose;
+
+    // When the current listening session began. Exposed for IFeedWatchdog, which uses it as the
+    // grace-period reference until the feed reports its first successful poll.
+    public DateTime FeedStartedAt { get; private set; } = DateTime.UtcNow;
+
+    /// <inheritdoc />
+    public bool StoppedOnPurpose => _stoppedOnPurpose;
+
     // The feed is the single source of truth for running-ness; keeping a second bool here would let
     // the two disagree after an internal feed failure.
     public bool IsRunning => _feed.IsListening;
@@ -87,6 +101,8 @@ public class OrderPipeline : IOrderPipeline
         await _gate.WaitAsync(cancellationToken);
         try
         {
+            _stoppedOnPurpose = false;
+
             if (_feed.IsListening)
             {
                 return;
@@ -105,9 +121,30 @@ public class OrderPipeline : IOrderPipeline
         await _gate.WaitAsync();
         try
         {
+            _stoppedOnPurpose = true;
+
             // The OrderReceived subscription stays attached: the feed raises nothing while stopped,
             // and keeping it means a restart is a plain StartListeningAsync with no re-wiring.
             await _feed.StopListeningAsync();
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Stop-then-start under a single gate hold, without touching <see cref="_stoppedOnPurpose"/> —
+    /// going through <see cref="StopAsync"/> would record the watchdog's own restart as a deliberate
+    /// stop, and every later cycle would then decline to act.
+    /// </summary>
+    public async Task RestartAsync(CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken);
+        try
+        {
+            await _feed.StopListeningAsync();
+            await StartFeedAsync(cancellationToken);
         }
         finally
         {
@@ -124,6 +161,7 @@ public class OrderPipeline : IOrderPipeline
             _subscribed = true;
         }
 
+        FeedStartedAt = DateTime.UtcNow;
         await _feed.StartListeningAsync(cancellationToken);
         _logger.LogInformation("Order pipeline started — feed listening");
     }
