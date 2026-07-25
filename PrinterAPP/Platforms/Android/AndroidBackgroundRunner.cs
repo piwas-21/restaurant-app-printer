@@ -49,12 +49,13 @@ public class AndroidBackgroundRunner : IBackgroundRunner
             _logger.LogError(ex, "Failed to start the order-feed foreground service");
         }
 
+        // Before InitializeAsync: the watchdog is idempotent, and starting it first means an init
+        // failure is self-healing rather than terminal — its next tick starts the feed. Started here
+        // rather than by the pipeline, which cannot own it without a dependency cycle.
+        _watchdog.Start();
+
         // Also initialise directly so a foreground launch does not depend on service-start timing.
         // InitializeAsync is idempotent, so the service's own call is a no-op after this.
         await _pipeline.InitializeAsync(cancellationToken);
-
-        // Started here rather than by the pipeline: the watchdog depends on IOrderPipeline, so the
-        // pipeline cannot own it without a dependency cycle. Idempotent.
-        _watchdog.Start();
     }
 }

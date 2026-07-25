@@ -158,14 +158,49 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
 
             Interlocked.Increment(ref _requestCount);
 
-            // Always the same confirmed order, regardless of modifiedSince — this is the backend
-            // behaviour that made restarts reprint.
-            var body = Encoding.UTF8.GetBytes(OrderFeedJson);
+            // Honour modifiedSince exactly as the backend does — a STRICT greater-than on the order's
+            // timestamp (backend PrinterFeedQuery.cs:53). This is what makes the cursor half of the
+            // guarantee testable: a fixture that always returned the order would hide a persisted
+            // cursor that had advanced past it, which loses the ticket just as surely as a stale dedup
+            // entry would.
+            var modifiedSince = ParseModifiedSince(context.Request.Url);
+            var include = modifiedSince is null || OrderTimestamp > modifiedSince.Value;
+
+            var body = Encoding.UTF8.GetBytes(include ? OrderFeedJson : EmptyFeedJson);
             context.Response.ContentType = "application/json";
             context.Response.ContentLength64 = body.Length;
             await context.Response.OutputStream.WriteAsync(body);
             context.Response.Close();
         }
+    }
+
+    // Fixed, and in the past, so the fixture can filter on it the way the backend does.
+    private static readonly DateTime OrderTimestamp = DateTime.UtcNow.AddMinutes(-5);
+
+    private const string EmptyFeedJson = @"{ ""data"": { ""items"": [] } }";
+
+    private static DateTime? ParseModifiedSince(Uri? url)
+    {
+        var query = url?.Query;
+        if (string.IsNullOrEmpty(query))
+        {
+            return null;
+        }
+
+        // Hand-parsed rather than via HttpUtility: System.Web is not referenced by this test project
+        // and the query has exactly one parameter.
+        const string key = "modifiedSince=";
+        var start = query.IndexOf(key, StringComparison.Ordinal);
+        if (start < 0)
+        {
+            return null;
+        }
+
+        var raw = Uri.UnescapeDataString(query[(start + key.Length)..]);
+        return DateTime.TryParse(
+            raw, null, System.Globalization.DateTimeStyles.RoundtripKind, out var parsed)
+            ? parsed.ToUniversalTime()
+            : null;
     }
 
     // The printer-feed envelope is { "data": { "items": [ ...orders ] } } — see OrderFeedParser.

@@ -120,6 +120,13 @@ public class OrderFeedForegroundService : Service
 
     private async Task RunAsync(CancellationToken cancellationToken)
     {
+        // BEFORE InitializeAsync, deliberately. The watchdog is idempotent and its first tick is a
+        // minute out, and starting it first is what makes a failed init self-healing: the next tick
+        // sees a feed that should be listening and is not, and starts it. Started after, an init that
+        // threw would leave the device with no feed AND no watchdog — silently dead until somebody
+        // opens the app, which on the BOOT_COMPLETED path may be the next morning.
+        _watchdog?.Start();
+
         try
         {
             // CancellationToken.None, NOT this service instance's token. EventStreamingService links
@@ -133,10 +140,6 @@ public class OrderFeedForegroundService : Service
                 await _pipeline.InitializeAsync(CancellationToken.None);
             }
 
-            // Started here as well as from IBackgroundRunner: this service is the ONLY path taken
-            // after BOOT_COMPLETED or a START_STICKY process recreation, where no Activity exists to
-            // run the runner — exactly the unattended cases the watchdog is for. Idempotent.
-            _watchdog?.Start();
         }
         catch (Exception ex)
         {
