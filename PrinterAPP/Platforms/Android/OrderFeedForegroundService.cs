@@ -60,7 +60,12 @@ public class OrderFeedForegroundService : Service
             _feed ??= services.GetService<IEventStreamingService>();
         }
 
-        if (_cts is null)
+        // Only begin once the pipeline has actually resolved. Starting the loop without it would
+        // latch _cts and skip initialisation forever, leaving a service that holds a wake lock and
+        // shows a notification while never polling — worst on the BOOT_COMPLETED path, where there is
+        // no Activity to notice. Leaving _cts null means the next start command (Sticky redelivery,
+        // a launch, a reboot) genuinely retries.
+        if (_pipeline is not null && _cts is null)
         {
             _cts = new CancellationTokenSource();
             _ = RunAsync(_cts.Token);
@@ -88,14 +93,18 @@ public class OrderFeedForegroundService : Service
     /// </summary>
     public override void OnTaskRemoved(Intent? rootIntent)
     {
-        using var restart = new Intent(ApplicationContext, typeof(OrderFeedForegroundService));
-        if (OperatingSystem.IsAndroidVersionAtLeast(26))
+        var context = ApplicationContext;
+        if (context is not null)
         {
-            ApplicationContext?.StartForegroundService(restart);
-        }
-        else
-        {
-            ApplicationContext?.StartService(restart);
+            using var restart = new Intent(context, typeof(OrderFeedForegroundService));
+            if (OperatingSystem.IsAndroidVersionAtLeast(26))
+            {
+                context.StartForegroundService(restart);
+            }
+            else
+            {
+                context.StartService(restart);
+            }
         }
 
         base.OnTaskRemoved(rootIntent);
@@ -105,9 +114,15 @@ public class OrderFeedForegroundService : Service
     {
         try
         {
+            // CancellationToken.None, NOT this service instance's token. EventStreamingService links
+            // the token it is handed into the poll loop's own source, and its _isListening flag is
+            // cleared only by StopListeningAsync — so cancelling here on OnDestroy would stop the
+            // loop while leaving the feed reporting "listening". Every restart path checks that flag
+            // first, so the feed would then be unrecoverably wedged in a process that never dies.
+            // The feed's lifetime belongs to the pipeline's Start/Stop, not to a service instance.
             if (_pipeline is not null)
             {
-                await _pipeline.InitializeAsync(cancellationToken);
+                await _pipeline.InitializeAsync(CancellationToken.None);
             }
         }
         catch (Exception ex)
@@ -121,7 +136,17 @@ public class OrderFeedForegroundService : Service
         {
             while (await timer.WaitForNextTickAsync(cancellationToken))
             {
-                UpdateNotification();
+                try
+                {
+                    UpdateNotification();
+                }
+                catch (Exception ex)
+                {
+                    // Never let one bad Notify end the loop: this notification is the only health
+                    // indicator staff can see without unlocking the tablet, and a frozen one that
+                    // still reads "Listening — last check 14:02" is worse than none. Keep ticking.
+                    SentrySdk.CaptureException(ex);
+                }
             }
         }
         catch (System.OperationCanceledException)
@@ -150,8 +175,7 @@ public class OrderFeedForegroundService : Service
 
     private void UpdateNotification()
     {
-        var manager = NotificationManagerCompat.From(this);
-        manager.Notify(NotificationId, BuildNotification());
+        NotificationManagerCompat.From(this)?.Notify(NotificationId, BuildNotification());
     }
 
     private Notification BuildNotification()
@@ -163,17 +187,20 @@ public class OrderFeedForegroundService : Service
         var contentIntent = PendingIntent.GetActivity(
             this, 0, launch, PendingIntentFlags.UpdateCurrent | PendingIntentFlags.Immutable);
 
-        return new NotificationCompat.Builder(this, ChannelId)
-            .SetContentTitle("SP-PrinterApp")
-            .SetContentText(DescribeState())
-            // A framework drawable, not the app icon: notification small icons are rendered as an
-            // alpha mask, so a full-colour mipmap shows up as a white blob.
-            .SetSmallIcon(global::Android.Resource.Drawable.StatNotifySync)
-            .SetContentIntent(contentIntent)
-            .SetOngoing(true)
-            .SetPriority((int)NotificationPriority.Low)
-            .SetShowWhen(false)
-            .Build()!;
+        // Built step by step rather than as a fluent chain: each Set* returns a nullable builder, so
+        // chaining produces a CS8602 per hop that a single trailing `!` cannot cover.
+        var builder = new NotificationCompat.Builder(this, ChannelId);
+        builder.SetContentTitle("SP-PrinterApp");
+        builder.SetContentText(DescribeState());
+        // A framework drawable, not the app icon: notification small icons are rendered as an
+        // alpha mask, so a full-colour mipmap shows up as a white blob.
+        builder.SetSmallIcon(global::Android.Resource.Drawable.StatNotifySync);
+        builder.SetContentIntent(contentIntent);
+        builder.SetOngoing(true);
+        builder.SetPriority((int)NotificationPriority.Low);
+        builder.SetShowWhen(false);
+
+        return builder.Build()!;
     }
 
     private string DescribeState()

@@ -144,6 +144,16 @@ public partial class MainPage : ContentPage
         }
     }
 
+    // The page is a DI singleton and InitializeAsync runs once from the constructor, so without this
+    // the toggle keeps whatever state it had at launch. The feed can now start and stop without the
+    // page's involvement (foreground service, boot start, an internal stop), so re-read it every time
+    // the page comes back on screen — mirrors DiagnosticsPage's re-subscribe-on-appearing pattern.
+    protected override void OnAppearing()
+    {
+        base.OnAppearing();
+        UpdateServiceStatus();
+    }
+
     private async Task LoadPrintersAsync()
     {
         try

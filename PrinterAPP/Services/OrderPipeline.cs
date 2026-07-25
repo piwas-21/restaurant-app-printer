@@ -159,6 +159,10 @@ public class OrderPipeline : IOrderPipeline
             return;
         }
 
+        bool cashier, frontKitchen, backKitchen;
+
+        // Phase 1 — everything up to and including the physical print. Only a failure in here means
+        // the order did not print.
         try
         {
             _logger.LogInformation("Order received: #{OrderNumber} — {EventType}",
@@ -166,27 +170,8 @@ public class OrderPipeline : IOrderPipeline
 
             _orderHistoryService.AddOrder(orderEvent);
 
-            var (cashier, frontKitchen, backKitchen) =
+            (cashier, frontKitchen, backKitchen) =
                 await _orderPrintService.PrintOrderToAllPrintersAsync(order);
-
-            // History carries a single kitchen flag, so both kitchens must have printed to call it
-            // printed (matches the behaviour this replaced).
-            _orderHistoryService.UpdatePrintStatus(order.Id, frontKitchen && backKitchen, cashier);
-
-            // Queue per-target print acks for the fleet backend (durable outbox → served-vs-acked
-            // missed-order reconciliation). Config is re-read rather than cached so a Save made
-            // between orders is reflected in the ack.
-            var config = await _printerService.LoadConfigurationAsync();
-            await _printAckOutbox.EnqueueAsync(TelemetryPayloads.PrintAcks(
-                order, cashier, frontKitchen, backKitchen, config, orderEvent.Timestamp));
-
-            OrderProcessed?.Invoke(this, new OrderProcessedEventArgs
-            {
-                Order = order,
-                Cashier = cashier,
-                FrontKitchen = frontKitchen,
-                BackKitchen = backKitchen,
-            });
         }
         catch (Exception ex)
         {
@@ -197,7 +182,7 @@ public class OrderPipeline : IOrderPipeline
                 "Order Pipeline", $"Failed to process order {order.OrderNumber}", ex.Message);
             SentrySdk.CaptureException(ex);
 
-            OrderProcessed?.Invoke(this, new OrderProcessedEventArgs
+            RaiseOrderProcessed(new OrderProcessedEventArgs
             {
                 Order = order,
                 Cashier = false,
@@ -205,6 +190,57 @@ public class OrderPipeline : IOrderPipeline
                 BackKitchen = false,
                 Error = ex,
             });
+            return;
+        }
+
+        // Phase 2 — bookkeeping. The receipts are already out of the printer, so a failure here must
+        // never be reported as a print failure: it would contradict the history entry, put a false
+        // print-failure on the fleet dashboard, and (before this split) raise OrderProcessed a second
+        // time for the same order with fabricated all-false flags.
+        try
+        {
+            // History carries a single kitchen flag, so both kitchens must have printed to call it
+            // printed (matches the behaviour this replaced).
+            _orderHistoryService.UpdatePrintStatus(order.Id, frontKitchen && backKitchen, cashier);
+
+            // Queue per-target print acks for the fleet backend (durable outbox → served-vs-acked
+            // missed-order reconciliation). Config is re-read rather than cached so a Save made
+            // between orders is reflected in the ack.
+            var config = await _printerService.LoadConfigurationAsync();
+            await _printAckOutbox.EnqueueAsync(TelemetryPayloads.PrintAcks(
+                order, cashier, frontKitchen, backKitchen, config, orderEvent.Timestamp));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Post-print bookkeeping failed for order {OrderNumber}", order.OrderNumber);
+            _requestLogService.LogError(
+                "Order Pipeline",
+                $"Order {order.OrderNumber} printed, but recording it failed",
+                ex.Message);
+            SentrySdk.CaptureException(ex);
+        }
+
+        // Raised exactly once, always with the real per-printer outcome.
+        RaiseOrderProcessed(new OrderProcessedEventArgs
+        {
+            Order = order,
+            Cashier = cashier,
+            FrontKitchen = frontKitchen,
+            BackKitchen = backKitchen,
+        });
+    }
+
+    // A throwing subscriber must not be able to reach the pipeline's own error handling and turn a
+    // good print into a reported failure.
+    private void RaiseOrderProcessed(OrderProcessedEventArgs args)
+    {
+        try
+        {
+            OrderProcessed?.Invoke(this, args);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "An OrderProcessed subscriber threw");
         }
     }
 }

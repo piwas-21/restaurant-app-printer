@@ -50,8 +50,6 @@ public class OrderProcessedEventArgs : EventArgs
     public required bool FrontKitchen { get; init; }
     public required bool BackKitchen { get; init; }
 
-    /// <summary>Set when the pipeline threw while handling the order; null on a normal pass.</summary>
+    /// <summary>Set when the order failed to print; null when it reached the printers.</summary>
     public Exception? Error { get; init; }
-
-    public bool Succeeded => Error is null && Cashier && FrontKitchen && BackKitchen;
 }
