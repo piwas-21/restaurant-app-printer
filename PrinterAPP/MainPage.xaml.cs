@@ -12,13 +12,10 @@ public partial class MainPage : ContentPage
 {
     private readonly IPrinterService _printerService;
     private readonly IEventStreamingService _eventStreamingService;
-    private readonly IOrderPrintService _orderPrintService;
-    private readonly IOrderHistoryService _orderHistoryService;
+    private readonly IOrderPipeline _orderPipeline;
+    private readonly IBackgroundRunner _backgroundRunner;
     private readonly IUpdateService _updateService;
     private readonly IPrinterTestService _printerTestService;
-    private readonly IDeviceIdentityService _deviceIdentity;
-    private readonly ITelemetryScheduler _telemetryScheduler;
-    private readonly IPrintAckOutbox _printAckOutbox;
     private readonly ILogger<MainPage> _logger;
     private PrinterConfiguration _config;
     private bool _isServiceRunning = false;
@@ -26,30 +23,25 @@ public partial class MainPage : ContentPage
     public MainPage(
         IPrinterService printerService,
         IEventStreamingService eventStreamingService,
-        IOrderPrintService orderPrintService,
-        IOrderHistoryService orderHistoryService,
+        IOrderPipeline orderPipeline,
+        IBackgroundRunner backgroundRunner,
         IUpdateService updateService,
         IPrinterTestService printerTestService,
-        IDeviceIdentityService deviceIdentity,
-        ITelemetryScheduler telemetryScheduler,
-        IPrintAckOutbox printAckOutbox,
         ILogger<MainPage> logger)
     {
         InitializeComponent();
         _printerService = printerService;
         _eventStreamingService = eventStreamingService;
-        _orderPrintService = orderPrintService;
-        _orderHistoryService = orderHistoryService;
+        _orderPipeline = orderPipeline;
+        _backgroundRunner = backgroundRunner;
         _updateService = updateService;
         _printerTestService = printerTestService;
-        _deviceIdentity = deviceIdentity;
-        _telemetryScheduler = telemetryScheduler;
-        _printAckOutbox = printAckOutbox;
         _logger = logger;
         _config = new PrinterConfiguration();
 
-        // Subscribe to events
-        _eventStreamingService.OrderReceived += OnOrderReceived;
+        // Status only. Printing itself is owned by IOrderPipeline so it keeps working with no page
+        // on screen — see ADR-007.
+        _orderPipeline.OrderProcessed += OnOrderProcessed;
         _eventStreamingService.ConnectionStatusChanged += OnConnectionStatusChanged;
 
         // Initialize the UI asynchronously
@@ -66,14 +58,6 @@ public partial class MainPage : ContentPage
 
             // Load saved configuration
             _config = await _printerService.LoadConfigurationAsync();
-
-            // Tag Sentry events with this device + tenant so fleet errors are attributable (no-op when
-            // Sentry is inert). Here — after startup + config load — so the lazy device-id persists.
-            _deviceIdentity.ApplySentryTags(_config.TenantSlug);
-
-            // Begin periodic heartbeats. Runs regardless of feed state so a stopped/wedged feed is
-            // remotely visible (the 2026-07-19 incident's blind spot). Idempotent + self-guarding.
-            _telemetryScheduler.Start();
 
             // Debug logging
             _logger.LogInformation("Loaded API URL from config: {ApiUrl}", _config.ApiBaseUrl);
@@ -117,46 +101,36 @@ public partial class MainPage : ContentPage
             // Reflect the current feed state (cross-platform).
             UpdateServiceStatus();
 
-            // Auto-start the order feed on launch. Windows keeps honouring the persisted
-            // IsServiceRunning flag (unchanged). On Android the manual Start control was historically
-            // absent and existing installs could never persist IsServiceRunning=true, so a configured
-            // ApiBaseUrl is treated as intent to listen. ApiBaseUrl defaults to a non-empty value, so
-            // in practice the Android feed always comes up on launch — the intended behaviour for an
-            // always-on printer appliance (a Stop tap lasts the session, not across restarts). Without
-            // this the feed never starts on Android and no orders are ever fetched; the feed is plain
-            // HTTP, not Windows-specific, so it is safe to run everywhere.
-            bool autoStartFeed =
-#if WINDOWS
-                _config.IsServiceRunning;
-#else
-                _config.IsServiceRunning || !string.IsNullOrWhiteSpace(_config.ApiBaseUrl);
-#endif
-            if (autoStartFeed && !_eventStreamingService.IsListening)
+            // Hand off to the platform host: on Android this starts the foreground service that keeps
+            // the feed polling and printing once the app is no longer on screen; everywhere else it
+            // initialises the pipeline in-process. The auto-start decision (and the telemetry +
+            // Sentry-tag startup that used to live here) now belongs to IOrderPipeline.InitializeAsync,
+            // because a service started after a reboot has no page to run it. Idempotent.
+            try
             {
-                try
-                {
-                    _logger.LogInformation("Auto-starting order feed based on saved configuration");
-                    await _eventStreamingService.StartListeningAsync();
-                    _isServiceRunning = true;
-                    UpdateServiceStatus();
-                    StatusLabel.Text = $"Service auto-started - API: {_config.ApiBaseUrl}";
-                    StatusLabel.TextColor = CraftColors.SuccessText;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Failed to auto-start order feed");
-                    // Surface a failed feed start to the fleet dashboard — this is the class of
-                    // failure behind the 2026-07-19 incident. No-op when Sentry is inert.
-                    SentrySdk.CaptureException(ex);
-                    StatusLabel.Text = "Failed to auto-start service";
-                    StatusLabel.TextColor = CraftColors.WarningText;
-                }
-            }
-            else
-            {
-                StatusLabel.Text = $"Configuration loaded - API: {_config.ApiBaseUrl}";
+                await _backgroundRunner.StartAsync();
+                UpdateServiceStatus();
+                StatusLabel.Text = _orderPipeline.IsRunning
+                    ? $"Service running - API: {_config.ApiBaseUrl}"
+                    : $"Configuration loaded - API: {_config.ApiBaseUrl}";
                 StatusLabel.TextColor = CraftColors.SuccessText;
             }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to start the order pipeline");
+                // Surface a failed feed start to the fleet dashboard — this is the class of
+                // failure behind the 2026-07-19 incident. No-op when Sentry is inert.
+                SentrySdk.CaptureException(ex);
+                StatusLabel.Text = "Failed to auto-start service";
+                StatusLabel.TextColor = CraftColors.WarningText;
+            }
+
+            // Ask for notification permission only AFTER the service is up, and never await it here.
+            // Permissions.RequestAsync blocks on a system dialog until someone taps it: awaiting it
+            // before the hand-off above meant background printing never started until staff answered
+            // the prompt — and never at all if they dismissed it. Android 13+ only needs this to
+            // *display* the service's status notification; the service itself runs regardless.
+            _ = RequestNotificationPermissionAsync();
 
             // Auto-check for an app update in the background so the customer no longer needs a
             // release link or a manual reinstall — if a newer version is out, we offer it.
@@ -289,7 +263,7 @@ public partial class MainPage : ContentPage
                 StatusLabel.Text = "Stopping SSE service...";
                 StatusLabel.TextColor = CraftColors.WarningText;
 
-                await _eventStreamingService.StopListeningAsync();
+                await _orderPipeline.StopAsync();
                 _isServiceRunning = false;
                 _config.IsServiceRunning = false;
                 await _printerService.SaveConfigurationAsync(_config);
@@ -302,7 +276,10 @@ public partial class MainPage : ContentPage
                 StatusLabel.Text = "Starting SSE service...";
                 StatusLabel.TextColor = CraftColors.WarningText;
 
-                await _eventStreamingService.StartListeningAsync();
+                // Through the runner, not the pipeline directly: on Android a Start tap must also
+                // (re)start the foreground service if the user had force-stopped it.
+                await _backgroundRunner.StartAsync();
+                await _orderPipeline.StartAsync();
                 _isServiceRunning = true;
                 _config.IsServiceRunning = true;
                 await _printerService.SaveConfigurationAsync(_config);
@@ -323,48 +300,39 @@ public partial class MainPage : ContentPage
         }
     }
 
-    private void OnOrderReceived(object? sender, OrderEvent orderEvent)
+    // Status display only — IOrderPipeline has already done the printing, on a background thread and
+    // without needing this page to exist. Raised off the UI thread, so marshal before touching XAML.
+    private void OnOrderProcessed(object? sender, OrderProcessedEventArgs e)
     {
-        MainThread.BeginInvokeOnMainThread(async () =>
+        MainThread.BeginInvokeOnMainThread(() =>
         {
-            try
+            if (e.Error is not null)
             {
-                _logger.LogInformation("Order received: #{OrderId} - {EventType}",
-                    orderEvent.Order?.Id, orderEvent.EventType);
-
-                if (orderEvent.Order == null)
-                {
-                    return;
-                }
-
-                // Add order to history
-                _orderHistoryService.AddOrder(orderEvent);
-
-                // Print to all appropriate printers (Cashier + FrontKitchen + BackKitchen)
-                var (cashierSuccess, frontKitchenSuccess, backKitchenSuccess) =
-                    await _orderPrintService.PrintOrderToAllPrintersAsync(orderEvent.Order);
-
-                // Update print status in history (combine kitchen results)
-                var kitchenSuccess = frontKitchenSuccess && backKitchenSuccess;
-                _orderHistoryService.UpdatePrintStatus(orderEvent.Order.Id, kitchenSuccess, cashierSuccess);
-
-                // Queue per-target print acks for the fleet backend (durable outbox → served-vs-acked
-                // missed-order reconciliation). Fire-and-forget so telemetry never blocks the print UI.
-                var acks = TelemetryPayloads.PrintAcks(
-                    orderEvent.Order, cashierSuccess, frontKitchenSuccess, backKitchenSuccess,
-                    _config, orderEvent.Timestamp);
-                _ = _printAckOutbox.EnqueueAsync(acks);
-
-                StatusLabel.Text = $"Order #{orderEvent.Order.OrderNumber} printed";
-                StatusLabel.TextColor = CraftColors.SuccessText;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error processing order");
                 StatusLabel.Text = "Error processing order";
                 StatusLabel.TextColor = CraftColors.Error;
+                return;
             }
+
+            StatusLabel.Text = $"Order #{e.Order.OrderNumber} printed";
+            StatusLabel.TextColor = CraftColors.SuccessText;
         });
+    }
+
+    private async Task RequestNotificationPermissionAsync()
+    {
+        try
+        {
+            var status = await Permissions.CheckStatusAsync<Permissions.PostNotifications>();
+            if (status != PermissionStatus.Granted)
+            {
+                await Permissions.RequestAsync<Permissions.PostNotifications>();
+            }
+        }
+        catch (Exception ex)
+        {
+            // Not fatal: the foreground service still runs, staff just lose the status notification.
+            _logger.LogWarning(ex, "Notification permission request failed");
+        }
     }
 
     private void OnConnectionStatusChanged(object? sender, string status)
@@ -511,7 +479,7 @@ public partial class MainPage : ContentPage
 
                 try
                 {
-                    await _eventStreamingService.StopListeningAsync();
+                    await _orderPipeline.StopAsync();
                     _isServiceRunning = false;
                     _config.IsServiceRunning = false;
 

@@ -76,6 +76,18 @@ namespace PrinterAPP
             builder.Services.AddSingleton<IPrintAckOutbox, PrintAckOutbox>();
             builder.Services.AddSingleton<ITelemetryScheduler, TelemetryScheduler>();
 
+            // Headless order path (feed → print → history → ack). Lives outside the UI so it keeps
+            // running with no page or Activity — on Android it is driven by a foreground service, and
+            // after a reboot there is no UI at all. See ADR-007.
+            builder.Services.AddSingleton<IOrderPipeline, OrderPipeline>();
+#if ANDROID
+            builder.Services.AddSingleton<IBackgroundRunner, AndroidBackgroundRunner>();
+#else
+            // Windows (and any future head): a minimised desktop process is not frozen or reclaimed,
+            // so the pipeline runs in-process with no host service.
+            builder.Services.AddSingleton<IBackgroundRunner, DirectBackgroundRunner>();
+#endif
+
             // Register pages
             builder.Services.AddSingleton<MainPage>();
             builder.Services.AddSingleton<OrderManagementPage>();

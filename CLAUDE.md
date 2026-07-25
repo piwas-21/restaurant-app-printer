@@ -8,7 +8,7 @@
 ## §1 — Identity
 
 - **Stack**: .NET MAUI 10 (multi-target: `net10.0-android;net10.0-windows10.0.19041.0` — the Windows TFM is OS-conditioned so non-Windows hosts build Android only), C# 13, ESC/POS thermal-printer driver. See [ADR-005](docs/adr/ADR-005-multi-target-maui-android.md) (Phase 1 of the cross-platform plan).
-- **Runtime**: Windows 10+ (existing rollout) **and** Android 7+ / API 24 (new, primary rollout). iOS/macOS/Tizen scaffolding is present but unbuilt (iOS deferred to v2). **Android does not print yet** — the network transport lands in Phase 2; Phase 1 only makes Android compile + launch.
+- **Runtime**: Windows 10+ (existing rollout) **and** Android 7+ / API 24, `targetSdkVersion` 36 (new, primary rollout). iOS/macOS/Tizen scaffolding is present but unbuilt (iOS deferred to v2). Android prints over network TCP via `IPrinterTransport` ([ADR-006](docs/adr/ADR-006-printer-transport-abstraction.md)) and keeps running off-screen via a foreground service ([ADR-007](docs/adr/ADR-007-android-foreground-service.md)); the Windows spooler path is unchanged.
 - **Build caveat**: `*-windows` TFMs build only on Windows. On macOS/Linux/CI-Linux, `dotnet build` produces the Android artifact only — the Windows MSI + any MAUI-10 regression must be verified on a Windows host before release.
 - **Architecture**: Service-oriented MVVM with code-behind (standard MAUI pattern), DI registration in `MauiProgram.cs`
 - **Hosted on**: GitHub — https://github.com/piwas-21/restaurant-app-printer
@@ -51,16 +51,20 @@ PrinterAPP/
 │   └── UpdateInfo.cs                      # GitHub release metadata
 ├── Services/
 │   ├── IEventStreamingService.cs / EventStreamingService.cs   # SSE polling, order event handling
+│   ├── IOrderPipeline.cs / OrderPipeline.cs                    # Headless feed→print→history→ack path (ADR-007)
+│   ├── IBackgroundRunner.cs / DirectBackgroundRunner.cs        # Platform seam for off-screen execution
 │   ├── IPrinterService.cs / WindowsPrinterService.cs           # Windows Printer API (P/Invoke)
 │   ├── IOrderPrintService.cs / OrderPrintService.cs            # ESC/POS formatting, receipt composition
-│   ├── IOrderHistoryService.cs / OrderHistoryService.cs        # Persisted order history + dedup window
+│   ├── IOrderHistoryService.cs / OrderHistoryService.cs        # In-memory order history (last 100) + dedup window
 │   ├── PrinterType.cs                                          # Kitchen / Cashier discriminator
 │   ├── PrintStyleSettingsService.cs                            # Style settings persistence
 │   ├── IRequestLogService.cs / RequestLogService.cs            # Request/response logging
 │   └── IUpdateService.cs / UpdateService.cs                    # GitHub release auto-update
 ├── Converters/                            # XAML value converters
 ├── Pages/                                 # Additional pages
-├── Platforms/                             # Platform-specific code (Windows only)
+├── Platforms/
+│   ├── Windows/                           # P/Invoke + WinUI app head
+│   └── Android/                           # App head + OrderFeedForegroundService, BootReceiver (ADR-007)
 ├── Properties/, Resources/                # MAUI scaffolding (themes, images)
 └── PrinterAPP.csproj
 ```
@@ -70,7 +74,8 @@ PrinterAPP/
 - **Service-oriented with dependency injection** via `MauiProgram.cs`. Every service registered as `AddSingleton<IFoo, Foo>()`.
 - **MVVM with code-behind**: standard MAUI pattern. View binds to code-behind directly; pure ViewModel layer is intentionally absent at this scale.
 - **Intelligent printer routing**: orders dispatch to Cashier, Front Kitchen, or Back Kitchen printers based on item category.
-- **5-second SSE polling** with a 1-hour deduplication window so re-emitted orders during reconnects don't double-print.
+- **5-second SSE polling** with a 1-hour deduplication window so re-emitted orders during reconnects don't double-print. Both the poll cursor and the dedup window are **in-memory**, so a process restart re-fetches (and re-prints) the last 30 minutes — persisting them is a tracked follow-up.
+- **Headless order pipeline** (`IOrderPipeline`): the feed→print→history→ack path is owned by a service, not a page, so it runs with no Activity. On Android an `OrderFeedForegroundService` hosts it (see [ADR-007](docs/adr/ADR-007-android-foreground-service.md)); on Windows it runs in-process. **Never move print or feed logic back into a page** — that is what made the app stop printing whenever it was minimised.
 - **ESC/POS** thermal printer commands with Turkish character support (codepage PC857) — see `OrderPrintService.cs`.
 - **Auto-update** via GitHub releases: `UpdateService` polls latest release on startup, downloads installer if newer, prompts user.
 
