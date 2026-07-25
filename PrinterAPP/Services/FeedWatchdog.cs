@@ -89,7 +89,12 @@ public class FeedWatchdog : IFeedWatchdog
                 _logger.LogWarning("Watchdog: the order feed is not listening — starting it");
                 _requestLogService.LogWarning(
                     "Feed Watchdog", "The order feed had stopped and was restarted automatically");
-                await _pipeline.StartAsync(cancellationToken);
+                // InitializeAsync, not StartAsync: if the original init threw before it finished, the
+                // heartbeat scheduler and Sentry identity tags never started either, and nothing else
+                // retries them — restarting only the feed would bring printing back while leaving the
+                // device invisible on the fleet dashboard. It is idempotent and gates the feed on the
+                // same ShouldBeListening check made above.
+                await _pipeline.InitializeAsync(cancellationToken);
                 break;
 
             case FeedWatchdogAction.Restart:

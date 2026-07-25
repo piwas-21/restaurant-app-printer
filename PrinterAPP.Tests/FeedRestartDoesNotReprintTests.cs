@@ -26,6 +26,9 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
     private readonly string _baseUrl;
     private int _requestCount;
 
+    // xUnit builds a fresh instance per test, so each one sets this for itself.
+    private bool _filterByModifiedSince;
+
     public FeedRestartDoesNotReprintTests()
     {
         // Port 0 is not supported by HttpListener, so take a free one from the OS first.
@@ -45,6 +48,13 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
     [Fact]
     public async Task An_order_already_printed_is_not_printed_again_after_a_restart()
     {
+        // Backend keeps re-emitting the order regardless of modifiedSince. That is the realistic
+        // shape here: an UpdatedAt bump pushes an already-printed order back inside the window, which
+        // is exactly what the 1-hour dedup set exists to absorb. It also keeps the dedup set
+        // load-bearing in this test — with a filtering backend the restored cursor would exclude the
+        // order by itself and the assertion would pass even with the dedup restore deleted.
+        _filterByModifiedSince = false;
+
         var cursorStore = new InMemoryFeedCursorStore();
 
         // ---- first "process": receives and prints the order
@@ -86,6 +96,8 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
     [Fact]
     public async Task A_confirmed_order_reaches_the_persisted_cursor()
     {
+        _filterByModifiedSince = false;
+
         var cursorStore = new InMemoryFeedCursorStore();
         var feed = CreateFeed(cursorStore);
         var received = new List<string>();
@@ -114,6 +126,12 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
     [Fact]
     public async Task An_order_dispatched_but_never_confirmed_is_re_driven_after_a_restart()
     {
+        // Backend filters on modifiedSince exactly as the real one does (strict greater-than,
+        // PrinterFeedQuery.cs:53). That is what makes the persisted-cursor floor the property under
+        // test: without it the restored cursor advances past the unconfirmed order and it is never
+        // re-fetched at all.
+        _filterByModifiedSince = true;
+
         var cursorStore = new InMemoryFeedCursorStore();
 
         var first = CreateFeed(cursorStore);
@@ -158,13 +176,14 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
 
             Interlocked.Increment(ref _requestCount);
 
-            // Honour modifiedSince exactly as the backend does — a STRICT greater-than on the order's
-            // timestamp (backend PrinterFeedQuery.cs:53). This is what makes the cursor half of the
-            // guarantee testable: a fixture that always returned the order would hide a persisted
-            // cursor that had advanced past it, which loses the ticket just as surely as a stale dedup
-            // entry would.
-            var modifiedSince = ParseModifiedSince(context.Request.Url);
-            var include = modifiedSince is null || OrderTimestamp > modifiedSince.Value;
+            // Per-test, because the two guarantees need opposite backends and a single global
+            // behaviour lets them mask each other — with filtering on, breaking the dedup restore is
+            // invisible (the cursor already excludes the order), and with it off, breaking the cursor
+            // floor is invisible (the order is served anyway). Each test selects the backend that
+            // makes ITS property load-bearing; see the comments on each.
+            var include = !_filterByModifiedSince
+                || ParseModifiedSince(context.Request.Url) is not { } since
+                || OrderTimestamp > since;
 
             var body = Encoding.UTF8.GetBytes(include ? OrderFeedJson : EmptyFeedJson);
             context.Response.ContentType = "application/json";

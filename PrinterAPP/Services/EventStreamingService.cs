@@ -46,6 +46,14 @@ public class EventStreamingService : IEventStreamingService
     // holding _processedOrdersLock — always the other way round.
     private readonly object _cursorPersistLock = new();
     private const int MaxProcessedOrdersAge = 3600; // 1 hour in seconds
+
+    // Unconfirmed orders expire well INSIDE FeedCursorStore.MaxLookBack, not on the hour-long dedup
+    // window. The cursor floor an unconfirmed order holds is only honoured while it survives that
+    // clamp, so retaining entries past it produced a band in which the floor was persisted and then
+    // silently discarded on load — the order neither re-fetched nor reported. Derived from
+    // MaxLookBack rather than hard-coded so the two cannot drift apart.
+    private static readonly TimeSpan UnconfirmedRetention =
+        FeedCursorStore.MaxLookBack - TimeSpan.FromMinutes(5);
     private DateTime _lastPollTime;
     private Task? _pollingTask;  // Primary polling mechanism
 
@@ -544,14 +552,28 @@ public class EventStreamingService : IEventStreamingService
     /// <see cref="CleanupOldProcessedOrders"/> run in the gap and evict the key, leaving an orphan in
     /// <see cref="_persistableOrders"/> that cleanup could never remove.
     /// </param>
-    private void MarkOrderAsProcessed(string orderNumber, bool persistable = false)
+    /// <param name="unconfirmedPollWindow">
+    /// For a dispatched order, the modifiedSince value its poll used — recorded so the persisted
+    /// cursor can be floored to it until the print path confirms the order. Written in the SAME lock
+    /// acquisition as the mark: a second acquisition would let cleanup evict the key in the gap and
+    /// strand an entry that nothing can ever remove, which here would pin the persisted cursor
+    /// permanently (the floor iterates these values unconditionally).
+    /// </param>
+    private void MarkOrderAsProcessed(
+        string orderNumber, bool persistable = false, DateTime? unconfirmedPollWindow = null)
     {
         lock (_processedOrdersLock)
         {
             _processedOrders[orderNumber] = DateTime.UtcNow;
+
             if (persistable)
             {
                 _persistableOrders.Add(orderNumber);
+            }
+
+            if (unconfirmedPollWindow is { } window)
+            {
+                _unconfirmedPollWindows[orderNumber] = window;
             }
         }
     }
@@ -633,10 +655,13 @@ public class EventStreamingService : IEventStreamingService
     }
 
     /// <summary>
-    /// Clean up processed orders older than MaxProcessedOrdersAge
+    /// Clean up processed orders older than MaxProcessedOrdersAge, and expire unconfirmed orders on
+    /// the shorter <see cref="UnconfirmedRetention"/>.
     /// </summary>
     private void CleanupOldProcessedOrders()
     {
+        ExpireUnrecoverableUnconfirmedOrders();
+
         var cutoff = DateTime.UtcNow.AddSeconds(-MaxProcessedOrdersAge);
         var oldOrders = _processedOrders
             .Where(kvp => kvp.Value < cutoff)
@@ -647,14 +672,53 @@ public class EventStreamingService : IEventStreamingService
         {
             _processedOrders.Remove(orderNumber);
             _persistableOrders.Remove(orderNumber);
-            // Bounds the cursor floor: an order that never confirms (its print threw) would otherwise
-            // hold modifiedSince back indefinitely and grow every poll's result set.
             _unconfirmedPollWindows.Remove(orderNumber);
         }
 
         if (oldOrders.Count > 0)
         {
             _logger.LogDebug("Cleaned up {Count} old processed order records", oldOrders.Count);
+        }
+    }
+
+    /// <summary>
+    /// Drops unconfirmed orders whose poll window has aged past <see cref="UnconfirmedRetention"/>,
+    /// and reports each one — because past that point it genuinely cannot be recovered.
+    /// <para>The cursor floor only works while the floored value survives
+    /// <see cref="FeedCursorStore.MaxLookBack"/>, which clamps any restored cursor forward. Retaining
+    /// unconfirmed entries for the full dedup hour therefore created a silent band: an order stuck
+    /// unconfirmed for 30–60 minutes had a floor that was computed, persisted, and then discarded by
+    /// the very load it existed to influence — so it was neither re-fetched nor reported. Expiring
+    /// inside the clamp closes the band, and anything that still ages out is a genuinely dropped
+    /// ticket the operator has to be told about rather than left to discover from a customer.</para>
+    /// </summary>
+    private void ExpireUnrecoverableUnconfirmedOrders()
+    {
+        if (_unconfirmedPollWindows.Count == 0)
+        {
+            return;
+        }
+
+        var cutoff = DateTime.UtcNow - UnconfirmedRetention;
+        var expired = _unconfirmedPollWindows
+            .Where(kvp => kvp.Value < cutoff)
+            .Select(kvp => kvp.Key)
+            .ToList();
+
+        foreach (var orderNumber in expired)
+        {
+            _unconfirmedPollWindows.Remove(orderNumber);
+
+            _logger.LogError(
+                "Order {OrderNumber} was never confirmed printed and can no longer be recovered",
+                orderNumber);
+            // Both surfaces are non-blocking (they marshal to the UI thread), so reporting from
+            // inside the dedup lock does not stall the poll loop.
+            _requestLogService.LogError(
+                "Order Polling",
+                $"Order {orderNumber} may not have printed, and is too old to fetch again",
+                "The order was received but never confirmed printed. Check the printer and reprint " +
+                "it from the Orders tab if the ticket is missing.");
         }
     }
     private async Task<Order?> FetchOrderDetailsAsync(int orderId, string sourceEndpoint)
@@ -888,13 +952,9 @@ public class EventStreamingService : IEventStreamingService
                             continue;
                         }
 
-                        MarkOrderAsProcessed(order.OrderNumber);
                         // Deliberately NOT dedupChanged: this order is not persistable until the
                         // print path confirms it (ConfirmOrderHandled), which forces its own write.
-                        lock (_processedOrdersLock)
-                        {
-                            _unconfirmedPollWindows[order.OrderNumber] = pollWindowStart;
-                        }
+                        MarkOrderAsProcessed(order.OrderNumber, unconfirmedPollWindow: pollWindowStart);
 
                         var orderEvent = new OrderEvent
                         {
