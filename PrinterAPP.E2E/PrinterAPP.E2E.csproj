@@ -57,6 +57,7 @@
     <Compile Include="..\PrinterAPP\Models\FeedCursor.cs" Link="Linked\FeedCursor.cs" />
     <Compile Include="..\PrinterAPP\Services\IFeedCursorStore.cs" Link="Linked\IFeedCursorStore.cs" />
     <Compile Include="..\PrinterAPP\Services\FeedCursorStore.cs" Link="Linked\FeedCursorStore.cs" />
+    <Compile Include="..\PrinterAPP\Services\UnconfirmedOrderExpiry.cs" Link="Linked\UnconfirmedOrderExpiry.cs" />
     <Compile Include="..\PrinterAPP\Services\EventStreamingService.cs" Link="Linked\EventStreamingService.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderFeedParser.cs" Link="Linked\OrderFeedParser.cs" />
   </ItemGroup>

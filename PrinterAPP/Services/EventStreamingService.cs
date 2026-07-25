@@ -37,6 +37,10 @@ public class EventStreamingService : IEventStreamingService
     // the restart that was supposed to reprint it never fetches it at all.
     private readonly Dictionary<string, DateTime> _unconfirmedPollWindows = new();
 
+    // Orders already reported to the operator as unrecoverable. Kept so a late confirm can retract
+    // that warning exactly once. Cleared with the rest of the order's state on dedup cleanup.
+    private readonly HashSet<string> _expiredUnconfirmed = new();
+
     private readonly object _processedOrdersLock = new();
     // Operation label on every poll-related entry in the request log / Errors page.
     private const string PollingLogOperation = "Order Polling";
@@ -47,12 +51,16 @@ public class EventStreamingService : IEventStreamingService
     private readonly object _cursorPersistLock = new();
     private const int MaxProcessedOrdersAge = 3600; // 1 hour in seconds
 
+    /// <summary>How long a processed order stays in the dedup set. Public so the ordering invariant
+    /// documented in CLAUDE.md §3 can be asserted rather than merely written down.</summary>
+    public static readonly TimeSpan DedupWindow = TimeSpan.FromSeconds(MaxProcessedOrdersAge);
+
     // Unconfirmed orders expire well INSIDE FeedCursorStore.MaxLookBack, not on the hour-long dedup
     // window. The cursor floor an unconfirmed order holds is only honoured while it survives that
     // clamp, so retaining entries past it produced a band in which the floor was persisted and then
     // silently discarded on load — the order neither re-fetched nor reported. Derived from
     // MaxLookBack rather than hard-coded so the two cannot drift apart.
-    private static readonly TimeSpan UnconfirmedRetention =
+    public static readonly TimeSpan UnconfirmedRetention =
         FeedCursorStore.MaxLookBack - TimeSpan.FromMinutes(5);
     private DateTime _lastPollTime;
     private Task? _pollingTask;  // Primary polling mechanism
@@ -636,6 +644,7 @@ public class EventStreamingService : IEventStreamingService
             return;
         }
 
+        bool retracting;
         lock (_processedOrdersLock)
         {
             // Only for orders we actually dispatched; a confirmation for something never marked
@@ -646,8 +655,22 @@ public class EventStreamingService : IEventStreamingService
             }
 
             _persistableOrders.Add(orderNumber);
-            // Printed, so the cursor no longer has to be held back for it.
-            _unconfirmedPollWindows.Remove(orderNumber);
+            // Printed, so the cursor no longer has to be held back for it. Remove reports whether the
+            // entry was still there: if it was not, expiry already told the operator this order "may
+            // not have printed", and acting on that stale advice is how they end up with the very
+            // duplicate ticket this all exists to prevent.
+            retracting = !_unconfirmedPollWindows.Remove(orderNumber)
+                && _expiredUnconfirmed.Remove(orderNumber);
+        }
+
+        if (retracting)
+        {
+            _logger.LogInformation(
+                "Order {OrderNumber} printed after being reported unrecoverable", orderNumber);
+            _requestLogService.LogWarning(
+                "Order Polling",
+                $"Order {orderNumber} did print after all — ignore the earlier warning",
+                "It completed later than expected. Do not reprint it; that would produce a duplicate ticket.");
         }
 
         // Forced: this is the write that makes the difference between a duplicate ticket and none.
@@ -673,6 +696,7 @@ public class EventStreamingService : IEventStreamingService
             _processedOrders.Remove(orderNumber);
             _persistableOrders.Remove(orderNumber);
             _unconfirmedPollWindows.Remove(orderNumber);
+            _expiredUnconfirmed.Remove(orderNumber);
         }
 
         if (oldOrders.Count > 0)
@@ -699,15 +723,13 @@ public class EventStreamingService : IEventStreamingService
             return;
         }
 
-        var cutoff = DateTime.UtcNow - UnconfirmedRetention;
-        var expired = _unconfirmedPollWindows
-            .Where(kvp => kvp.Value < cutoff)
-            .Select(kvp => kvp.Key)
-            .ToList();
+        var expired = UnconfirmedOrderExpiry.Expired(
+            _unconfirmedPollWindows, DateTime.UtcNow, UnconfirmedRetention);
 
         foreach (var orderNumber in expired)
         {
             _unconfirmedPollWindows.Remove(orderNumber);
+            _expiredUnconfirmed.Add(orderNumber);
 
             _logger.LogError(
                 "Order {OrderNumber} was never confirmed printed and can no longer be recovered",

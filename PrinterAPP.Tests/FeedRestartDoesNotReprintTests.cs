@@ -154,6 +154,42 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
         Assert.True(reDriven, "an unprinted order was suppressed after a restart — the ticket is lost.");
     }
 
+    // Covers the CALL SITE, which the pure UnconfirmedOrderExpiry tests cannot: deleting the
+    // ExpireUnrecoverableUnconfirmedOrders() call from CleanupOldProcessedOrders reverts the whole
+    // retention fix — unconfirmed orders go back to outliving the cursor look-back clamp, their floor
+    // is silently discarded on load, and nothing tells the operator. That deletion passed every other
+    // test in this suite.
+    //
+    // A fresh InMemoryFeedCursorStore starts at UtcNow - MaxLookBack (30 min), which is already past
+    // the 25-minute retention, so the order dispatched on the first poll expires on the next one —
+    // no clock injection and no 25-minute wait needed.
+    [Fact]
+    public async Task An_unconfirmed_order_too_old_to_recover_is_reported_to_the_operator()
+    {
+        _filterByModifiedSince = false;
+
+        var log = new CapturingRequestLogService();
+        var feed = new EventStreamingService(
+            new StubPrinterService(_baseUrl), log, new InMemoryFeedCursorStore(),
+            NullLogger<EventStreamingService>.Instance);
+
+        var received = new List<string>();
+        feed.OrderReceived += (_, e) => { if (e.Order is not null) received.Add(e.Order.OrderNumber); };
+
+        await feed.StartListeningAsync();
+        Assert.True(await WaitUntilAsync(() => received.Count > 0), "the feed never delivered the order");
+
+        // Never confirmed, and its poll window is already beyond recovery — the next cleanup must say so.
+        var reported = await WaitUntilAsync(() =>
+            log.Errors.Any(e => e.Contains("too old to fetch", StringComparison.OrdinalIgnoreCase)));
+        await feed.StopListeningAsync();
+
+        Assert.True(
+            reported,
+            "an unconfirmed order aged past recovery without telling anyone — the ticket is lost silently. "
+            + $"Errors seen: [{string.Join(" | ", log.Errors)}]");
+    }
+
     private EventStreamingService CreateFeed(IFeedCursorStore cursorStore) => new(
         new StubPrinterService(_baseUrl),
         new NoopRequestLogService(),
@@ -274,7 +310,27 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
         public Task SaveConfigurationAsync(PrinterConfiguration config) => Task.CompletedTask;
     }
 
-    private sealed class NoopRequestLogService : IRequestLogService
+    /// <summary>Records the operator-facing error text, which is the contract under test.</summary>
+    private sealed class CapturingRequestLogService : NoopRequestLogService
+    {
+        private readonly List<string> _errors = new();
+
+        public IReadOnlyList<string> Errors
+        {
+            get { lock (_errors) { return _errors.ToList(); } }
+        }
+
+        public override void LogError(string operation, string message, string? details = null)
+        {
+            // The poll loop is a background thread; the assertion polls from the test thread.
+            lock (_errors)
+            {
+                _errors.Add($"{operation}: {message}");
+            }
+        }
+    }
+
+    private class NoopRequestLogService : IRequestLogService
     {
         public System.Collections.ObjectModel.ReadOnlyObservableCollection<LogEntry> Logs { get; } =
             new(new System.Collections.ObjectModel.ObservableCollection<LogEntry>());
@@ -287,7 +343,7 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
         public void LogOrderReceived(int orderId, int? tableNumber, decimal total, string? orderJson = null, string? source = null) { }
         public void LogPrintRequest(string printerType, int orderId, string printerName, string? printContent = null) { }
         public void LogPrintResponse(string printerType, int orderId, bool success, string? error = null, string? details = null) { }
-        public void LogError(string operation, string message, string? details = null) { }
+        public virtual void LogError(string operation, string message, string? details = null) { }
         public void LogWarning(string operation, string message, string? details = null, string? source = null) { }
         public void ClearLogs() => LogAdded?.Invoke(this, new LogEntry());
     }
