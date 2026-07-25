@@ -31,6 +31,9 @@ public class OrderFeedE2ETests
         return new EventStreamingService(
             new TestPrinterService(config),
             log,
+            // A throwaway cursor store per feed: each E2E case must start from a clean dedup set,
+            // not inherit one from a previous run on the shared runner.
+            new FeedCursorStore(new TempPaths()),
             NullLogger<EventStreamingService>.Instance);
     }
 

@@ -9,20 +9,67 @@ public class EventStreamingService : IEventStreamingService
 {
     private readonly IPrinterService _printerService;
     private readonly IRequestLogService _requestLogService;
+    private readonly IFeedCursorStore _cursorStore;
     private readonly ILogger<EventStreamingService> _logger;
     private CancellationTokenSource? _cancellationTokenSource;
     private Task? _kitchenListeningTask;
     private bool _isListening;
 
-    // Track processed order IDs to prevent duplicate display/print (with timestamp for cleanup)
-    private readonly Dictionary<string, DateTime> _processedOrders = new();
+    // Track processed order IDs to prevent duplicate display/print (with timestamp for cleanup).
+    // Restored from disk on construction: held only in memory, every process restart began with an
+    // empty set and a UtcNow-30min cursor, so the last half hour of confirmed orders was re-fetched
+    // AND re-printed. Survivable while a restart meant a person relaunching the app; with the Android
+    // foreground service restarting itself it would put duplicate tickets on the pass.
+    private readonly Dictionary<string, DateTime> _processedOrders;
+
+    // The subset of _processedOrders that is safe to persist. An order joins it only once the print
+    // path has confirmed it (see ConfirmOrderHandled); error-log keys join immediately, since
+    // "logged" completes the moment it is marked. Everything else stays in memory only, so a process
+    // killed between dispatch and print re-drives the order instead of suppressing it forever.
+    private readonly HashSet<string> _persistableOrders;
+
+    // Order key -> the modifiedSince value in effect for the poll that produced it, for orders that
+    // have been dispatched but not yet confirmed printed. Holding an order out of the persisted dedup
+    // set is only half of not losing it: the persisted CURSOR must also stay at or before that poll's
+    // window, because the backend filter is a strict `>` on CreatedAt/UpdatedAt
+    // (backend PrinterFeedQuery.cs:53). Without this floor a later write — the debounce expiring,
+    // another order confirming, a stop flush — advances modifiedSince past the unconfirmed order, and
+    // the restart that was supposed to reprint it never fetches it at all.
+    private readonly Dictionary<string, DateTime> _unconfirmedPollWindows = new();
+
+    // Orders already reported to the operator as unrecoverable. Kept so a late confirm can retract
+    // that warning exactly once. Cleared with the rest of the order's state on dedup cleanup.
+    private readonly HashSet<string> _expiredUnconfirmed = new();
+
     private readonly object _processedOrdersLock = new();
     // Operation label on every poll-related entry in the request log / Errors page.
     private const string PollingLogOperation = "Order Polling";
 
+    // Serialises the whole snapshot-then-write, so two threads cannot interleave such that an older
+    // snapshot lands last and drops a dedup entry that a newer one had captured. Never taken while
+    // holding _processedOrdersLock — always the other way round.
+    private readonly object _cursorPersistLock = new();
     private const int MaxProcessedOrdersAge = 3600; // 1 hour in seconds
-    private DateTime _lastPollTime = DateTime.UtcNow.AddMinutes(-30);  // Start 30 min ago to avoid fetching all historical orders
+
+    /// <summary>How long a processed order stays in the dedup set. Public so the ordering invariant
+    /// documented in CLAUDE.md §3 can be asserted rather than merely written down.</summary>
+    public static readonly TimeSpan DedupWindow = TimeSpan.FromSeconds(MaxProcessedOrdersAge);
+
+    // Unconfirmed orders expire well INSIDE FeedCursorStore.MaxLookBack, not on the hour-long dedup
+    // window. The cursor floor an unconfirmed order holds is only honoured while it survives that
+    // clamp, so retaining entries past it produced a band in which the floor was persisted and then
+    // silently discarded on load — the order neither re-fetched nor reported. Derived from
+    // MaxLookBack rather than hard-coded so the two cannot drift apart.
+    public static readonly TimeSpan UnconfirmedRetention =
+        FeedCursorStore.MaxLookBack - TimeSpan.FromMinutes(5);
+    private DateTime _lastPollTime;
     private Task? _pollingTask;  // Primary polling mechanism
+
+    // The cursor is rewritten on every advance, so the routine case is debounced; a batch that
+    // actually printed something forces an immediate write, because that is the state whose loss
+    // causes a duplicate ticket.
+    private static readonly TimeSpan CursorSaveInterval = TimeSpan.FromSeconds(60);
+    private DateTime _lastCursorSaveAt = DateTime.MinValue;
 
     public event EventHandler<OrderEvent>? OrderReceived;
     public event EventHandler<string>? ConnectionStatusChanged;
@@ -37,11 +84,22 @@ public class EventStreamingService : IEventStreamingService
     public EventStreamingService(
         IPrinterService printerService,
         IRequestLogService requestLogService,
+        IFeedCursorStore cursorStore,
         ILogger<EventStreamingService> logger)
     {
         _printerService = printerService;
         _requestLogService = requestLogService;
+        _cursorStore = cursorStore;
         _logger = logger;
+
+        // Restored here rather than in StartListeningAsync so the cursor is already correct if
+        // anything reads it before the feed starts. Load never throws; a missing or unreadable file
+        // yields the default look-back.
+        var cursor = _cursorStore.Load();
+        _lastPollTime = cursor.LastPollTime;
+        _processedOrders = cursor.ProcessedOrders;
+        // Everything that was persisted had already been confirmed, so it stays persistable.
+        _persistableOrders = new HashSet<string>(cursor.ProcessedOrders.Keys);
     }
 
     public async Task StartListeningAsync(CancellationToken cancellationToken = default)
@@ -84,6 +142,10 @@ public class EventStreamingService : IEventStreamingService
 
         _logger.LogInformation("Stopping SSE listener");
         _isListening = false;
+
+        // Flush on the way down so a clean stop (user tap, app close) does not throw away up to a
+        // minute of debounced cursor and re-fetch it on the next start.
+        PersistCursor(force: true);
 
         _cancellationTokenSource?.Cancel();
 
@@ -491,19 +553,133 @@ public class EventStreamingService : IEventStreamingService
     /// <summary>
     /// Mark an order as processed
     /// </summary>
-    private void MarkOrderAsProcessed(string orderNumber)
+    /// <param name="persistable">
+    /// True for entries that are complete the moment they are marked (error-log keys). Order keys
+    /// pass false and become persistable only via <see cref="ConfirmOrderHandled"/>, once printed.
+    /// Taken in the same lock acquisition as the mark: doing it in a second acquisition let
+    /// <see cref="CleanupOldProcessedOrders"/> run in the gap and evict the key, leaving an orphan in
+    /// <see cref="_persistableOrders"/> that cleanup could never remove.
+    /// </param>
+    /// <param name="unconfirmedPollWindow">
+    /// For a dispatched order, the modifiedSince value its poll used — recorded so the persisted
+    /// cursor can be floored to it until the print path confirms the order. Written in the SAME lock
+    /// acquisition as the mark: a second acquisition would let cleanup evict the key in the gap and
+    /// strand an entry that nothing can ever remove, which here would pin the persisted cursor
+    /// permanently (the floor iterates these values unconditionally).
+    /// </param>
+    private void MarkOrderAsProcessed(
+        string orderNumber, bool persistable = false, DateTime? unconfirmedPollWindow = null)
     {
         lock (_processedOrdersLock)
         {
             _processedOrders[orderNumber] = DateTime.UtcNow;
+
+            if (persistable)
+            {
+                _persistableOrders.Add(orderNumber);
+            }
+
+            if (unconfirmedPollWindow is { } window)
+            {
+                _unconfirmedPollWindows[orderNumber] = window;
+            }
         }
     }
 
     /// <summary>
-    /// Clean up processed orders older than MaxProcessedOrdersAge
+    /// Writes the poll cursor and the dedup set to disk so a process restart resumes instead of
+    /// re-fetching (and re-printing) the last half hour.
+    /// </summary>
+    /// <param name="force">
+    /// Bypasses the debounce. Pass true whenever the dedup set changed — that is the state whose
+    /// loss causes a duplicate ticket. The routine per-poll cursor advance is debounced because it
+    /// happens every 5 seconds and losing a little of it is harmless.
+    /// </param>
+    private void PersistCursor(bool force)
+    {
+        // Snapshot AND write under one lock. Holding it only for the snapshot let a slower thread's
+        // older copy win the file race and drop a dedup entry a newer copy had already captured —
+        // which would reprint that order after the next restart, the exact thing this exists to stop.
+        lock (_cursorPersistLock)
+        {
+            if (!force && DateTime.UtcNow - _lastCursorSaveAt < CursorSaveInterval)
+            {
+                return;
+            }
+
+            _lastCursorSaveAt = DateTime.UtcNow;
+
+            FeedCursor snapshot;
+            lock (_processedOrdersLock)
+            {
+                // Never persist a cursor past the earliest still-unconfirmed order's poll window.
+                // Min over those windows AND the live cursor, so with nothing unconfirmed it is just
+                // the cursor.
+                var persistedLastPoll = _unconfirmedPollWindows.Values.Append(_lastPollTime).Min();
+
+                snapshot = new FeedCursor
+                {
+                    LastPollTime = persistedLastPoll,
+                    // Confirmed entries only — see _persistableOrders.
+                    ProcessedOrders = _processedOrders
+                        .Where(kvp => _persistableOrders.Contains(kvp.Key))
+                        .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                };
+            }
+
+            _cursorStore.Save(snapshot);
+        }
+    }
+
+    /// <inheritdoc />
+    public void ConfirmOrderHandled(string orderNumber)
+    {
+        if (string.IsNullOrEmpty(orderNumber))
+        {
+            return;
+        }
+
+        bool retracting;
+        lock (_processedOrdersLock)
+        {
+            // Only for orders we actually dispatched; a confirmation for something never marked
+            // would otherwise create a persistable entry with no timestamp to age out on.
+            if (!_processedOrders.ContainsKey(orderNumber))
+            {
+                return;
+            }
+
+            _persistableOrders.Add(orderNumber);
+            // Printed, so the cursor no longer has to be held back for it. Remove reports whether the
+            // entry was still there: if it was not, expiry already told the operator this order "may
+            // not have printed", and acting on that stale advice is how they end up with the very
+            // duplicate ticket this all exists to prevent.
+            retracting = !_unconfirmedPollWindows.Remove(orderNumber)
+                && _expiredUnconfirmed.Remove(orderNumber);
+        }
+
+        if (retracting)
+        {
+            _logger.LogInformation(
+                "Order {OrderNumber} printed after being reported unrecoverable", orderNumber);
+            _requestLogService.LogWarning(
+                "Order Polling",
+                $"Order {orderNumber} did print after all — ignore the earlier warning",
+                "It completed later than expected. Do not reprint it; that would produce a duplicate ticket.");
+        }
+
+        // Forced: this is the write that makes the difference between a duplicate ticket and none.
+        PersistCursor(force: true);
+    }
+
+    /// <summary>
+    /// Clean up processed orders older than MaxProcessedOrdersAge, and expire unconfirmed orders on
+    /// the shorter <see cref="UnconfirmedRetention"/>.
     /// </summary>
     private void CleanupOldProcessedOrders()
     {
+        ExpireUnrecoverableUnconfirmedOrders();
+
         var cutoff = DateTime.UtcNow.AddSeconds(-MaxProcessedOrdersAge);
         var oldOrders = _processedOrders
             .Where(kvp => kvp.Value < cutoff)
@@ -513,11 +689,53 @@ public class EventStreamingService : IEventStreamingService
         foreach (var orderNumber in oldOrders)
         {
             _processedOrders.Remove(orderNumber);
+            _persistableOrders.Remove(orderNumber);
+            _unconfirmedPollWindows.Remove(orderNumber);
+            _expiredUnconfirmed.Remove(orderNumber);
         }
 
         if (oldOrders.Count > 0)
         {
             _logger.LogDebug("Cleaned up {Count} old processed order records", oldOrders.Count);
+        }
+    }
+
+    /// <summary>
+    /// Drops unconfirmed orders whose poll window has aged past <see cref="UnconfirmedRetention"/>,
+    /// and reports each one — because past that point it genuinely cannot be recovered.
+    /// <para>The cursor floor only works while the floored value survives
+    /// <see cref="FeedCursorStore.MaxLookBack"/>, which clamps any restored cursor forward. Retaining
+    /// unconfirmed entries for the full dedup hour therefore created a silent band: an order stuck
+    /// unconfirmed for 30–60 minutes had a floor that was computed, persisted, and then discarded by
+    /// the very load it existed to influence — so it was neither re-fetched nor reported. Expiring
+    /// inside the clamp closes the band, and anything that still ages out is a genuinely dropped
+    /// ticket the operator has to be told about rather than left to discover from a customer.</para>
+    /// </summary>
+    private void ExpireUnrecoverableUnconfirmedOrders()
+    {
+        if (_unconfirmedPollWindows.Count == 0)
+        {
+            return;
+        }
+
+        var expired = UnconfirmedOrderExpiry.Expired(
+            _unconfirmedPollWindows, DateTime.UtcNow, UnconfirmedRetention);
+
+        foreach (var orderNumber in expired)
+        {
+            _unconfirmedPollWindows.Remove(orderNumber);
+            _expiredUnconfirmed.Add(orderNumber);
+
+            _logger.LogError(
+                "Order {OrderNumber} was never confirmed printed and can no longer be recovered",
+                orderNumber);
+            // Both surfaces are non-blocking (they marshal to the UI thread), so reporting from
+            // inside the dedup lock does not stall the poll loop.
+            _requestLogService.LogError(
+                "Order Polling",
+                $"Order {orderNumber} may not have printed, and is too old to fetch again",
+                "The order was received but never confirmed printed. Check the printer and reprint " +
+                "it from the Orders tab if the ticket is missing.");
         }
     }
     private async Task<Order?> FetchOrderDetailsAsync(int orderId, string sourceEndpoint)
@@ -630,9 +848,17 @@ public class EventStreamingService : IEventStreamingService
                 // Dedicated printer-feed endpoint. Auth is the X-Api-Key header added below —
                 // required in production (per-tenant key set in Settings); a missing/incorrect key
                 // returns 401, surfaced as "Poll failed: Unauthorized" and logged to the Errors page.
-                var pollUrl = $"{baseUrl}/api/orders/printer-feed?modifiedSince={_lastPollTime:o}";
+                // The exact value this request filters on — recorded against any order it yields so
+                // the persisted cursor can be floored to it until that order is confirmed.
+                DateTime pollWindowStart;
+                lock (_processedOrdersLock)
+                {
+                    pollWindowStart = _lastPollTime;
+                }
 
-                _logger.LogInformation("🔄 Poll #{Count} - Fetching orders since {Since}", pollCount, _lastPollTime);
+                var pollUrl = $"{baseUrl}/api/orders/printer-feed?modifiedSince={pollWindowStart:o}";
+
+                _logger.LogInformation("🔄 Poll #{Count} - Fetching orders since {Since}", pollCount, pollWindowStart);
                 System.Diagnostics.Debug.WriteLine($"[POLLING] #{pollCount} - URL: {pollUrl}");
 
                 // Update connection status so UI shows activity
@@ -686,6 +912,12 @@ public class EventStreamingService : IEventStreamingService
                 // skipped (surfaced on the Errors/Diagnostics page) and the rest of the batch still prints.
                 var parseResult = OrderFeedParser.Parse(json);
 
+                // Set only where an entry is genuinely ADDED to the persistable set — an already-known
+                // failure hits `continue` below and changes nothing, so inferring this from
+                // parseResult.Errors would force a full write on every poll for as long as the
+                // backend keeps re-emitting the same bad order, defeating the debounce entirely.
+                var dedupChanged = false;
+
                 foreach (var failure in parseResult.Errors)
                 {
                     // If the bad order has an extractable number, dedupe the error log through the same
@@ -702,7 +934,11 @@ public class EventStreamingService : IEventStreamingService
                         {
                             continue;
                         }
-                        MarkOrderAsProcessed(errorKey);
+                        // "Logged" completes at the moment of marking, so unlike a print this is safe
+                        // to persist straight away — it stops a re-emitted bad order re-logging the
+                        // identical error after every restart.
+                        MarkOrderAsProcessed(errorKey, persistable: true);
+                        dedupChanged = true;
                     }
 
                     var who = !string.IsNullOrEmpty(failure.OrderNumber)
@@ -733,7 +969,9 @@ public class EventStreamingService : IEventStreamingService
                             continue;
                         }
 
-                        MarkOrderAsProcessed(order.OrderNumber);
+                        // Deliberately NOT dedupChanged: this order is not persistable until the
+                        // print path confirms it (ConfirmOrderHandled), which forces its own write.
+                        MarkOrderAsProcessed(order.OrderNumber, unconfirmedPollWindow: pollWindowStart);
 
                         var orderEvent = new OrderEvent
                         {
@@ -751,8 +989,19 @@ public class EventStreamingService : IEventStreamingService
                     _logger.LogInformation("   No new orders");
                 }
 
-                _lastPollTime = DateTime.UtcNow;
+                lock (_processedOrdersLock)
+                {
+                    _lastPollTime = DateTime.UtcNow;
+                }
+
                 _lastSuccessfulPollAt = DateTime.UtcNow;
+
+                // Written before the next poll can advance the cursor again. Forced when this batch
+                // marked something processed: losing that entry to a crash is what makes an order
+                // print twice, whereas losing a few seconds of cursor only costs a re-fetch that the
+                // dedup set then absorbs.
+                PersistCursor(force: dedupChanged);
+
                 OnConnectionStatusChanged($"Connected - last poll: {DateTime.Now:HH:mm:ss}");
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

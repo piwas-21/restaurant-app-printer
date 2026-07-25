@@ -10,12 +10,21 @@ namespace PrinterAPP.Services;
 public class DirectBackgroundRunner : IBackgroundRunner
 {
     private readonly IOrderPipeline _pipeline;
+    private readonly IFeedWatchdog _watchdog;
 
-    public DirectBackgroundRunner(IOrderPipeline pipeline)
+    public DirectBackgroundRunner(IOrderPipeline pipeline, IFeedWatchdog watchdog)
     {
         _pipeline = pipeline;
+        _watchdog = watchdog;
     }
 
-    public Task StartAsync(CancellationToken cancellationToken = default) =>
-        _pipeline.InitializeAsync(cancellationToken);
+    public async Task StartAsync(CancellationToken cancellationToken = default)
+    {
+        // Before InitializeAsync: the watchdog is idempotent, and starting it first means an init
+        // failure is self-healing rather than terminal — its next tick starts the feed. Started here
+        // rather than by the pipeline, which cannot own it without a dependency cycle.
+        _watchdog.Start();
+
+        await _pipeline.InitializeAsync(cancellationToken);
+    }
 }

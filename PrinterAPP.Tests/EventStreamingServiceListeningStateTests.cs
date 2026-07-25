@@ -28,6 +28,7 @@ public sealed class EventStreamingServiceListeningStateTests
     private static EventStreamingService CreateFeed() => new(
         new StubPrinterService(UnreachableApi),
         new NoopRequestLogService(),
+        new InMemoryFeedCursorStore(),
         NullLogger<EventStreamingService>.Instance);
 
     [Fact]
@@ -88,6 +89,7 @@ public sealed class EventStreamingServiceListeningStateTests
         var feed = new EventStreamingService(
             new StubPrinterService(string.Empty),
             new NoopRequestLogService(),
+            new InMemoryFeedCursorStore(),
             NullLogger<EventStreamingService>.Instance);
 
         await feed.StartListeningAsync();

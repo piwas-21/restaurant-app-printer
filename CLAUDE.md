@@ -53,6 +53,8 @@ PrinterAPP/
 │   ├── IEventStreamingService.cs / EventStreamingService.cs   # SSE polling, order event handling
 │   ├── IOrderPipeline.cs / OrderPipeline.cs                    # Headless feed→print→history→ack path (ADR-007)
 │   ├── IBackgroundRunner.cs / DirectBackgroundRunner.cs        # Platform seam for off-screen execution
+│   ├── IFeedCursorStore.cs / FeedCursorStore.cs                # Persisted poll cursor + dedup set (no reprint on restart)
+│   ├── IFeedWatchdog.cs / FeedWatchdog.cs / FeedWatchdogDecision.cs  # Restarts a dead or stalled feed
 │   ├── IPrinterService.cs / WindowsPrinterService.cs           # Windows Printer API (P/Invoke)
 │   ├── IOrderPrintService.cs / OrderPrintService.cs            # ESC/POS formatting, receipt composition
 │   ├── IOrderHistoryService.cs / OrderHistoryService.cs        # In-memory order history (last 100) + dedup window
@@ -74,7 +76,8 @@ PrinterAPP/
 - **Service-oriented with dependency injection** via `MauiProgram.cs`. Every service registered as `AddSingleton<IFoo, Foo>()`.
 - **MVVM with code-behind**: standard MAUI pattern. View binds to code-behind directly; pure ViewModel layer is intentionally absent at this scale.
 - **Intelligent printer routing**: orders dispatch to Cashier, Front Kitchen, or Back Kitchen printers based on item category.
-- **5-second SSE polling** with a 1-hour deduplication window so re-emitted orders during reconnects don't double-print. Both the poll cursor and the dedup window are **in-memory**, so a process restart re-fetches (and re-prints) the last 30 minutes — persisting them is a tracked follow-up.
+- **5-second SSE polling** with a 1-hour deduplication window so re-emitted orders during reconnects don't double-print. The poll cursor and dedup set are **persisted** (`IFeedCursorStore`), so a restart resumes instead of re-printing the last 30 minutes. A dedup entry is persisted only once the print path confirms the order (`ConfirmOrderHandled`) — a kill between dispatch and print must re-drive the order, never silently suppress it. Three timings are coupled and must stay ordered — `unconfirmed retention (25 min) < cursor look-back clamp (30 min) < dedup window (1 h)`. The clamp must stay under the dedup window or a re-fetch reaches orders no surviving dedup entry guards (reprints); unconfirmed retention must stay under the clamp or an unconfirmed order's cursor floor is discarded by the very load it exists to influence (silently dropped ticket). An unconfirmed order that ages out is reported to the Errors page — past that point it genuinely cannot be recovered.
+- **Feed watchdog** (`IFeedWatchdog`): restarts a feed that died or stopped completing polls. It must never override a deliberate stop — see `FeedWatchdogDecision`, where all of that logic lives as a pure, tested function.
 - **Headless order pipeline** (`IOrderPipeline`): the feed→print→history→ack path is owned by a service, not a page, so it runs with no Activity. On Android an `OrderFeedForegroundService` hosts it (see [ADR-007](docs/adr/ADR-007-android-foreground-service.md)); on Windows it runs in-process. **Never move print or feed logic back into a page** — that is what made the app stop printing whenever it was minimised.
 - **ESC/POS** thermal printer commands with Turkish character support (codepage PC857) — see `OrderPrintService.cs`.
 - **Auto-update** via GitHub releases: `UpdateService` polls latest release on startup, downloads installer if newer, prompts user.

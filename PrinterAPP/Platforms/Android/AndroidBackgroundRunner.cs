@@ -13,11 +13,14 @@ namespace PrinterAPP;
 public class AndroidBackgroundRunner : IBackgroundRunner
 {
     private readonly IOrderPipeline _pipeline;
+    private readonly IFeedWatchdog _watchdog;
     private readonly ILogger<AndroidBackgroundRunner> _logger;
 
-    public AndroidBackgroundRunner(IOrderPipeline pipeline, ILogger<AndroidBackgroundRunner> logger)
+    public AndroidBackgroundRunner(
+        IOrderPipeline pipeline, IFeedWatchdog watchdog, ILogger<AndroidBackgroundRunner> logger)
     {
         _pipeline = pipeline;
+        _watchdog = watchdog;
         _logger = logger;
     }
 
@@ -45,6 +48,11 @@ public class AndroidBackgroundRunner : IBackgroundRunner
             // running in the foreground — the pipeline is still initialised below.
             _logger.LogError(ex, "Failed to start the order-feed foreground service");
         }
+
+        // Before InitializeAsync: the watchdog is idempotent, and starting it first means an init
+        // failure is self-healing rather than terminal — its next tick starts the feed. Started here
+        // rather than by the pipeline, which cannot own it without a dependency cycle.
+        _watchdog.Start();
 
         // Also initialise directly so a foreground launch does not depend on service-start timing.
         // InitializeAsync is idempotent, so the service's own call is a no-op after this.

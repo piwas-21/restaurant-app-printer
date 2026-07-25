@@ -37,6 +37,7 @@ public class OrderFeedForegroundService : Service
     private CancellationTokenSource? _cts;
     private IOrderPipeline? _pipeline;
     private IEventStreamingService? _feed;
+    private IFeedWatchdog? _watchdog;
     private ILogger<OrderFeedForegroundService>? _logger;
     private bool _notificationFailureReported;
 
@@ -61,6 +62,7 @@ public class OrderFeedForegroundService : Service
         {
             _pipeline ??= services.GetService<IOrderPipeline>();
             _feed ??= services.GetService<IEventStreamingService>();
+            _watchdog ??= services.GetService<IFeedWatchdog>();
             _logger ??= services.GetService<ILogger<OrderFeedForegroundService>>();
         }
 
@@ -118,6 +120,13 @@ public class OrderFeedForegroundService : Service
 
     private async Task RunAsync(CancellationToken cancellationToken)
     {
+        // BEFORE InitializeAsync, deliberately. The watchdog is idempotent and its first tick is a
+        // minute out, and starting it first is what makes a failed init self-healing: the next tick
+        // sees a feed that should be listening and is not, and starts it. Started after, an init that
+        // threw would leave the device with no feed AND no watchdog — silently dead until somebody
+        // opens the app, which on the BOOT_COMPLETED path may be the next morning.
+        _watchdog?.Start();
+
         try
         {
             // CancellationToken.None, NOT this service instance's token. EventStreamingService links
@@ -130,6 +139,7 @@ public class OrderFeedForegroundService : Service
             {
                 await _pipeline.InitializeAsync(CancellationToken.None);
             }
+
         }
         catch (Exception ex)
         {

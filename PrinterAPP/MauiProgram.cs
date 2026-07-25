@@ -60,6 +60,9 @@ namespace PrinterAPP
             builder.Services.AddSingleton<IAppDataPathProvider, MauiAppDataPathProvider>();
             builder.Services.AddSingleton<ISecretStore, SecureStorageSecretStore>();
             builder.Services.AddSingleton<IPrinterConfigurationStore, PrinterConfigurationStore>();
+            // Persisted poll cursor + dedup window — without it every process restart re-fetches and
+            // re-prints the last 30 minutes of orders (cross-platform plan, Phase 9d).
+            builder.Services.AddSingleton<IFeedCursorStore, FeedCursorStore>();
             builder.Services.AddSingleton<IPrinterService, WindowsPrinterService>();
             builder.Services.AddSingleton<IRequestLogService, RequestLogService>();
             builder.Services.AddSingleton<IEventStreamingService, EventStreamingService>();
@@ -80,6 +83,9 @@ namespace PrinterAPP
             // running with no page or Activity — on Android it is driven by a foreground service, and
             // after a reboot there is no UI at all. See ADR-007.
             builder.Services.AddSingleton<IOrderPipeline, OrderPipeline>();
+            // Restarts a feed that died or went quiet. Started by IBackgroundRunner, not by the
+            // pipeline — it depends on IOrderPipeline, so the pipeline cannot own it (Phase 9e).
+            builder.Services.AddSingleton<IFeedWatchdog, FeedWatchdog>();
 #if ANDROID
             builder.Services.AddSingleton<IBackgroundRunner, AndroidBackgroundRunner>();
 #else
