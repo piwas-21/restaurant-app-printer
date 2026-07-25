@@ -167,6 +167,7 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
     public async Task An_unconfirmed_order_too_old_to_recover_is_reported_to_the_operator()
     {
         _filterByModifiedSince = false;
+        AssertFreshCursorStartsPastRetention();
 
         var log = new CapturingRequestLogService();
         var feed = new EventStreamingService(
@@ -198,6 +199,7 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
     public async Task A_print_that_completes_after_being_declared_unrecoverable_retracts_the_warning()
     {
         _filterByModifiedSince = false;
+        AssertFreshCursorStartsPastRetention();
 
         var log = new CapturingRequestLogService();
         var feed = new EventStreamingService(
@@ -221,6 +223,16 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
             log.Warnings,
             w => w.Contains("did print after all", StringComparison.OrdinalIgnoreCase));
     }
+
+    // Both expiry tests work because a fresh cursor store starts at UtcNow - MaxLookBack, which is a
+    // fixed 5 minutes past UnconfirmedRetention — so the first poll's order is already unrecoverable
+    // and expires on the next cleanup, with no clock injection. That is load-bearing but not obvious,
+    // so it is stated: if the margin is ever collapsed these tests would still fail, but with "the
+    // feed never reported it", which sends the next reader hunting in entirely the wrong place.
+    private static void AssertFreshCursorStartsPastRetention() =>
+        Assert.True(
+            FeedCursorStore.MaxLookBack > EventStreamingService.UnconfirmedRetention,
+            "these tests rely on a fresh cursor starting already past the retention window");
 
     private EventStreamingService CreateFeed(IFeedCursorStore cursorStore) => new(
         new StubPrinterService(_baseUrl),
