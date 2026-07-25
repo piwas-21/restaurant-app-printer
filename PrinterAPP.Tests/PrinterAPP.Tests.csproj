@@ -75,6 +75,11 @@
     <Compile Include="..\PrinterAPP\Services\PrinterType.cs" Link="Linked\PrinterType.cs" />
     <Compile Include="..\PrinterAPP\Services\IRequestLogService.cs" Link="Linked\IRequestLogService.cs" />
     <Compile Include="..\PrinterAPP\Services\LogEntry.cs" Link="Linked\LogEntry.cs" />
+    <!-- The order feed itself (MAUI-free and deliberately Sentry-free so it links here). Pinned to
+         cover the IsListening state machine: a loop that ends must never leave the feed claiming to
+         listen, or every restart path early-returns and the feed is unrecoverable. See ADR-007. -->
+    <Compile Include="..\PrinterAPP\Services\IEventStreamingService.cs" Link="Linked\IEventStreamingService.cs" />
+    <Compile Include="..\PrinterAPP\Services\EventStreamingService.cs" Link="Linked\EventStreamingService.cs" />
   </ItemGroup>
 
   <ItemGroup>

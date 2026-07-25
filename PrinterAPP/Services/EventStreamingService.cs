@@ -17,6 +17,9 @@ public class EventStreamingService : IEventStreamingService
     // Track processed order IDs to prevent duplicate display/print (with timestamp for cleanup)
     private readonly Dictionary<string, DateTime> _processedOrders = new();
     private readonly object _processedOrdersLock = new();
+    // Operation label on every poll-related entry in the request log / Errors page.
+    private const string PollingLogOperation = "Order Polling";
+
     private const int MaxProcessedOrdersAge = 3600; // 1 hour in seconds
     private DateTime _lastPollTime = DateTime.UtcNow.AddMinutes(-30);  // Start 30 min ago to avoid fetching all historical orders
     private Task? _pollingTask;  // Primary polling mechanism
@@ -66,7 +69,7 @@ public class EventStreamingService : IEventStreamingService
 
         // Use ONLY polling for maximum reliability (SSE was unreliable)
         // Poll every 5 seconds for confirmed orders
-        _pollingTask = PollForOrdersAsync(config.ApiBaseUrl, _cancellationTokenSource.Token);
+        _pollingTask = RunPollLoopAsync(config.ApiBaseUrl, _cancellationTokenSource);
 
         OnConnectionStatusChanged("Connected - polling for orders every 5s");
         _logger.LogInformation("Started POLLING-ONLY mode for order updates (no SSE)");
@@ -560,6 +563,47 @@ public class EventStreamingService : IEventStreamingService
     /// POLLING-ONLY mechanism - polls for confirmed orders every 5 seconds
     /// SSE was unreliable, so we use pure polling for guaranteed delivery
     /// </summary>
+    /// <summary>
+    /// Runs the poll loop and guarantees <see cref="IsListening"/> is cleared once it ends, however
+    /// it ends. Before this, <see cref="StopListeningAsync"/> was the only writer of the flag, so a
+    /// loop that exited by cancellation left the service reporting "listening" over a dead loop —
+    /// and since every restart path (<c>StartListeningAsync</c>, <c>OrderPipeline.StartAsync</c>,
+    /// <c>OrderPipeline.InitializeAsync</c>) early-returns when <c>IsListening</c> is true, the feed
+    /// could not be recovered without a process restart.
+    /// </summary>
+    private async Task RunPollLoopAsync(string apiBaseUrl, CancellationTokenSource ownCts)
+    {
+        try
+        {
+            await PollForOrdersAsync(apiBaseUrl, ownCts.Token);
+        }
+        catch (Exception ex)
+        {
+            // The loop guards each iteration, so reaching here means something escaped one of its own
+            // handlers (or the prologue) and the feed has stopped for good. The finally below makes
+            // that state honest; without this catch it would also be silent, since _pollingTask is
+            // never awaited — a quiet, unexplained feed is the hardest failure to support remotely.
+            // Not SentrySdk here: this file is deliberately free of both MAUI and Sentry so it can be
+            // source-linked into the plain net10.0 test project. Remote visibility is already covered
+            // — IsListening flips false below and the heartbeat reports it alongside
+            // LastSuccessfulPollAt, which is exactly the "listening but not polling" signal that
+            // pair exists to carry.
+            _logger.LogError(ex, "Poll loop terminated unexpectedly");
+            _requestLogService.LogError(
+                PollingLogOperation, "The order feed stopped unexpectedly and is no longer polling", ex.Message);
+            OnConnectionStatusChanged($"Stopped: {ex.Message}");
+        }
+        finally
+        {
+            // Only if a newer StartListeningAsync has not already replaced this loop, so a late-
+            // finishing old loop cannot clear the new one's flag.
+            if (ReferenceEquals(_cancellationTokenSource, ownCts))
+            {
+                _isListening = false;
+            }
+        }
+    }
+
     private async Task PollForOrdersAsync(string apiBaseUrl, CancellationToken cancellationToken)
     {
         const int pollingIntervalSeconds = 5;
@@ -626,7 +670,7 @@ public class EventStreamingService : IEventStreamingService
                     var detail = response.StatusCode == System.Net.HttpStatusCode.Unauthorized
                         ? "The API key is missing or incorrect. Enter the printer API key in Settings, then Save."
                         : bodyPreview;
-                    _requestLogService.LogError("Order Polling", $"Poll failed: {response.StatusCode}", detail);
+                    _requestLogService.LogError(PollingLogOperation, $"Poll failed: {response.StatusCode}", detail);
 
                     OnConnectionStatusChanged($"Poll failed: {response.StatusCode}");
                     continue;
@@ -666,7 +710,7 @@ public class EventStreamingService : IEventStreamingService
                         : failure.Index >= 0 ? $"order at index {failure.Index}" : "the feed response";
                     _logger.LogError("⚠️ Skipping un-deserialisable {Who}: {Message}", who, failure.Message);
                     _requestLogService.LogError(
-                        "Order Polling",
+                        PollingLogOperation,
                         $"Skipped an order that could not be read from the feed ({who})",
                         failure.Message);
                 }
@@ -719,7 +763,7 @@ public class EventStreamingService : IEventStreamingService
             catch (HttpRequestException httpEx)
             {
                 _logger.LogError(httpEx, "❌ Network error during polling");
-                _requestLogService.LogError("Order Polling", "Network error while polling for orders", httpEx.Message);
+                _requestLogService.LogError(PollingLogOperation, "Network error while polling for orders", httpEx.Message);
                 OnConnectionStatusChanged($"Network error: {httpEx.Message}");
             }
             catch (Exception ex)
