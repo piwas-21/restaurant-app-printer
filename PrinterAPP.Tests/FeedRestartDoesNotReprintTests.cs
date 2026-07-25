@@ -190,6 +190,38 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
             + $"Errors seen: [{string.Join(" | ", log.Errors)}]");
     }
 
+    // A print slower than the retention window gets its order declared unrecoverable, and the operator
+    // is told it "may not have printed... reprint it". If the print then completes and they act on
+    // that stale advice, they produce exactly the duplicate ticket this work exists to prevent — so
+    // the warning has to be retracted explicitly.
+    [Fact]
+    public async Task A_print_that_completes_after_being_declared_unrecoverable_retracts_the_warning()
+    {
+        _filterByModifiedSince = false;
+
+        var log = new CapturingRequestLogService();
+        var feed = new EventStreamingService(
+            new StubPrinterService(_baseUrl), log, new InMemoryFeedCursorStore(),
+            NullLogger<EventStreamingService>.Instance);
+
+        var received = new List<string>();
+        feed.OrderReceived += (_, e) => { if (e.Order is not null) received.Add(e.Order.OrderNumber); };
+
+        await feed.StartListeningAsync();
+        Assert.True(await WaitUntilAsync(() => received.Count > 0));
+        Assert.True(
+            await WaitUntilAsync(() => log.Errors.Any(e => e.Contains("too old to fetch", StringComparison.OrdinalIgnoreCase))),
+            "the order was never declared unrecoverable, so there is nothing to retract");
+
+        // The slow print finally lands.
+        feed.ConfirmOrderHandled("ORD-1001");
+        await feed.StopListeningAsync();
+
+        Assert.Contains(
+            log.Warnings,
+            w => w.Contains("did print after all", StringComparison.OrdinalIgnoreCase));
+    }
+
     private EventStreamingService CreateFeed(IFeedCursorStore cursorStore) => new(
         new StubPrinterService(_baseUrl),
         new NoopRequestLogService(),
@@ -310,14 +342,20 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
         public Task SaveConfigurationAsync(PrinterConfiguration config) => Task.CompletedTask;
     }
 
-    /// <summary>Records the operator-facing error text, which is the contract under test.</summary>
+    /// <summary>Records the operator-facing text, which is the contract under test.</summary>
     private sealed class CapturingRequestLogService : NoopRequestLogService
     {
         private readonly List<string> _errors = new();
+        private readonly List<string> _warnings = new();
 
         public IReadOnlyList<string> Errors
         {
             get { lock (_errors) { return _errors.ToList(); } }
+        }
+
+        public IReadOnlyList<string> Warnings
+        {
+            get { lock (_warnings) { return _warnings.ToList(); } }
         }
 
         public override void LogError(string operation, string message, string? details = null)
@@ -326,6 +364,15 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
             lock (_errors)
             {
                 _errors.Add($"{operation}: {message}");
+            }
+        }
+
+        public override void LogWarning(
+            string operation, string message, string? details = null, string? source = null)
+        {
+            lock (_warnings)
+            {
+                _warnings.Add($"{operation}: {message}");
             }
         }
     }
@@ -344,7 +391,7 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
         public void LogPrintRequest(string printerType, int orderId, string printerName, string? printContent = null) { }
         public void LogPrintResponse(string printerType, int orderId, bool success, string? error = null, string? details = null) { }
         public virtual void LogError(string operation, string message, string? details = null) { }
-        public void LogWarning(string operation, string message, string? details = null, string? source = null) { }
+        public virtual void LogWarning(string operation, string message, string? details = null, string? source = null) { }
         public void ClearLogs() => LogAdded?.Invoke(this, new LogEntry());
     }
 }
