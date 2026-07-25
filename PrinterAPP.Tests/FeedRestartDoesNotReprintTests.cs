@@ -54,6 +54,8 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
 
         await first.StartListeningAsync();
         Assert.True(await WaitUntilAsync(() => firstRun.Count > 0), "the feed never delivered the order");
+        // What OrderPipeline does once the order has printed.
+        first.ConfirmOrderHandled("ORD-1001");
         await first.StopListeningAsync();
 
         Assert.Equal(new[] { "ORD-1001" }, firstRun);
@@ -79,8 +81,10 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
             $"order reprinted after restart: [{string.Join(", ", secondRun)}] — this is the duplicate-ticket bug.");
     }
 
+    // Named for what it actually pins: a confirmed order reaches the cursor. It does NOT distinguish
+    // the in-loop write from the stop-flush — both run before the assertion — and it is not meant to.
     [Fact]
-    public async Task The_cursor_is_persisted_when_a_batch_is_processed()
+    public async Task A_confirmed_order_reaches_the_persisted_cursor()
     {
         var cursorStore = new InMemoryFeedCursorStore();
         var feed = CreateFeed(cursorStore);
@@ -89,11 +93,47 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
 
         await feed.StartListeningAsync();
         Assert.True(await WaitUntilAsync(() => received.Count > 0));
+
+        // Stands in for OrderPipeline, which confirms only after the order has been through the
+        // printers. Until it does, the entry is deliberately NOT persistable.
+        Assert.DoesNotContain("ORD-1001", cursorStore.Load().ProcessedOrders.Keys);
+        feed.ConfirmOrderHandled("ORD-1001");
+
         await feed.StopListeningAsync();
 
         var saved = cursorStore.Load();
         Assert.Contains("ORD-1001", saved.ProcessedOrders.Keys);
         Assert.True(saved.LastPollTime > DateTime.UtcNow.AddMinutes(-5), "the cursor did not advance");
+    }
+
+    // The other half of the guarantee, and the one that protects the kitchen rather than the paper
+    // roll. An order is marked processed the moment it is dispatched, but printing happens
+    // asynchronously afterwards; if the process is killed in between, the order never printed. It
+    // must therefore be re-driven on the next start, not suppressed. A missing kitchen ticket means
+    // food is never cooked — strictly worse than a duplicate.
+    [Fact]
+    public async Task An_order_dispatched_but_never_confirmed_is_re_driven_after_a_restart()
+    {
+        var cursorStore = new InMemoryFeedCursorStore();
+
+        var first = CreateFeed(cursorStore);
+        var firstRun = new List<string>();
+        first.OrderReceived += (_, e) => { if (e.Order is not null) firstRun.Add(e.Order.OrderNumber); };
+
+        await first.StartListeningAsync();
+        Assert.True(await WaitUntilAsync(() => firstRun.Count > 0));
+        // NO ConfirmOrderHandled — stands in for a kill between dispatch and print.
+        await first.StopListeningAsync();
+
+        var second = CreateFeed(cursorStore);
+        var secondRun = new List<string>();
+        second.OrderReceived += (_, e) => { if (e.Order is not null) secondRun.Add(e.Order.OrderNumber); };
+
+        await second.StartListeningAsync();
+        var reDriven = await WaitUntilAsync(() => secondRun.Count > 0);
+        await second.StopListeningAsync();
+
+        Assert.True(reDriven, "an unprinted order was suppressed after a restart — the ticket is lost.");
     }
 
     private EventStreamingService CreateFeed(IFeedCursorStore cursorStore) => new(

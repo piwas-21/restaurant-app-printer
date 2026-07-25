@@ -21,10 +21,21 @@ public class EventStreamingService : IEventStreamingService
     // AND re-printed. Survivable while a restart meant a person relaunching the app; with the Android
     // foreground service restarting itself it would put duplicate tickets on the pass.
     private readonly Dictionary<string, DateTime> _processedOrders;
+
+    // The subset of _processedOrders that is safe to persist. An order joins it only once the print
+    // path has confirmed it (see ConfirmOrderHandled); error-log keys join immediately, since
+    // "logged" completes the moment it is marked. Everything else stays in memory only, so a process
+    // killed between dispatch and print re-drives the order instead of suppressing it forever.
+    private readonly HashSet<string> _persistableOrders;
+
     private readonly object _processedOrdersLock = new();
     // Operation label on every poll-related entry in the request log / Errors page.
     private const string PollingLogOperation = "Order Polling";
 
+    // Serialises the whole snapshot-then-write, so two threads cannot interleave such that an older
+    // snapshot lands last and drops a dedup entry that a newer one had captured. Never taken while
+    // holding _processedOrdersLock — always the other way round.
+    private readonly object _cursorPersistLock = new();
     private const int MaxProcessedOrdersAge = 3600; // 1 hour in seconds
     private DateTime _lastPollTime;
     private Task? _pollingTask;  // Primary polling mechanism
@@ -62,6 +73,8 @@ public class EventStreamingService : IEventStreamingService
         var cursor = _cursorStore.Load();
         _lastPollTime = cursor.LastPollTime;
         _processedOrders = cursor.ProcessedOrders;
+        // Everything that was persisted had already been confirmed, so it stays persistable.
+        _persistableOrders = new HashSet<string>(cursor.ProcessedOrders.Keys);
     }
 
     public async Task StartListeningAsync(CancellationToken cancellationToken = default)
@@ -534,26 +547,57 @@ public class EventStreamingService : IEventStreamingService
     /// </param>
     private void PersistCursor(bool force)
     {
-        if (!force && DateTime.UtcNow - _lastCursorSaveAt < CursorSaveInterval)
+        // Snapshot AND write under one lock. Holding it only for the snapshot let a slower thread's
+        // older copy win the file race and drop a dedup entry a newer copy had already captured —
+        // which would reprint that order after the next restart, the exact thing this exists to stop.
+        lock (_cursorPersistLock)
+        {
+            if (!force && DateTime.UtcNow - _lastCursorSaveAt < CursorSaveInterval)
+            {
+                return;
+            }
+
+            _lastCursorSaveAt = DateTime.UtcNow;
+
+            FeedCursor snapshot;
+            lock (_processedOrdersLock)
+            {
+                snapshot = new FeedCursor
+                {
+                    LastPollTime = _lastPollTime,
+                    // Confirmed entries only — see _persistableOrders.
+                    ProcessedOrders = _processedOrders
+                        .Where(kvp => _persistableOrders.Contains(kvp.Key))
+                        .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                };
+            }
+
+            _cursorStore.Save(snapshot);
+        }
+    }
+
+    /// <inheritdoc />
+    public void ConfirmOrderHandled(string orderNumber)
+    {
+        if (string.IsNullOrEmpty(orderNumber))
         {
             return;
         }
 
-        _lastCursorSaveAt = DateTime.UtcNow;
-
-        FeedCursor snapshot;
         lock (_processedOrdersLock)
         {
-            // Copied under the lock: the store serialises this, and the live dictionary is mutated by
-            // the poll loop.
-            snapshot = new FeedCursor
+            // Only for orders we actually dispatched; a confirmation for something never marked
+            // would otherwise create a persistable entry with no timestamp to age out on.
+            if (!_processedOrders.ContainsKey(orderNumber))
             {
-                LastPollTime = _lastPollTime,
-                ProcessedOrders = new Dictionary<string, DateTime>(_processedOrders),
-            };
+                return;
+            }
+
+            _persistableOrders.Add(orderNumber);
         }
 
-        _cursorStore.Save(snapshot);
+        // Forced: this is the write that makes the difference between a duplicate ticket and none.
+        PersistCursor(force: true);
     }
 
     /// <summary>
@@ -570,6 +614,7 @@ public class EventStreamingService : IEventStreamingService
         foreach (var orderNumber in oldOrders)
         {
             _processedOrders.Remove(orderNumber);
+            _persistableOrders.Remove(orderNumber);
         }
 
         if (oldOrders.Count > 0)
@@ -743,6 +788,12 @@ public class EventStreamingService : IEventStreamingService
                 // skipped (surfaced on the Errors/Diagnostics page) and the rest of the batch still prints.
                 var parseResult = OrderFeedParser.Parse(json);
 
+                // Set only where an entry is genuinely ADDED to the persistable set — an already-known
+                // failure hits `continue` below and changes nothing, so inferring this from
+                // parseResult.Errors would force a full write on every poll for as long as the
+                // backend keeps re-emitting the same bad order, defeating the debounce entirely.
+                var dedupChanged = false;
+
                 foreach (var failure in parseResult.Errors)
                 {
                     // If the bad order has an extractable number, dedupe the error log through the same
@@ -760,6 +811,14 @@ public class EventStreamingService : IEventStreamingService
                             continue;
                         }
                         MarkOrderAsProcessed(errorKey);
+                        // "Logged" completes at the moment of marking, so unlike a print this is
+                        // safe to persist straight away — it stops a re-emitted bad order re-logging
+                        // the identical error after every restart.
+                        lock (_processedOrdersLock)
+                        {
+                            _persistableOrders.Add(errorKey);
+                        }
+                        dedupChanged = true;
                     }
 
                     var who = !string.IsNullOrEmpty(failure.OrderNumber)
@@ -774,10 +833,6 @@ public class EventStreamingService : IEventStreamingService
 
                 var itemCount = parseResult.Orders.Count;
                 _logger.LogInformation("   Orders found: {Count}", itemCount);
-
-                // Whether this batch changed the dedup set — decides between an immediate cursor
-                // write and the debounced one below.
-                var dedupChanged = parseResult.Errors.Any(f => !string.IsNullOrEmpty(f.OrderNumber));
 
                 if (parseResult.Orders.Count > 0)
                 {
@@ -795,7 +850,8 @@ public class EventStreamingService : IEventStreamingService
                         }
 
                         MarkOrderAsProcessed(order.OrderNumber);
-                        dedupChanged = true;
+                        // Deliberately NOT dedupChanged: this order is not persistable until the
+                        // print path confirms it (ConfirmOrderHandled), which forces its own write.
 
                         var orderEvent = new OrderEvent
                         {

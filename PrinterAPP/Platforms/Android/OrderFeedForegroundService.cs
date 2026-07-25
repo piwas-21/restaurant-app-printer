@@ -37,6 +37,7 @@ public class OrderFeedForegroundService : Service
     private CancellationTokenSource? _cts;
     private IOrderPipeline? _pipeline;
     private IEventStreamingService? _feed;
+    private IFeedWatchdog? _watchdog;
     private ILogger<OrderFeedForegroundService>? _logger;
     private bool _notificationFailureReported;
 
@@ -61,6 +62,7 @@ public class OrderFeedForegroundService : Service
         {
             _pipeline ??= services.GetService<IOrderPipeline>();
             _feed ??= services.GetService<IEventStreamingService>();
+            _watchdog ??= services.GetService<IFeedWatchdog>();
             _logger ??= services.GetService<ILogger<OrderFeedForegroundService>>();
         }
 
@@ -130,6 +132,11 @@ public class OrderFeedForegroundService : Service
             {
                 await _pipeline.InitializeAsync(CancellationToken.None);
             }
+
+            // Started here as well as from IBackgroundRunner: this service is the ONLY path taken
+            // after BOOT_COMPLETED or a START_STICKY process recreation, where no Activity exists to
+            // run the runner — exactly the unattended cases the watchdog is for. Idempotent.
+            _watchdog?.Start();
         }
         catch (Exception ex)
         {

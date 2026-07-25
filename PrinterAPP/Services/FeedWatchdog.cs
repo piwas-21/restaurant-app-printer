@@ -74,12 +74,14 @@ public class FeedWatchdog : IFeedWatchdog
 
     private async Task CheckAsync(CancellationToken cancellationToken)
     {
-        // Falls back to when the feed started, so a feed that simply has not completed its first 5s
-        // poll yet is not mistaken for a stalled one and restarted in a loop.
-        var lastProgressAt = _feed.LastSuccessfulPollAt ?? _pipeline.FeedStartedAt;
-
         var action = FeedWatchdogDecision.Decide(
-            _pipeline.StoppedOnPurpose, _feed.IsListening, lastProgressAt, DateTime.UtcNow, StaleThreshold);
+            _pipeline.StoppedOnPurpose,
+            await _pipeline.ShouldBeListeningAsync(),
+            _feed.IsListening,
+            _feed.LastSuccessfulPollAt,
+            _pipeline.FeedStartedAt,
+            DateTime.UtcNow,
+            StaleThreshold);
 
         switch (action)
         {
@@ -91,13 +93,11 @@ public class FeedWatchdog : IFeedWatchdog
                 break;
 
             case FeedWatchdogAction.Restart:
-                var age = $"{(DateTime.UtcNow - lastProgressAt).TotalMinutes:F1} min";
-                _logger.LogWarning(
-                    "Watchdog: feed listening but no progress for {Age} — restarting", age);
+                _logger.LogWarning("Watchdog: feed listening but not polling — restarting it");
                 _requestLogService.LogWarning(
                     "Feed Watchdog",
                     "The order feed stopped fetching orders and was restarted automatically",
-                    $"No successful poll for {age}");
+                    $"Last successful poll: {_feed.LastSuccessfulPollAt?.ToString("o") ?? "never"}");
                 SentrySdk.CaptureMessage("Order feed stalled; watchdog restarted it", SentryLevel.Warning);
                 await _pipeline.RestartAsync(cancellationToken);
                 break;

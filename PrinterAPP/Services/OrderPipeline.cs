@@ -25,7 +25,7 @@ public class OrderPipeline : IOrderPipeline
     private bool _initialized;
 
     // Set by StopAsync, cleared by StartAsync. The watchdog must never undo a deliberate stop —
-    // and it cannot infer intent from the config, because ShouldAutoStartFeed treats a configured
+    // and it cannot infer intent from the config, because FeedStartupPolicy treats a configured
     // ApiBaseUrl as intent-to-listen on Android, which is true at launch but wrong here: it would
     // restart the feed seconds after a person tapped Stop. Deliberately not persisted, matching the
     // documented behaviour that a Stop tap lasts the session, not across restarts.
@@ -37,6 +37,10 @@ public class OrderPipeline : IOrderPipeline
 
     /// <inheritdoc />
     public bool StoppedOnPurpose => _stoppedOnPurpose;
+
+    /// <inheritdoc />
+    public async Task<bool> ShouldBeListeningAsync() =>
+        FeedStartupPolicy.ShouldBeListening(await _printerService.LoadConfigurationAsync());
 
     // The feed is the single source of truth for running-ness; keeping a second bool here would let
     // the two disagree after an internal feed failure.
@@ -85,7 +89,7 @@ public class OrderPipeline : IOrderPipeline
                 _initialized = true;
             }
 
-            if (ShouldAutoStartFeed(config) && !_feed.IsListening)
+            if (FeedStartupPolicy.ShouldBeListening(config) && !_feed.IsListening)
             {
                 await StartFeedAsync(cancellationToken);
             }
@@ -166,19 +170,6 @@ public class OrderPipeline : IOrderPipeline
         _logger.LogInformation("Order pipeline started — feed listening");
     }
 
-    // Windows keeps honouring the persisted IsServiceRunning flag. On Android the manual Start
-    // control was historically absent and existing installs could never persist
-    // IsServiceRunning=true, so a configured ApiBaseUrl is treated as intent to listen. ApiBaseUrl
-    // defaults to a non-empty value, so in practice the Android feed always comes up — the intended
-    // behaviour for an always-on printer appliance (a Stop tap lasts the session, not across
-    // restarts). Lifted verbatim from MainPage, which used to own this decision.
-    private static bool ShouldAutoStartFeed(PrinterConfiguration config) =>
-#if WINDOWS
-        config.IsServiceRunning;
-#else
-        config.IsServiceRunning || !string.IsNullOrWhiteSpace(config.ApiBaseUrl);
-#endif
-
     private void OnOrderReceived(object? sender, OrderEvent orderEvent)
     {
         // Deliberately not awaited, and deliberately NOT marshalled onto the UI thread. Printing is
@@ -210,6 +201,11 @@ public class OrderPipeline : IOrderPipeline
 
             (cashier, frontKitchen, backKitchen) =
                 await _orderPrintService.PrintOrderToAllPrintersAsync(order);
+
+            // The order has been through the printers, so its dedup entry may now be persisted.
+            // Confirming only here — not when the feed dispatched it — is what stops a process kill
+            // between dispatch and print permanently suppressing a ticket that never came out.
+            _feed.ConfirmOrderHandled(order.OrderNumber);
         }
         catch (Exception ex)
         {

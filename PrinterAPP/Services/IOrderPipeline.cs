@@ -50,10 +50,19 @@ public interface IOrderPipeline
     bool StoppedOnPurpose { get; }
 
     /// <summary>
-    /// When the current listening session began. The watchdog uses it as the grace-period reference
-    /// until the feed reports its first successful poll.
+    /// When the current listening session began. The watchdog counts this as progress, so a restart
+    /// gives the feed a fresh window to complete a poll in.
     /// </summary>
     DateTime FeedStartedAt { get; }
+
+    /// <summary>
+    /// Whether the saved configuration says this device should be running the feed — the same
+    /// decision <see cref="InitializeAsync"/> makes at launch. The watchdog needs it so that "not
+    /// listening" is not read as failure on a device that was deliberately left stopped (Windows
+    /// persists that in <c>IsServiceRunning</c>, which outlives the session-scoped
+    /// <see cref="StoppedOnPurpose"/>) or that has no API URL configured at all.
+    /// </summary>
+    Task<bool> ShouldBeListeningAsync();
 
     /// <summary>
     /// Stops the order feed. The telemetry heartbeat deliberately keeps running: a device whose feed

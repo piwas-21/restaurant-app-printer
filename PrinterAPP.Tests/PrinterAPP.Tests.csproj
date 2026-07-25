@@ -87,6 +87,7 @@
     <Compile Include="..\PrinterAPP\Services\EventStreamingService.cs" Link="Linked\EventStreamingService.cs" />
     <!-- Watchdog decision rules, extracted pure so they are testable without the pipeline's
          collaborators (nor MAUI/Sentry). Auto-restarting a live feed must not misfire. -->
+    <Compile Include="..\PrinterAPP\Services\FeedStartupPolicy.cs" Link="Linked\FeedStartupPolicy.cs" />
     <Compile Include="..\PrinterAPP\Services\FeedWatchdogDecision.cs" Link="Linked\FeedWatchdogDecision.cs" />
   </ItemGroup>
 

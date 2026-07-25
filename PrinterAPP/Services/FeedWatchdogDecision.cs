@@ -3,10 +3,10 @@ namespace PrinterAPP.Services;
 /// <summary>What the watchdog should do about the feed on this tick.</summary>
 public enum FeedWatchdogAction
 {
-    /// <summary>Healthy, or deliberately stopped — leave it alone.</summary>
+    /// <summary>Healthy, or not supposed to be running — leave it alone.</summary>
     None,
 
-    /// <summary>Not listening at all; start it.</summary>
+    /// <summary>Should be listening and is not; start it.</summary>
     Start,
 
     /// <summary>Listening but not producing polls; stop and start it.</summary>
@@ -14,32 +14,35 @@ public enum FeedWatchdogAction
 }
 
 /// <summary>
-/// The watchdog's decision, as a pure function so it can be unit-tested without the pipeline's eight
+/// The watchdog's decision, as a pure function so it can be unit-tested without the pipeline's
 /// collaborators (and without MAUI or Sentry) — the same "extract the decidable part" shape as
 /// <see cref="PrinterTransportResolver"/> and <see cref="OrderFeedParser"/>.
-/// <para>Auto-restarting a live restaurant's order feed is the kind of logic that must not misfire,
-/// and the case that matters most is the one that is easiest to get wrong: never undoing a stop a
-/// person actually asked for.</para>
+/// <para>Auto-restarting a live restaurant's order feed is logic that must not misfire, and the ways
+/// it can misfire are all negative cases: restarting something a person stopped, starting something
+/// that was never meant to run, or hammering restart once a minute through a backend outage. All of
+/// them are decided here rather than in the timer loop, so all of them are testable.</para>
 /// </summary>
 public static class FeedWatchdogDecision
 {
-    /// <param name="lastProgressAt">
-    /// The last successful poll, or — when there has not been one yet — the moment the feed was
-    /// started. Collapsing the two here is what gives a freshly started feed its grace period: a
-    /// feed that has simply not had time to complete its first 5s poll must not be treated as
-    /// stalled and restarted in a loop.
+    /// <param name="stoppedOnPurpose">A person stopped the feed during this session.</param>
+    /// <param name="shouldBeListening">
+    /// The saved configuration says this device should be running the feed. Without it, "not
+    /// listening" would be read as failure even when the operator had deliberately left it stopped
+    /// (Windows persists that intent in <c>IsServiceRunning</c>, which outlives the session-scoped
+    /// <paramref name="stoppedOnPurpose"/> flag) or when the device has no API URL configured at all.
     /// </param>
+    /// <param name="lastSuccessfulPollAt">Null until the feed completes its first poll in this process.</param>
+    /// <param name="feedStartedAt">When the current listening session began.</param>
     public static FeedWatchdogAction Decide(
         bool stoppedOnPurpose,
+        bool shouldBeListening,
         bool isListening,
-        DateTime lastProgressAt,
+        DateTime? lastSuccessfulPollAt,
+        DateTime feedStartedAt,
         DateTime utcNow,
         TimeSpan staleThreshold)
     {
-        // A deliberate stop outranks everything. The pipeline cannot infer this from configuration:
-        // on Android a configured ApiBaseUrl counts as intent-to-listen, which is right at launch and
-        // wrong here — it would restart the feed seconds after somebody tapped Stop.
-        if (stoppedOnPurpose)
+        if (stoppedOnPurpose || !shouldBeListening)
         {
             return FeedWatchdogAction.None;
         }
@@ -48,6 +51,17 @@ public static class FeedWatchdogDecision
         {
             return FeedWatchdogAction.Start;
         }
+
+        // The LATER of "when this listening session started" and "when it last succeeded".
+        //
+        // Taking the max is what stops a backend outage becoming a restart-every-minute loop:
+        // LastSuccessfulPollAt is never reset by stop/start, so once a feed has succeeded even once,
+        // a plain `lastSuccessfulPollAt ?? feedStartedAt` would keep returning that same frozen
+        // timestamp after every restart and the feed would be judged stalled forever. Counting the
+        // restart itself as progress gives each attempt a fresh threshold to beat.
+        var lastProgressAt = lastSuccessfulPollAt is { } polled && polled > feedStartedAt
+            ? polled
+            : feedStartedAt;
 
         return utcNow - lastProgressAt >= staleThreshold
             ? FeedWatchdogAction.Restart
