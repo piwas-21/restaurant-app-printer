@@ -17,6 +17,9 @@ public class EventStreamingService : IEventStreamingService
     // Track processed order IDs to prevent duplicate display/print (with timestamp for cleanup)
     private readonly Dictionary<string, DateTime> _processedOrders = new();
     private readonly object _processedOrdersLock = new();
+    // Operation label on every poll-related entry in the request log / Errors page.
+    private const string PollingLogOperation = "Order Polling";
+
     private const int MaxProcessedOrdersAge = 3600; // 1 hour in seconds
     private DateTime _lastPollTime = DateTime.UtcNow.AddMinutes(-30);  // Start 30 min ago to avoid fetching all historical orders
     private Task? _pollingTask;  // Primary polling mechanism
@@ -587,7 +590,7 @@ public class EventStreamingService : IEventStreamingService
             // pair exists to carry.
             _logger.LogError(ex, "Poll loop terminated unexpectedly");
             _requestLogService.LogError(
-                "Order Polling", "The order feed stopped unexpectedly and is no longer polling", ex.Message);
+                PollingLogOperation, "The order feed stopped unexpectedly and is no longer polling", ex.Message);
             OnConnectionStatusChanged($"Stopped: {ex.Message}");
         }
         finally
@@ -667,7 +670,7 @@ public class EventStreamingService : IEventStreamingService
                     var detail = response.StatusCode == System.Net.HttpStatusCode.Unauthorized
                         ? "The API key is missing or incorrect. Enter the printer API key in Settings, then Save."
                         : bodyPreview;
-                    _requestLogService.LogError("Order Polling", $"Poll failed: {response.StatusCode}", detail);
+                    _requestLogService.LogError(PollingLogOperation, $"Poll failed: {response.StatusCode}", detail);
 
                     OnConnectionStatusChanged($"Poll failed: {response.StatusCode}");
                     continue;
@@ -707,7 +710,7 @@ public class EventStreamingService : IEventStreamingService
                         : failure.Index >= 0 ? $"order at index {failure.Index}" : "the feed response";
                     _logger.LogError("⚠️ Skipping un-deserialisable {Who}: {Message}", who, failure.Message);
                     _requestLogService.LogError(
-                        "Order Polling",
+                        PollingLogOperation,
                         $"Skipped an order that could not be read from the feed ({who})",
                         failure.Message);
                 }
@@ -760,7 +763,7 @@ public class EventStreamingService : IEventStreamingService
             catch (HttpRequestException httpEx)
             {
                 _logger.LogError(httpEx, "❌ Network error during polling");
-                _requestLogService.LogError("Order Polling", "Network error while polling for orders", httpEx.Message);
+                _requestLogService.LogError(PollingLogOperation, "Network error while polling for orders", httpEx.Message);
                 OnConnectionStatusChanged($"Network error: {httpEx.Message}");
             }
             catch (Exception ex)
