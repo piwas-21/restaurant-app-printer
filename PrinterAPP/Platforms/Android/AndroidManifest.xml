@@ -11,9 +11,44 @@
 				android:name="android.support.FILE_PROVIDER_PATHS"
 				android:resource="@xml/file_paths" />
 		</provider>
+
+		<!--
+			The <service> element itself is generated from the [Service] attribute on
+			OrderFeedForegroundService (name, exported, foregroundServiceType); this declaration adds
+			only the specialUse justification, which the attribute cannot emit. Google Play requires
+			the property when reviewing a specialUse foreground service — it has no runtime effect, so
+			it is here for the day the app is submitted rather than sideloaded. See ADR-007.
+		-->
+		<service
+			android:name="com.companyname.printerapp.OrderFeedForegroundService"
+			android:exported="false"
+			android:foregroundServiceType="specialUse">
+			<property
+				android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+				android:value="Fixed, mains-powered restaurant appliance: continuously polls the tenant's order feed and drives thermal receipt printers so kitchen tickets print the moment an order is confirmed." />
+		</service>
 	</application>
 	<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 	<uses-permission android:name="android.permission.INTERNET" />
 	<!-- Lets the in-app updater launch the installer for the downloaded APK. -->
 	<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+
+	<!--
+		Background order feed (OrderFeedForegroundService). Without a foreground service the app is a
+		plain backgrounded process: Doze/App Standby throttle its network and timers, and the
+		low-memory killer reclaims it — so orders stopped printing whenever staff minimised the app.
+
+		specialUse rather than dataSync: Android 15+ caps dataSync foreground services at 6 hours per
+		day, which would end the service partway through a restaurant's service day. See
+		docs/adr/ADR-007-android-foreground-service.md for the trade-off and the Play Store caveat.
+	-->
+	<uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+	<uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+	<!-- Android 13+ gates the service's status notification behind runtime consent. -->
+	<uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+	<!-- A foreground service does not by itself keep the CPU awake; without this the 5s poll stops
+	     firing once the screen is off. -->
+	<uses-permission android:name="android.permission.WAKE_LOCK" />
+	<!-- Brings the order feed back up after a power cut or overnight reboot (see BootReceiver). -->
+	<uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 </manifest>

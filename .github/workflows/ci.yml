@@ -47,6 +47,15 @@ jobs:
       - name: Run unit tests
         run: dotnet test PrinterAPP.Tests/PrinterAPP.Tests.csproj -c Release --nologo
 
+      # BUILD only, never test: the E2E cases are SkippableFact-gated on a reachable backend and
+      # would all skip here, which buys nothing and invites someone to "fix" the skips later.
+      # The point is compilation. PrinterAPP.E2E is not in the .sln and its own workflow runs on a
+      # schedule, so when it source-links a PrinterAPP/** file whose signature changed, the break was
+      # invisible to the PR that caused it and surfaced days later, detached from its cause. That
+      # happened with the IFeedCursorStore constructor change.
+      - name: Build E2E project (compile-only guard on source-linked files)
+        run: dotnet build PrinterAPP.E2E/PrinterAPP.E2E.csproj -c Release --nologo
+
   file_length:
     name: file-length (CLAUDE.md §4)
     runs-on: ubuntu-latest

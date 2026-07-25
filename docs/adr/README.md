@@ -16,6 +16,7 @@ Index of ADRs for the RUMI Printer-App. New ADRs are numbered sequentially with 
 | [004](ADR-004-github-release-auto-update.md) | GitHub-release-based auto-update | Accepted | 2026-04-29 | distribution, release |
 | [005](ADR-005-multi-target-maui-android.md) | Multi-target MAUI build (Windows + Android; iOS deferred) | Accepted | 2026-06-01 | platform, build |
 | [006](ADR-006-printer-transport-abstraction.md) | IPrinterTransport abstraction; network TCP default | Accepted | 2026-06-01 | printing, platform, testing |
+| [007](ADR-007-android-foreground-service.md) | Android background execution via a specialUse foreground service | Accepted | 2026-07-25 | platform, reliability |
 
 ## Conventions
 

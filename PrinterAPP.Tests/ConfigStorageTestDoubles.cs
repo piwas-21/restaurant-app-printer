@@ -36,6 +36,37 @@ public sealed class FakeAppDataPathProvider : IAppDataPathProvider, IDisposable
     }
 }
 
+/// <summary>
+/// In-memory <see cref="IFeedCursorStore"/>. Shared between two <c>EventStreamingService</c>
+/// instances it stands in for "the same device across a process restart", which is the scenario the
+/// cursor exists to survive.
+/// </summary>
+public sealed class InMemoryFeedCursorStore : IFeedCursorStore
+{
+    private PrinterAPP.Models.FeedCursor _cursor = new()
+    {
+        LastPollTime = DateTime.UtcNow - FeedCursorStore.MaxLookBack,
+    };
+
+    public int SaveCount { get; private set; }
+
+    public PrinterAPP.Models.FeedCursor Load() => new()
+    {
+        LastPollTime = _cursor.LastPollTime,
+        ProcessedOrders = new Dictionary<string, DateTime>(_cursor.ProcessedOrders),
+    };
+
+    public void Save(PrinterAPP.Models.FeedCursor cursor)
+    {
+        SaveCount++;
+        _cursor = new PrinterAPP.Models.FeedCursor
+        {
+            LastPollTime = cursor.LastPollTime,
+            ProcessedOrders = new Dictionary<string, DateTime>(cursor.ProcessedOrders),
+        };
+    }
+}
+
 /// <summary>In-memory <see cref="ISecretStore"/> with switchable failure modes.</summary>
 public sealed class FakeSecretStore : ISecretStore
 {
