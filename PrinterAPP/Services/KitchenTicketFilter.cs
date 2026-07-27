@@ -1,0 +1,86 @@
+using PrinterAPP.Models;
+
+namespace PrinterAPP.Services;
+
+/// <summary>
+/// Selects the part of an order that one kitchen is responsible for, as a pure function over the
+/// item tree — the same "extract the decidable part" shape as <see cref="FeedWatchdogDecision"/>
+/// and <see cref="OrderFeedParser"/>.
+/// <para>Backend PR #237 (issue #234) made <c>OrderDto.Items</c> ROOT-ONLY: a bundle's components
+/// and an item's add-on sides are no longer top-level rows, they hang off their parent in
+/// <see cref="OrderItem.SideItems"/>, to arbitrary depth. Every routing decision therefore has to
+/// walk the whole tree. Reading only the top level meant a "Menu Deal" whose product is
+/// FrontKitchen but which contains BackKitchen fries produced NO back-kitchen ticket at all, and
+/// printed the fries on the front kitchen's ticket instead.</para>
+/// </summary>
+public static class KitchenTicketFilter
+{
+    /// <summary>Backend sentinel for "no kitchen prepares this line" (see OrderItemDto.KitchenType).</summary>
+    private const string NoKitchen = "None";
+
+    /// <summary>
+    /// The item tree as <paramref name="kitchenType"/> should see it: every line this kitchen makes,
+    /// each exactly once, still nested under its parent so a component reads as part of its combo.
+    /// A parent this kitchen does NOT make is kept only when it has a matching descendant, and then
+    /// only as context for it (the caller renders such a line differently — see
+    /// <c>OrderPrintService.AppendKitchenItem</c>). Empty means "print nothing for this kitchen".
+    /// </summary>
+    public static List<OrderItem> ItemsForKitchen(IEnumerable<OrderItem>? items, string kitchenType)
+    {
+        if (items is null)
+        {
+            return new List<OrderItem>();
+        }
+
+        return items
+            .Select(item => FilterItem(item, kitchenType, ridesWithParent: false))
+            .OfType<OrderItem>()
+            .ToList();
+    }
+
+    /// <param name="ridesWithParent">
+    /// This item names no kitchen of its own and its parent is being made here, so it comes along.
+    /// </param>
+    /// <returns>The item with its children filtered, or null when nothing under it belongs here.</returns>
+    private static OrderItem? FilterItem(OrderItem item, string kitchenType, bool ridesWithParent)
+    {
+        var madeHere = string.Equals(item.KitchenType, kitchenType, StringComparison.OrdinalIgnoreCase)
+            || ridesWithParent;
+
+        var children = new List<OrderItem>();
+        foreach (var child in item.SideItems ?? Enumerable.Empty<OrderItem>())
+        {
+            // A child that names a kitchen is a dish, and is routed by that name — which is how a
+            // BackKitchen component of a FrontKitchen combo reaches the back kitchen instead of
+            // riding along on the front kitchen's ticket. A child that names none is a modifier of
+            // its parent (an extra sauce, a drink): it belongs wherever the parent is being made,
+            // and is dropped from tickets that only carry the parent as context.
+            var childRidesAlong = madeHere && !DeclaresKitchen(child);
+            var filteredChild = FilterItem(child, kitchenType, childRidesAlong);
+            if (filteredChild is not null)
+            {
+                children.Add(filteredChild);
+            }
+        }
+
+        if (!madeHere && children.Count == 0)
+        {
+            return null;
+        }
+
+        // A copy: the order instance is shared with the history list and the UI, and the other
+        // kitchen's ticket filters the very same tree.
+        var routed = item.WithSideItems(children);
+        // Reaching here without madeHere means the line survived only to carry a component below
+        // it. The renderer cannot work this out for itself — "no KitchenType" means "made wherever
+        // the parent is", so a rode-along drink and a context-only combo both fail a plain
+        // KitchenType comparison against this ticket's kitchen.
+        routed.IsContextOnly = !madeHere;
+        return routed;
+    }
+
+    /// <summary>True when the item names a kitchen of its own, rather than inheriting its parent's.</summary>
+    private static bool DeclaresKitchen(OrderItem item) =>
+        !string.IsNullOrWhiteSpace(item.KitchenType)
+        && !string.Equals(item.KitchenType, NoKitchen, StringComparison.OrdinalIgnoreCase);
+}

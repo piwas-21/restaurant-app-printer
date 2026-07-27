@@ -36,6 +36,10 @@ public class OrderPrintService : IOrderPrintService
     private const string EXTRA_DARK_OFF = ESC_BOLD_OFF + ESC_EMPHASIZED_OFF; // Turn off all emphasis
     private const string ESC_FEED_LINES = "\x1B\x64\x05"; // Feed 5 lines before cut
 
+    // KitchenType values as the backend emits them (OrderItemDto.KitchenType).
+    private const string FRONT_KITCHEN = "FrontKitchen";
+    private const string BACK_KITCHEN = "BackKitchen";
+
     public OrderPrintService(
         IPrinterService printerService,
         IRequestLogService requestLogService,
@@ -94,11 +98,18 @@ public class OrderPrintService : IOrderPrintService
             _logger.LogError(ex, "Error printing to cashier");
         }
 
-        // 2. Check which kitchens have items
-        var hasFrontKitchenItems = order.Items?.Any(i =>
-            string.Equals(i.KitchenType, "FrontKitchen", StringComparison.OrdinalIgnoreCase)) ?? false;
-        var hasBackKitchenItems = order.Items?.Any(i =>
-            string.Equals(i.KitchenType, "BackKitchen", StringComparison.OrdinalIgnoreCase)) ?? false;
+        // 2. Route the item tree to each kitchen.
+        //
+        // Both tickets are built up front so that "does this kitchen get a ticket at all" is
+        // answered by the very thing that will be printed — the two used to be decided separately,
+        // and separately is how they drifted apart. Since backend PR #237 (issue #234) made
+        // OrderDto.Items root-only, a top-level scan misses every bundle component: a FrontKitchen
+        // combo containing BackKitchen fries produced no back-kitchen ticket, and printed the fries
+        // on the front kitchen's. KitchenTicketFilter walks the whole tree instead.
+        var frontKitchenOrder = CreateFilteredOrder(order, FRONT_KITCHEN);
+        var backKitchenOrder = CreateFilteredOrder(order, BACK_KITCHEN);
+        var hasFrontKitchenItems = frontKitchenOrder.Items.Count > 0;
+        var hasBackKitchenItems = backKitchenOrder.Items.Count > 0;
 
         // 3. Print to FrontKitchen if there are FrontKitchen items
         if (hasFrontKitchenItems)
@@ -117,12 +128,11 @@ public class OrderPrintService : IOrderPrintService
                 frontKitchenSuccess = !shouldPrintFront;
                 if (shouldPrintFront && !string.IsNullOrWhiteSpace(frontKitchenPrinter))
                 {
-                    // Filter order to only FrontKitchen items
-                    var filteredOrder = CreateFilteredOrder(order, "FrontKitchen");
-                    var content = FormatKitchenReceipt(filteredOrder, config, config.FrontKitchenPaperWidth, "FRONT KITCHEN");
+                    var content = FormatKitchenReceipt(
+                        frontKitchenOrder, config, config.FrontKitchenPaperWidth, "FRONT KITCHEN");
                     frontKitchenSuccess = await PrintRawContentAsync(frontKitchenPrinter, content);
                     _logger.LogInformation("FrontKitchen print ({ItemCount} items) to {Printer}: {Result}",
-                        filteredOrder.Items?.Count ?? 0, frontKitchenPrinter, frontKitchenSuccess ? "✓" : "✗");
+                        frontKitchenOrder.Items.Count, frontKitchenPrinter, frontKitchenSuccess ? "✓" : "✗");
                 }
             }
             catch (Exception ex)
@@ -150,12 +160,11 @@ public class OrderPrintService : IOrderPrintService
                 backKitchenSuccess = !shouldPrintBack;
                 if (shouldPrintBack && !string.IsNullOrWhiteSpace(backKitchenPrinter))
                 {
-                    // Filter order to only BackKitchen items
-                    var filteredOrder = CreateFilteredOrder(order, "BackKitchen");
-                    var content = FormatKitchenReceipt(filteredOrder, config, config.BackKitchenPaperWidth, "Back Kitchen");
+                    var content = FormatKitchenReceipt(
+                        backKitchenOrder, config, config.BackKitchenPaperWidth, "Back Kitchen");
                     backKitchenSuccess = await PrintRawContentAsync(backKitchenPrinter, content);
                     _logger.LogInformation("BackKitchen print ({ItemCount} items): {Result}",
-                        filteredOrder.Items?.Count ?? 0, backKitchenSuccess ? "✓" : "✗");
+                        backKitchenOrder.Items.Count, backKitchenSuccess ? "✓" : "✗");
                 }
             }
             catch (Exception ex)
@@ -175,45 +184,13 @@ public class OrderPrintService : IOrderPrintService
     }
 
     /// <summary>
-    /// Creates a copy of the order with only items matching the specified KitchenType
+    /// A copy of the order carrying only what <paramref name="kitchenType"/> is responsible for.
+    /// The selection itself is <see cref="KitchenTicketFilter"/>: it recurses into
+    /// <see cref="OrderItem.SideItems"/>, because since backend PR #237 that is where a bundle's
+    /// components live.
     /// </summary>
-    private Order CreateFilteredOrder(Order original, string kitchenType)
-    {
-        return new Order
-        {
-            Id = original.Id,
-            OrderNumber = original.OrderNumber,
-            UserId = original.UserId,
-            CustomerName = original.CustomerName,
-            CustomerEmail = original.CustomerEmail,
-            CustomerPhone = original.CustomerPhone,
-            Type = original.Type,
-            TableNumber = original.TableNumber,
-            SubTotal = original.SubTotal,
-            Tax = original.Tax,
-            DeliveryFee = original.DeliveryFee,
-            Discount = original.Discount,
-            DiscountPercentage = original.DiscountPercentage,
-            Tip = original.Tip,
-            Total = original.Total,
-            TotalPaid = original.TotalPaid,
-            RemainingAmount = original.RemainingAmount,
-            IsFullyPaid = original.IsFullyPaid,
-            Status = original.Status,
-            PaymentStatus = original.PaymentStatus,
-            OrderDate = original.OrderDate,
-            CreatedAt = original.CreatedAt,
-            UpdatedAt = original.UpdatedAt,
-            Notes = original.Notes,
-            DeliveryAddress = original.DeliveryAddress,
-            Payments = original.Payments,
-            StatusHistory = original.StatusHistory,
-            // Filter items to only those matching the kitchen type
-            Items = original.Items?
-                .Where(i => string.Equals(i.KitchenType, kitchenType, StringComparison.OrdinalIgnoreCase))
-                .ToList() ?? new List<OrderItem>()
-        };
-    }
+    private Order CreateFilteredOrder(Order original, string kitchenType) =>
+        original.WithItems(KitchenTicketFilter.ItemsForKitchen(original.Items, kitchenType));
 
     public async Task<bool> PrintOrderAsync(Order order, PrinterType printerType, bool isManualPrint = false, CancellationToken cancellationToken = default)
     {
@@ -387,58 +364,7 @@ public class OrderPrintService : IOrderPrintService
                 // Log each item for debugging
                 _logger.LogInformation("Item: {Quantity}x {ProductName}", item.Quantity, item.ProductName);
 
-                // Item name and quantity - WIDE size (2x width, 1x height - bigger than normal)
-                sb.Append(ESC_SIZE_WIDE);
-                sb.AppendLine($"{item.Quantity}x {item.ProductName}");
-                sb.Append(ESC_SIZE_NORMAL);
-
-                // Show variation if available (normal size)
-                if (!string.IsNullOrWhiteSpace(item.VariationName))
-                {
-                    sb.AppendLine($"   - {item.VariationName}");
-                }
-
-                // Show ingredient customizations - ONLY modified ingredients (removed or extra)
-                var modifiedIngredients = item.IngredientCustomizations?
-                    .Where(ing => ing.IsRemoved || ing.Quantity > 1)
-                    .ToList();
-                if (modifiedIngredients != null && modifiedIngredients.Any())
-                {
-                    foreach (var ing in modifiedIngredients)
-                    {
-                        if (ing.IsRemoved)
-                        {
-                            // TALL size "NO" prefix for removed ingredients
-                            sb.Append(ESC_SIZE_TALL);
-                            sb.AppendLine($"   - NO {ing.IngredientName}");
-                            sb.Append(ESC_SIZE_NORMAL);
-                        }
-                        else if (ing.Quantity > 1)
-                        {
-                            // TALL size "EXTRA" prefix for extra ingredients
-                            sb.Append(ESC_SIZE_TALL);
-                            sb.AppendLine($"   + EXTRA {ing.IngredientName}");
-                            sb.Append(ESC_SIZE_NORMAL);
-                        }
-                    }
-                }
-
-                // Show side items / additionals
-                if (item.SideItems != null && item.SideItems.Any())
-                {
-                    foreach (var side in item.SideItems)
-                    {
-                        sb.AppendLine($"   + {side.Quantity}x {side.ProductName}");
-                    }
-                }
-
-                // Show special instructions - TALL size for visibility
-                if (!string.IsNullOrWhiteSpace(item.SpecialInstructions))
-                {
-                    sb.Append(ESC_SIZE_TALL);
-                    sb.AppendLine($"   NOTE: {item.SpecialInstructions}");
-                    sb.Append(ESC_SIZE_NORMAL);
-                }
+                AppendKitchenItem(sb, item, depth: 0);
                 sb.AppendLine();
             }
         }
@@ -460,6 +386,84 @@ public class OrderPrintService : IOrderPrintService
         sb.Append(ESC_CUT);
 
         return sb.ToString();
+    }
+
+    /// <summary>
+    /// Writes one line of the kitchen ticket and everything hanging off it. Recursive because a
+    /// bundle nests to arbitrary depth since backend PR #237 — the previous one-level-deep render
+    /// showed a grandchild nowhere, and showed a child's name and quantity but never its "NO onion"
+    /// or its note (both of which used to print, back when every child was its own top-level row).
+    /// </summary>
+    private void AppendKitchenItem(StringBuilder sb, OrderItem item, int depth)
+    {
+        var indent = new string(' ', depth * 3);
+
+        // A line this kitchen does not make (KitchenTicketFilter kept it only to say what the
+        // components below it belong to — a FrontKitchen combo on the back kitchen's ticket).
+        // Parenthesised and left at normal size so it doesn't read as a dish to prepare; the
+        // components under it are the work.
+        if (item.IsContextOnly)
+        {
+            sb.AppendLine($"{indent}({item.Quantity}x {item.ProductName})");
+        }
+        else
+        {
+            // Item name and quantity - WIDE size (2x width, 1x height - bigger than normal).
+            // "+ " marks a component/add-on so it still reads as part of the line above it.
+            sb.Append(ESC_SIZE_WIDE);
+            sb.AppendLine(depth == 0
+                ? $"{item.Quantity}x {item.ProductName}"
+                : $"{indent}+ {item.Quantity}x {item.ProductName}");
+            sb.Append(ESC_SIZE_NORMAL);
+        }
+
+        // Show variation if available (normal size)
+        if (!string.IsNullOrWhiteSpace(item.VariationName))
+        {
+            sb.AppendLine($"{indent}   - {item.VariationName}");
+        }
+
+        // Show ingredient customizations - ONLY modified ingredients (removed or extra)
+        var modifiedIngredients = item.IngredientCustomizations?
+            .Where(ing => ing.IsRemoved || ing.Quantity > 1)
+            .ToList();
+        if (modifiedIngredients != null && modifiedIngredients.Any())
+        {
+            foreach (var ing in modifiedIngredients)
+            {
+                sb.Append(ESC_SIZE_TALL);
+                if (ing.IsRemoved)
+                {
+                    // TALL size "NO" prefix for removed ingredients
+                    sb.AppendLine($"{indent}   - NO {ing.IngredientName}");
+                }
+                else
+                {
+                    // TALL size "EXTRA" prefix for extra ingredients
+                    sb.AppendLine($"{indent}   + EXTRA {ing.IngredientName}");
+                }
+                sb.Append(ESC_SIZE_NORMAL);
+            }
+        }
+
+        // Show special instructions - TALL size for visibility. Before the nested components, not
+        // after: trailing the children makes a parent's note read as if it belonged to the last
+        // child printed.
+        if (!string.IsNullOrWhiteSpace(item.SpecialInstructions))
+        {
+            sb.Append(ESC_SIZE_TALL);
+            sb.AppendLine($"{indent}   NOTE: {item.SpecialInstructions}");
+            sb.Append(ESC_SIZE_NORMAL);
+        }
+
+        // Show side items / additionals (bundle components and add-on sides)
+        if (item.SideItems != null && item.SideItems.Any())
+        {
+            foreach (var side in item.SideItems)
+            {
+                AppendKitchenItem(sb, side, depth + 1);
+            }
+        }
     }
 
     private string FormatCashierReceipt(Order order, PrinterConfiguration config, int paperWidth)
