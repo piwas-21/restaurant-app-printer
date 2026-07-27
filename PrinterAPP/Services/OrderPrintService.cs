@@ -189,7 +189,7 @@ public class OrderPrintService : IOrderPrintService
     /// <see cref="OrderItem.SideItems"/>, because since backend PR #237 that is where a bundle's
     /// components live.
     /// </summary>
-    private Order CreateFilteredOrder(Order original, string kitchenType) =>
+    private static Order CreateFilteredOrder(Order original, string kitchenType) =>
         original.WithItems(KitchenTicketFilter.ItemsForKitchen(original.Items, kitchenType));
 
     public async Task<bool> PrintOrderAsync(Order order, PrinterType printerType, bool isManualPrint = false, CancellationToken cancellationToken = default)
@@ -394,7 +394,7 @@ public class OrderPrintService : IOrderPrintService
     /// showed a grandchild nowhere, and showed a child's name and quantity but never its "NO onion"
     /// or its note (both of which used to print, back when every child was its own top-level row).
     /// </summary>
-    private void AppendKitchenItem(StringBuilder sb, OrderItem item, int depth)
+    private static void AppendKitchenItem(StringBuilder sb, OrderItem item, int depth)
     {
         var indent = new string(' ', depth * 3);
 
@@ -423,28 +423,7 @@ public class OrderPrintService : IOrderPrintService
             sb.AppendLine($"{indent}   - {item.VariationName}");
         }
 
-        // Show ingredient customizations - ONLY modified ingredients (removed or extra)
-        var modifiedIngredients = item.IngredientCustomizations?
-            .Where(ing => ing.IsRemoved || ing.Quantity > 1)
-            .ToList();
-        if (modifiedIngredients != null && modifiedIngredients.Any())
-        {
-            foreach (var ing in modifiedIngredients)
-            {
-                sb.Append(ESC_SIZE_TALL);
-                if (ing.IsRemoved)
-                {
-                    // TALL size "NO" prefix for removed ingredients
-                    sb.AppendLine($"{indent}   - NO {ing.IngredientName}");
-                }
-                else
-                {
-                    // TALL size "EXTRA" prefix for extra ingredients
-                    sb.AppendLine($"{indent}   + EXTRA {ing.IngredientName}");
-                }
-                sb.Append(ESC_SIZE_NORMAL);
-            }
-        }
+        AppendIngredientCustomizations(sb, item, indent);
 
         // Show special instructions - TALL size for visibility. Before the nested components, not
         // after: trailing the children makes a parent's note read as if it belonged to the last
@@ -457,12 +436,27 @@ public class OrderPrintService : IOrderPrintService
         }
 
         // Show side items / additionals (bundle components and add-on sides)
-        if (item.SideItems != null && item.SideItems.Any())
+        foreach (var side in item.SideItems ?? Enumerable.Empty<OrderItem>())
         {
-            foreach (var side in item.SideItems)
-            {
-                AppendKitchenItem(sb, side, depth + 1);
-            }
+            AppendKitchenItem(sb, side, depth + 1);
+        }
+    }
+
+    /// <summary>Only the ingredients the customer actually changed — removed, or asked extra of.</summary>
+    private static void AppendIngredientCustomizations(StringBuilder sb, OrderItem item, string indent)
+    {
+        var modified = item.IngredientCustomizations?
+            .Where(ing => ing.IsRemoved || ing.Quantity > 1)
+            ?? Enumerable.Empty<IngredientCustomization>();
+
+        foreach (var ing in modified)
+        {
+            // TALL size "NO" / "EXTRA" prefix so a change stands out from the item it modifies
+            sb.Append(ESC_SIZE_TALL);
+            sb.AppendLine(ing.IsRemoved
+                ? $"{indent}   - NO {ing.IngredientName}"
+                : $"{indent}   + EXTRA {ing.IngredientName}");
+            sb.Append(ESC_SIZE_NORMAL);
         }
     }
 
