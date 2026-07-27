@@ -74,6 +74,10 @@
          real ESC/POS receipt builder, driven to a loopback TcpListener for the print-to-sink test. Pulls
          in the request-log boundary (MAUI-free since the LogEntry extraction). -->
     <Compile Include="..\PrinterAPP\Services\IOrderPrintService.cs" Link="Linked\IOrderPrintService.cs" />
+    <!-- Kitchen routing, extracted pure so the tree walk is testable without a printer: since the
+         backend made OrderDto.Items root-only, mis-routing a bundle component means a kitchen
+         silently gets no ticket. -->
+    <Compile Include="..\PrinterAPP\Services\KitchenTicketFilter.cs" Link="Linked\KitchenTicketFilter.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderPrintService.cs" Link="Linked\OrderPrintService.cs" />
     <Compile Include="..\PrinterAPP\Services\PrintStyleSettingsService.cs" Link="Linked\PrintStyleSettingsService.cs" />
     <Compile Include="..\PrinterAPP\Models\PrintStyleSettings.cs" Link="Linked\PrintStyleSettings.cs" />

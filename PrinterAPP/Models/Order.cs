@@ -39,6 +39,20 @@ public class Order
     public List<OrderItem> Items { get; set; } = new();
     public List<Payment>? Payments { get; set; }
     public List<OrderStatusHistory>? StatusHistory { get; set; }
+
+    /// <summary>
+    /// The same order with a different item list — how a kitchen ticket is built without mutating
+    /// the order the history list and the UI are holding. Cloned rather than re-listed field by
+    /// field so a field added here can't be silently dropped off a kitchen ticket. Shallow, like
+    /// the hand-written copy it replaced: <see cref="Payments"/> and <see cref="StatusHistory"/>
+    /// are shared, and neither the receipt composer nor the filter writes to them.
+    /// </summary>
+    public Order WithItems(List<OrderItem> items)
+    {
+        var copy = (Order)MemberwiseClone();
+        copy.Items = items;
+        return copy;
+    }
 }
 
 public class OrderItem
@@ -59,8 +73,32 @@ public class OrderItem
     [JsonPropertyName("ingredientCustomizations")]
     public List<IngredientCustomization>? IngredientCustomizations { get; set; }
 
-    // Side items / additionals (child order items)
+    // Side items / additionals (child order items). Backend PR #237 made OrderDto.Items root-only,
+    // so this is the ONLY place a bundle component or an add-on side appears — nested, to arbitrary
+    // depth. Anything that reasons about "the order's items" has to recurse through it.
     public List<OrderItem>? SideItems { get; set; }
+
+    /// <summary>
+    /// Set by <c>KitchenTicketFilter</c> on its own copies: this kitchen does not make this line,
+    /// it is on the ticket only to say what the components nested under it belong to. Presentation,
+    /// not order data — it is never deserialized, so it does not touch the backend DTO mirror
+    /// (§5.3). The renderer cannot derive it from <see cref="KitchenType"/>, because a component
+    /// with no kitchen of its own (a drink, an extra sauce) is made wherever its parent is.
+    /// </summary>
+    [JsonIgnore]
+    public bool IsContextOnly { get; set; }
+
+    /// <summary>
+    /// The same line with a different child list — see <see cref="Order.WithItems"/> for why this
+    /// clones rather than copying field by field. Used by <c>KitchenTicketFilter</c> to route a
+    /// subtree to one kitchen without mutating the shared order.
+    /// </summary>
+    public OrderItem WithSideItems(List<OrderItem>? sideItems)
+    {
+        var copy = (OrderItem)MemberwiseClone();
+        copy.SideItems = sideItems;
+        return copy;
+    }
 }
 
 /// <summary>
