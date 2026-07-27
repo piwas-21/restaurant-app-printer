@@ -78,6 +78,169 @@ public class OrderPrintToSinkTests
         }
     }
 
+    /// <summary>
+    /// A bundle every component of which one kitchen makes: one ticket, components nested under
+    /// their combo, each printed exactly once — no top-level duplicate of a nested component, and
+    /// nothing at all for the other kitchen.
+    /// </summary>
+    [Fact]
+    public async Task PrintOrderToAllPrinters_SingleKitchenBundle_PrintsOneTicket_WithComponentsNestedOnce()
+    {
+        using var cashier = new Sink();
+        using var front = new Sink();
+        using var back = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        var order = BundleOrder(
+            Item("Menu Deal", "FrontKitchen", children:
+            [
+                Item("Kofte", "FrontKitchen"),
+                Item("Ayran", kitchenType: null), // no kitchen of its own: rides with its parent
+            ]));
+
+        var result = await PrintToSinksAsync(order, cashier, front, back, cts.Token);
+
+        Assert.True(result.FrontKitchen, "front kitchen print reported failure");
+        var ticket = await front.ReadTicketAsync(cts.Token);
+        Assert.Equal(1, Occurrences(ticket, "Menu Deal"));
+        Assert.Equal(1, Occurrences(ticket, "Kofte"));
+        Assert.Equal(1, Occurrences(ticket, "Ayran"));
+        // Everything on this ticket is this kitchen's work, so nothing is parenthesised as
+        // context — including the drink, which has no KitchenType of its own.
+        Assert.DoesNotContain("(1x", ticket);
+
+        // The kitchen with nothing to make is never contacted.
+        Assert.False(back.ReceivedAnything, "back kitchen was sent a ticket it has nothing to make");
+    }
+
+    /// <summary>
+    /// The reported failure: a FrontKitchen "Menu Deal" containing BackKitchen fries. Before the
+    /// fix the top-level-only scan saw no BackKitchen item, so the back kitchen got NO ticket and
+    /// the fries printed on the front kitchen's ticket as a nested "+ 2x Fries" line.
+    /// </summary>
+    [Fact]
+    public async Task PrintOrderToAllPrinters_MixedKitchenBundle_PrintsEachComponentOnItsOwnKitchenTicket()
+    {
+        using var cashier = new Sink();
+        using var front = new Sink();
+        using var back = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        var order = BundleOrder(
+            Item("Menu Deal", "FrontKitchen", children:
+            [
+                Item("Kofte", "FrontKitchen"),
+                Item("Fries", "BackKitchen", quantity: 2),
+            ]));
+
+        var result = await PrintToSinksAsync(order, cashier, front, back, cts.Token);
+
+        Assert.True(result.FrontKitchen, "front kitchen print reported failure");
+        Assert.True(result.BackKitchen, "back kitchen print reported failure");
+
+        var frontTicket = await front.ReadTicketAsync(cts.Token);
+        Assert.Equal(1, Occurrences(frontTicket, "Menu Deal"));
+        Assert.Equal(1, Occurrences(frontTicket, "Kofte"));
+        Assert.Equal(0, Occurrences(frontTicket, "Fries")); // the regression: fries rode along here
+
+        var backTicket = await back.ReadTicketAsync(cts.Token);
+        Assert.Equal(1, Occurrences(backTicket, "Fries")); // the regression: this ticket never printed
+        Assert.Contains("2x Fries", backTicket);
+        Assert.Equal(0, Occurrences(backTicket, "Kofte"));
+        // The combo line rides along as context for the component, parenthesised so it does not
+        // read as a dish the back kitchen has to make.
+        Assert.Contains("(1x Menu Deal)", backTicket);
+    }
+
+    private static Order BundleOrder(params OrderItem[] items) => new()
+    {
+        OrderNumber = "BUNDLE-1",
+        Type = "DineIn",
+        TableNumber = 3,
+        Status = "Confirmed",
+        OrderDate = DateTime.Now,
+        Items = items.ToList(),
+    };
+
+    private static OrderItem Item(
+        string productName,
+        string? kitchenType,
+        int quantity = 1,
+        List<OrderItem>? children = null) =>
+        new()
+        {
+            Id = productName,
+            ProductName = productName,
+            KitchenType = kitchenType,
+            Quantity = quantity,
+            SideItems = children,
+        };
+
+    private static async Task<(bool Cashier, bool FrontKitchen, bool BackKitchen)> PrintToSinksAsync(
+        Order order, Sink cashier, Sink front, Sink back, CancellationToken ct)
+    {
+        using var paths = new TempPathProvider();
+        var service = new OrderPrintService(
+            new StubPrinterService(new PrinterConfiguration
+            {
+                CashierPrinterName = cashier.PrinterName,
+                CashierAutoPrint = true,
+                CashierPrintCopies = 1,
+                FrontKitchenPrinterName = front.PrinterName,
+                FrontKitchenAutoPrint = true,
+                BackKitchenPrinterName = back.PrinterName,
+                BackKitchenAutoPrint = true,
+            }),
+            new NoopRequestLogService(),
+            NullLogger<OrderPrintService>.Instance,
+            paths);
+
+        return await service.PrintOrderToAllPrintersAsync(order, isManualPrint: false, ct);
+    }
+
+    private static int Occurrences(string haystack, string needle)
+    {
+        var count = 0;
+        for (var i = haystack.IndexOf(needle, StringComparison.Ordinal); i >= 0;
+             i = haystack.IndexOf(needle, i + needle.Length, StringComparison.Ordinal))
+        {
+            count++;
+        }
+        return count;
+    }
+
+    /// <summary>An in-process loopback "printer": one port, and the ticket that arrived on it.</summary>
+    private sealed class Sink : IDisposable
+    {
+        private readonly TcpListener _listener;
+
+        public Sink()
+        {
+            _listener = new TcpListener(IPAddress.Loopback, 0);
+            _listener.Start();
+            PrinterName = $"127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}"; // IP literal → NetworkTcpTransport
+        }
+
+        /// <summary>Configure this as a printer name.</summary>
+        public string PrinterName { get; }
+
+        /// <summary>A connection is waiting to be accepted, i.e. something was printed here.</summary>
+        public bool ReceivedAnything => _listener.Pending();
+
+        /// <summary>
+        /// The ticket as text. The sender connects, writes and closes per print, so the connection
+        /// sits in the accept backlog until read — no need to race an accept against the print.
+        /// Decoded as Latin1: the assertions are ASCII, which PC857 leaves unchanged.
+        /// </summary>
+        public async Task<string> ReadTicketAsync(CancellationToken ct)
+        {
+            var bytes = await AcceptAndReadAllAsync(_listener, ct);
+            return Encoding.Latin1.GetString(bytes);
+        }
+
+        public void Dispose() => _listener.Stop();
+    }
+
     private static async Task<byte[]> AcceptAndReadAllAsync(TcpListener listener, CancellationToken ct)
     {
         using var server = await listener.AcceptTcpClientAsync(ct);
