@@ -452,9 +452,10 @@ public class EventStreamingService : IEventStreamingService
                                 sourceEndpoint);
                         }
 
-                        // Log parsed order with full JSON data
+                        // Log parsed order with full JSON data, keyed by the same order number the
+                        // dedup path above uses as orderKey.
                         _requestLogService.LogOrderReceived(
-                            int.TryParse(order.OrderNumber.Split('/').Last(), out var orderNum) ? orderNum : 0,
+                            order.OrderNumber,
                             order.TableNumber,
                             order.Total,
                             data,
@@ -494,9 +495,10 @@ public class EventStreamingService : IEventStreamingService
                         // Mark order as processed
                         MarkOrderAsProcessed(orderKey);
 
-                        // Log parsed order with full JSON data
+                        // Log parsed order with full JSON data, keyed by the same order number the
+                        // dedup path above uses as orderKey.
                         _requestLogService.LogOrderReceived(
-                            int.TryParse(order.OrderNumber.Split('/').Last(), out var orderNum) ? orderNum : 0,
+                            order.OrderNumber,
                             order.TableNumber,
                             order.Total,
                             data,
