@@ -91,11 +91,14 @@ public partial class MainPage : ContentPage
             // Load available printers
             await LoadPrintersAsync();
 
-            // Round-trip a saved network IP into the IP entry (the picker can't hold an IP, and on
-            // Android it enumerates nothing).
-            if (PrinterEndpoint.TryParse(_config.KitchenPrinterName, out _, out _))
+            // Round-trip a saved network IP OR sink target into the IP entry (the picker can't hold
+            // either, and on Android it enumerates nothing). The sink must round-trip for the same
+            // reason the IP does, and one worse: a sink that loads into a blank field is invisible —
+            // the operator sees no sign the printer is capturing to disk, and the next save silently
+            // replaces it with whatever the picker happens to hold.
+            if (PrinterTargetEntry.IsNetworkFieldTarget(_config.KitchenPrinterName))
                 KitchenPrinterIpEntry.Text = _config.KitchenPrinterName;
-            if (PrinterEndpoint.TryParse(_config.CashierPrinterName, out _, out _))
+            if (PrinterTargetEntry.IsNetworkFieldTarget(_config.CashierPrinterName))
                 CashierPrinterIpEntry.Text = _config.CashierPrinterName;
 
             // Reflect the current feed state (cross-platform).
@@ -468,10 +471,12 @@ public partial class MainPage : ContentPage
                          (CashierPrinterIpEntry.Text, "Cashier"),
                      })
             {
-                if (!string.IsNullOrWhiteSpace(entry) && !PrinterEndpoint.TryParse(entry, out _, out _))
+                // `file:` sink targets are valid here too, not just IPs — without this the save is
+                // rejected outright and a sink can never reach the order-print path at all.
+                if (!string.IsNullOrWhiteSpace(entry) && !PrinterTargetEntry.IsNetworkFieldTarget(entry))
                 {
-                    await DisplayAlert("Invalid printer IP",
-                        $"'{entry.Trim()}' is not a valid {label} printer IP. Use e.g. 192.168.1.50 or 192.168.1.50:9100.",
+                    await DisplayAlert("Invalid printer address",
+                        $"'{entry.Trim()}' is not a valid {label} printer address. Use an IP (e.g. 192.168.1.50 or 192.168.1.50:9100), or 'file:' to capture ESC/POS bytes to a file instead of printing.",
                         "OK");
                     return;
                 }

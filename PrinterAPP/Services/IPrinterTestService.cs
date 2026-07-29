@@ -27,4 +27,10 @@ public interface IPrinterTestService
     /// human-readable result line (never throws for the printer-unreachable case).
     /// </summary>
     Task<string> TestNetworkPrinterAsync(IPAddress ip, int port, string label, string display);
+
+    /// <summary>
+    /// Writes the test receipt to the diagnostic file sink at <paramref name="directory"/> and
+    /// reports the directory back — there is no paper, so the path IS the result.
+    /// </summary>
+    Task<string> TestFileSinkAsync(string directory, string label, string display);
 }
