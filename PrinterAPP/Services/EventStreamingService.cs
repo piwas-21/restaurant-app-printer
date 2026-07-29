@@ -445,7 +445,7 @@ public class EventStreamingService : IEventStreamingService
                                 "Order {OrderNumber} arrived from {Endpoint} with no items",
                                 order.OrderNumber, sourceEndpoint);
                             _requestLogService.LogWarning(
-                                "Order Polling",
+                                PollingLogOperation,
                                 $"Order {order.OrderNumber} arrived with no line items — its cashier receipt will print blank",
                                 "The device cannot recover the missing lines; it prints what the feed sent. " +
                                 "Check this order in the dashboard and reprint it from the Orders tab if the ticket is wrong.",
@@ -664,7 +664,7 @@ public class EventStreamingService : IEventStreamingService
             _logger.LogInformation(
                 "Order {OrderNumber} printed after being reported unrecoverable", orderNumber);
             _requestLogService.LogWarning(
-                "Order Polling",
+                PollingLogOperation,
                 $"Order {orderNumber} did print after all — ignore the earlier warning",
                 "It completed later than expected. Do not reprint it; that would produce a duplicate ticket.");
         }
@@ -733,7 +733,7 @@ public class EventStreamingService : IEventStreamingService
             // Both surfaces are non-blocking (they marshal to the UI thread), so reporting from
             // inside the dedup lock does not stall the poll loop.
             _requestLogService.LogError(
-                "Order Polling",
+                PollingLogOperation,
                 $"Order {orderNumber} may not have printed, and is too old to fetch again",
                 "The order was received but never confirmed printed. Check the printer and reprint " +
                 "it from the Orders tab if the ticket is missing.");
