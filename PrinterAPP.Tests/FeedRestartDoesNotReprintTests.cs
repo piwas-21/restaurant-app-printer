@@ -399,9 +399,9 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
         public void LogSSEConnection(string endpoint, string status, string? url = null, Dictionary<string, string>? headers = null) { }
         public void LogSSEResponse(string endpoint, int statusCode, Dictionary<string, string>? responseHeaders = null) { }
         public void LogSSEEvent(string eventType, string data, string? rawData = null, string? source = null) { }
-        public void LogOrderReceived(int orderId, int? tableNumber, decimal total, string? orderJson = null, string? source = null) { }
-        public void LogPrintRequest(string printerType, int orderId, string printerName, string? printContent = null) { }
-        public void LogPrintResponse(string printerType, int orderId, bool success, string? error = null, string? details = null) { }
+        public void LogOrderReceived(string orderNumber, int? tableNumber, decimal total, string? orderJson = null, string? source = null) { }
+        public void LogPrintRequest(string printerType, string orderNumber, string printerName, string? printContent = null) { }
+        public void LogPrintResponse(string printerType, string orderNumber, bool success, string? error = null, string? details = null) { }
         public virtual void LogError(string operation, string message, string? details = null) { }
         public virtual void LogWarning(string operation, string message, string? details = null, string? source = null) { }
         public void ClearLogs() => LogAdded?.Invoke(this, new LogEntry());

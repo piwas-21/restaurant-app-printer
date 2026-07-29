@@ -39,7 +39,7 @@ public class OrderPrintToSinkTests
             };
             var service = new OrderPrintService(
                 new StubPrinterService(config),
-                new NoopRequestLogService(),
+                new CapturingRequestLogService(),
                 NullLogger<OrderPrintService>.Instance,
                 paths);
 
@@ -76,6 +76,58 @@ public class OrderPrintToSinkTests
         {
             listener.Stop();
         }
+    }
+
+    /// <summary>
+    /// <see cref="OrderPrintService"/> hands the print log the order's real number, verbatim. The
+    /// log used to take an <c>int orderId</c> derived as
+    /// <c>int.TryParse(OrderNumber.Split('/').Last())</c>; a real order number is yyyyMMdd + a
+    /// 4-digit sequence (backend OrderNumberGenerator), i.e. 12 digits — past
+    /// <see cref="int.MaxValue"/>, so the parse failed and every print line in the log said
+    /// "Order #0". The order number below is that exact shape.
+    /// <para>
+    /// Scope: this covers the print half only. The feed half (EventStreamingService) and the
+    /// rendered log text both live behind MAUI's MainThread and are not source-linkable here — the
+    /// parameter being a string is what stops the lossy derivation coming back there.
+    /// </para>
+    /// </summary>
+    [Fact]
+    public async Task PrintOrderAsync_LogsTheRealOrderNumber_NotAParsedInt()
+    {
+        const string orderNumber = "202607290001"; // 12 digits: > int.MaxValue, and no '/' to split on
+        using var sink = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var paths = new TempPathProvider();
+
+        var log = new CapturingRequestLogService();
+        var service = new OrderPrintService(
+            new StubPrinterService(new PrinterConfiguration
+            {
+                CashierPrinterName = sink.PrinterName,
+                CashierAutoPrint = true,
+                CashierPrintCopies = 1,
+            }),
+            log,
+            NullLogger<OrderPrintService>.Instance,
+            paths);
+
+        var order = new Order
+        {
+            OrderNumber = orderNumber,
+            Type = "DineIn",
+            TableNumber = 4,
+            Status = "Confirmed",
+            Total = 12.00m,
+            OrderDate = DateTime.Now,
+            Items = { new OrderItem { ProductName = "Lahmacun", Quantity = 1, UnitPrice = 12.00m, ItemTotal = 12.00m } },
+        };
+
+        Assert.True(await service.PrintOrderAsync(order, PrinterType.Cashier, isManualPrint: true, cts.Token),
+            "PrintOrderAsync reported failure");
+        await sink.ReadTicketAsync(cts.Token); // drain the socket so the sink closes cleanly
+
+        Assert.NotEmpty(log.PrintLogOrderNumbers);
+        Assert.All(log.PrintLogOrderNumbers, logged => Assert.Equal(orderNumber, logged));
     }
 
     /// <summary>
@@ -191,7 +243,7 @@ public class OrderPrintToSinkTests
                 BackKitchenPrinterName = back.PrinterName,
                 BackKitchenAutoPrint = true,
             }),
-            new NoopRequestLogService(),
+            new CapturingRequestLogService(),
             NullLogger<OrderPrintService>.Instance,
             paths);
 
@@ -295,8 +347,21 @@ public class OrderPrintToSinkTests
         public Task SaveConfigurationAsync(PrinterConfiguration config) => throw new NotSupportedException();
     }
 
-    private sealed class NoopRequestLogService : IRequestLogService
+    /// <summary>
+    /// Discards everything except the order number each print log line was given — the one thing
+    /// <see cref="PrintOrderAsync_LogsTheRealOrderNumber_NotAParsedInt"/> asserts on.
+    /// </summary>
+    private sealed class CapturingRequestLogService : IRequestLogService
     {
+        private readonly object _gate = new();
+        private readonly List<string> _printLogOrderNumbers = new();
+
+        /// <summary>Order numbers handed to LogPrintRequest / LogPrintResponse, in call order.</summary>
+        public IReadOnlyList<string> PrintLogOrderNumbers
+        {
+            get { lock (_gate) { return _printLogOrderNumbers.ToArray(); } }
+        }
+
         public ReadOnlyObservableCollection<LogEntry> Logs { get; } = new(new ObservableCollection<LogEntry>());
 #pragma warning disable CS0067
         public event EventHandler<LogEntry>? LogAdded;
@@ -304,9 +369,15 @@ public class OrderPrintToSinkTests
         public void LogSSEConnection(string endpoint, string status, string? url = null, Dictionary<string, string>? headers = null) { }
         public void LogSSEResponse(string endpoint, int statusCode, Dictionary<string, string>? responseHeaders = null) { }
         public void LogSSEEvent(string eventType, string data, string? rawData = null, string? source = null) { }
-        public void LogOrderReceived(int orderId, int? tableNumber, decimal total, string? orderJson = null, string? source = null) { }
-        public void LogPrintRequest(string printerType, int orderId, string printerName, string? printContent = null) { }
-        public void LogPrintResponse(string printerType, int orderId, bool success, string? error = null, string? details = null) { }
+        public void LogOrderReceived(string orderNumber, int? tableNumber, decimal total, string? orderJson = null, string? source = null) { }
+        public void LogPrintRequest(string printerType, string orderNumber, string printerName, string? printContent = null)
+        {
+            lock (_gate) { _printLogOrderNumbers.Add(orderNumber); }
+        }
+        public void LogPrintResponse(string printerType, string orderNumber, bool success, string? error = null, string? details = null)
+        {
+            lock (_gate) { _printLogOrderNumbers.Add(orderNumber); }
+        }
         public void LogError(string operation, string message, string? details = null) { }
         public void LogWarning(string operation, string message, string? details = null, string? source = null) { }
         public void ClearLogs() { }
