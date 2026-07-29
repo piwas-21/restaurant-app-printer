@@ -29,8 +29,15 @@ public class PrinterTestService : IPrinterTestService
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(config);
 
+        // Pattern-matched rather than `target.SinkDirectory!`: Kind == FileSink does guarantee the
+        // directory (PrinterTestTarget.Resolve sets them together), but asserting that with a
+        // null-forgiving operator buys nothing and turns a future inconsistency into a
+        // NullReferenceException inside the transport. The unreachable branch answers in the same
+        // shape as this method's other refusals.
         if (target.Kind == PrinterTransportKind.FileSink)
-            return await TestFileSinkAsync(target.SinkDirectory!, label, display);
+            return target.SinkDirectory is { } sinkDirectory
+                ? await TestFileSinkAsync(sinkDirectory, label, display)
+                : $"{display} printer: ✗ Sink target '{target.RawText}' resolved without a directory";
 
         if (target.Kind == PrinterTransportKind.NetworkTcp)
         {
