@@ -39,6 +39,9 @@
     <Compile Include="..\PrinterAPP\Services\WindowsSpoolerTransport.cs" Link="Linked\WindowsSpoolerTransport.cs" />
     <!-- Order-print routing seam (OrderPrintService spooler transport migration; ADR-006 Phase 2b). -->
     <Compile Include="..\PrinterAPP\Services\PrinterTransportResolver.cs" Link="Linked\PrinterTransportResolver.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrinterFileSink.cs" Link="Linked\PrinterFileSink.cs" />
+    <Compile Include="..\PrinterAPP\Services\FileSinkTransport.cs" Link="Linked\FileSinkTransport.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrinterTargetEntry.cs" Link="Linked\PrinterTargetEntry.cs" />
     <!-- Order models (MAUI-free; plain System.Text.Json records). Pinned here to guard the
          backend-DTO mirror after a string-vs-object drift on deliveryAddress wedged the prod poll. -->
     <Compile Include="..\PrinterAPP\Models\Order.cs" Link="Linked\Order.cs" />

@@ -13,7 +13,7 @@ namespace PrinterAPP.Services;
 public sealed class PrinterTestTarget
 {
     private PrinterTestTarget(PrinterTransportKind kind, bool isValid, IPAddress? ip, int port,
-        string? printerName, string rawText)
+        string? printerName, string rawText, string? sinkDirectory = null)
     {
         Kind = kind;
         IsValid = isValid;
@@ -21,6 +21,7 @@ public sealed class PrinterTestTarget
         Port = port;
         PrinterName = printerName;
         RawText = rawText;
+        SinkDirectory = sinkDirectory;
     }
 
     public PrinterTransportKind Kind { get; }
@@ -42,6 +43,14 @@ public sealed class PrinterTestTarget
     public string RawText { get; }
 
     /// <summary>
+    /// Capture directory for a <see cref="PrinterTransportKind.FileSink"/> target; <c>null</c> for
+    /// every other kind. Deliberately NOT folded into <see cref="PrinterName"/>: that field is a
+    /// spooler name passed verbatim to winspool, and a directory silently flowing into it would
+    /// fail somewhere far from here.
+    /// </summary>
+    public string? SinkDirectory { get; }
+
+    /// <summary>
     /// Resolves the two settings-screen inputs for one printer into a target, or <c>null</c> when
     /// neither is configured. <paramref name="spoolerPrinterName"/> mirrors the picker's
     /// <c>SelectedItem?.ToString()</c> (null iff nothing is selected; blank/whitespace names are treated as not configured — a spooler transport can't be built from them).
@@ -51,6 +60,15 @@ public sealed class PrinterTestTarget
         if (!string.IsNullOrWhiteSpace(networkAddress))
         {
             var trimmed = networkAddress.Trim();
+
+            // The diagnostic sink is entered in the SAME field as a network address, and is checked
+            // before it: a `file:` entry is never a malformed IP, so it must not fall into the
+            // isValid=false branch below and be reported as an input error.
+            if (PrinterFileSink.TryParse(trimmed, out var sinkDirectory))
+                return new(PrinterTransportKind.FileSink, isValid: true, ip: null,
+                    NetworkTcpTransport.DefaultPort, printerName: null, trimmed,
+                    sinkDirectory: sinkDirectory);
+
             if (PrinterEndpoint.TryParse(trimmed, out var ip, out var port))
                 return new(PrinterTransportKind.NetworkTcp, isValid: true, ip, port, printerName: null, trimmed);
             return new(PrinterTransportKind.NetworkTcp, isValid: false, ip: null,

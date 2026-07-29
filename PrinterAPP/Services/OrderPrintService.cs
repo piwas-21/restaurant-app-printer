@@ -639,6 +639,21 @@ public class OrderPrintService : IOrderPrintService
             // is not a DI singleton. See ADR-006 / PrinterTransportResolver.
             IPrinterTransport transport = PrinterTransportResolver.Resolve(printerName);
 
+            // A sink write SUCCEEDS, so without this every surface — the request log, the order
+            // history, the pipeline ack, fleet print-ack telemetry — reports a healthy print while
+            // no paper exists and the kitchen sees nothing. A diagnostic left switched on would
+            // therefore be invisible in exactly the situation where it matters most. Warn on every
+            // sink-routed print so the condition is greppable in the logs rather than resting on a
+            // comment. Deliberately not an error: the operator asked for this, and failing the print
+            // would make the capture unusable.
+            if (transport is FileSinkTransport sink)
+            {
+                _logger.LogWarning(
+                    "DIAGNOSTIC SINK ACTIVE for {PrinterName}: order bytes captured to {Directory}, NOT printed. " +
+                    "No paper is produced while this target is configured.",
+                    printerName, sink.CaptureDirectory);
+            }
+
             if (transport is WindowsSpoolerTransport)
             {
                 // The spooler transport's winspool calls are synchronous Win32; keep them off the

@@ -14,4 +14,11 @@ public enum PrinterTransportKind
 
     /// <summary>The legacy Windows print spooler (winspool.drv RAW datatype) — Windows only.</summary>
     WindowsSpooler,
+
+    /// <summary>
+    /// Diagnostic sink: write the ESC/POS bytes to a file instead of a printer
+    /// (<see cref="FileSinkTransport"/>, target syntax <c>file:[dir]</c>) — cross-platform.
+    /// Lets the byte stream be inspected without thermal hardware; not a printing configuration.
+    /// </summary>
+    FileSink,
 }
