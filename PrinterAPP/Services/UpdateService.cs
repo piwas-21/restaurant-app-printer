@@ -1,7 +1,6 @@
 using System.Diagnostics;
 using System.Net.Http.Json;
 using System.Reflection;
-using System.Text.Json.Serialization;
 using Microsoft.Extensions.Logging;
 using PrinterAPP.Models;
 
@@ -23,6 +22,14 @@ public class UpdateService : IUpdateService
         _httpClient = new HttpClient();
         _httpClient.DefaultRequestHeaders.Add("User-Agent", "PrinterApp-Updater");
     }
+
+    /// <summary>The platform this build targets, as the pure selectors need it stated.</summary>
+    private static UpdatePlatform CurrentPlatform =>
+#if ANDROID
+        UpdatePlatform.Android;
+#else
+        UpdatePlatform.Windows;
+#endif
 
     public string GetCurrentVersion()
     {
@@ -56,19 +63,10 @@ public class UpdateService : IUpdateService
             updateInfo.ReleaseName = response.Name ?? "";
             updateInfo.ReleaseNotes = response.Body ?? "";
 
-            // Pick the asset for this platform: the .apk on Android, the arch-specific .exe on Windows.
-#if ANDROID
-            var asset = response.Assets?.FirstOrDefault(a =>
-                a.Name?.EndsWith(".apk", StringComparison.OrdinalIgnoreCase) == true);
-#else
-            bool is64Bit = Environment.Is64BitOperatingSystem;
-            string arch = is64Bit ? "x64" : "x86";
-            var asset = response.Assets?.FirstOrDefault(a =>
-                a.Name?.Contains(arch, StringComparison.OrdinalIgnoreCase) == true &&
-                a.Name?.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) == true)
-                ?? response.Assets?.FirstOrDefault(a =>
-                a.Name?.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) == true);
-#endif
+            // Pick the asset for this platform: the .apk on Android, the arch-specific .exe on
+            // Windows. The platform is passed in rather than branched on here so both arms stay
+            // testable off-device — see UpdateAssetSelector for what that cost us before v1.0.20.
+            var asset = UpdateAssetSelector.Select(response.Assets, CurrentPlatform, Environment.Is64BitOperatingSystem);
 
             if (asset != null)
             {
@@ -76,8 +74,11 @@ public class UpdateService : IUpdateService
                 updateInfo.FileSize = asset.Size;
             }
 
-            // Compare versions
-            updateInfo.UpdateAvailable = CompareVersions(updateInfo.CurrentVersion, latestVersion) < 0;
+            // An update with no artifact for this platform is not an update we can offer: the
+            // download would fail, and before v1.0.20 it silently fetched the other platform's.
+            updateInfo.UpdateAvailable =
+                ReleaseVersion.IsNewer(updateInfo.CurrentVersion, latestVersion) &&
+                !string.IsNullOrWhiteSpace(updateInfo.DownloadUrl);
 
             _logger.LogInformation("Current version: {Current}, Latest version: {Latest}, Update available: {Available}",
                 updateInfo.CurrentVersion, latestVersion, updateInfo.UpdateAvailable);
@@ -91,8 +92,25 @@ public class UpdateService : IUpdateService
         }
     }
 
-    public async Task<bool> DownloadAndInstallUpdateAsync(UpdateInfo updateInfo, IProgress<int>? progress = null)
+    public async Task<UpdateInstallOutcome> DownloadAndInstallUpdateAsync(UpdateInfo updateInfo, IProgress<int>? progress = null)
     {
+        if (string.IsNullOrWhiteSpace(updateInfo.DownloadUrl))
+        {
+            _logger.LogError("No download URL for this platform — refusing to install");
+            return UpdateInstallOutcome.Failed;
+        }
+
+#if ANDROID
+        // Check BEFORE downloading: without this permission the install cannot proceed, and making
+        // the operator wait through a ~36 MB download to find that out is the whole complaint.
+        if (!CanRequestPackageInstalls())
+        {
+            _logger.LogWarning("\"Install unknown apps\" is not granted — sending the user to that setting");
+            OpenInstallPermissionSettings();
+            return UpdateInstallOutcome.PermissionRequired;
+        }
+#endif
+
         try
         {
             _logger.LogInformation("Starting download from {Url}", updateInfo.DownloadUrl);
@@ -138,7 +156,7 @@ public class UpdateService : IUpdateService
             if (!fileInfo.Exists || fileInfo.Length < 1024)
             {
                 _logger.LogError("Downloaded file is invalid or too small");
-                return false;
+                return UpdateInstallOutcome.Failed;
             }
 
             // Install update
@@ -147,11 +165,11 @@ public class UpdateService : IUpdateService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error downloading/installing update");
-            return false;
+            return UpdateInstallOutcome.Failed;
         }
     }
 
-    private async Task<bool> InstallUpdateAsync(string updateFilePath)
+    private async Task<UpdateInstallOutcome> InstallUpdateAsync(string updateFilePath)
     {
 #if ANDROID
         await Task.CompletedTask;
@@ -163,7 +181,7 @@ public class UpdateService : IUpdateService
             if (string.IsNullOrEmpty(currentExePath))
             {
                 _logger.LogError("Could not determine current exe path");
-                return false;
+                return UpdateInstallOutcome.Failed;
             }
 
             var currentProcessId = Process.GetCurrentProcess().Id;
@@ -178,7 +196,7 @@ public class UpdateService : IUpdateService
             if (!updateFileInfo.Exists || updateFileInfo.Length < 1024 * 100) // At least 100KB
             {
                 _logger.LogError("Update file is invalid or too small: {Size} bytes", updateFileInfo.Length);
-                return false;
+                return UpdateInstallOutcome.Failed;
             }
 
             // Get current exe size for comparison
@@ -198,7 +216,7 @@ public class UpdateService : IUpdateService
             if (!File.Exists(backupPath))
             {
                 _logger.LogError("Failed to create backup file");
-                return false;
+                return UpdateInstallOutcome.Failed;
             }
 
             _logger.LogInformation("Installing update...");
@@ -284,21 +302,68 @@ REM Self-delete and exit
             // Exit the current app
             Application.Current?.Quit();
 
-            return true;
+            return UpdateInstallOutcome.Started;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error installing update");
-            return false;
+            return UpdateInstallOutcome.Failed;
         }
 #endif
     }
 
 #if ANDROID
+    /// <summary>
+    /// Whether this app may hand an APK to the package installer. Declaring
+    /// <c>REQUEST_INSTALL_PACKAGES</c> in the manifest only makes the app eligible to ask — on
+    /// Android 8 (API 26) and up the user must additionally grant "Install unknown apps" for this
+    /// specific app, and a device that has only ever been sideloaded once has not.
+    /// <para>Below API 26 the setting is device-wide with no per-app query, so there is nothing to
+    /// check and nowhere to send the user; the installer's own prompt handles it. minSdk here is 24,
+    /// so this branch is reachable — calling the API 26 method unguarded would crash Android 7.</para>
+    /// </summary>
+    private static bool CanRequestPackageInstalls()
+    {
+        if (!OperatingSystem.IsAndroidVersionAtLeast(26))
+            return true;
+
+        return Android.App.Application.Context.PackageManager?.CanRequestPackageInstalls() ?? false;
+    }
+
+    /// <summary>
+    /// Opens the per-app "Install unknown apps" screen for this app. Best-effort: the operator
+    /// pressed Update Now, so taking them straight to the one toggle that blocks it beats a dead end.
+    /// </summary>
+    private void OpenInstallPermissionSettings()
+    {
+        // Statically guarded, not merely unreachable: today CanRequestPackageInstalls() returns true
+        // below API 26 so this is never called there, but that is a coupling across two methods, and
+        // the settings action itself does not exist before 26 (minSdk is 24).
+        if (!OperatingSystem.IsAndroidVersionAtLeast(26))
+            return;
+
+        try
+        {
+            var context = Android.App.Application.Context;
+            var intent = new Android.Content.Intent(
+                Android.Provider.Settings.ActionManageUnknownAppSources,
+                Android.Net.Uri.Parse("package:" + context.PackageName));
+            intent.AddFlags(Android.Content.ActivityFlags.NewTask);
+            context.StartActivity(intent);
+        }
+        catch (Exception ex)
+        {
+            // Some OEM builds hide this screen. The updater still reports PermissionRequired, so the
+            // operator is told what to enable even when we cannot navigate them to it.
+            _logger.LogError(ex, "Could not open the \"install unknown apps\" settings screen");
+        }
+    }
+
     // Android can't silently self-update; hand the downloaded APK to the system package installer,
-    // which prompts the user (and, the first time, to allow "install unknown apps" for this app).
-    // The APK is signed with the same key as the running app, so it installs in place as an update.
-    private bool InstallApkAndroid(string apkPath)
+    // which prompts the user to confirm. The APK is signed with the same key as the running app
+    // (verified: same signer cert across releases), so it installs in place as an update — the
+    // operator's config.json, API key and printer settings survive.
+    private UpdateInstallOutcome InstallApkAndroid(string apkPath)
     {
         try
         {
@@ -313,58 +378,13 @@ REM Self-delete and exit
             context.StartActivity(intent);
 
             _logger.LogInformation("Launched the Android package installer for {Apk}", apkPath);
-            return true;
+            return UpdateInstallOutcome.Started;
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Failed to launch the Android APK installer");
-            return false;
+            return UpdateInstallOutcome.Failed;
         }
     }
 #endif
-
-    private int CompareVersions(string version1, string version2)
-    {
-        var v1Parts = version1.Split('.').Select(int.Parse).ToArray();
-        var v2Parts = version2.Split('.').Select(int.Parse).ToArray();
-
-        for (int i = 0; i < Math.Max(v1Parts.Length, v2Parts.Length); i++)
-        {
-            var v1 = i < v1Parts.Length ? v1Parts[i] : 0;
-            var v2 = i < v2Parts.Length ? v2Parts[i] : 0;
-
-            if (v1 < v2) return -1;
-            if (v1 > v2) return 1;
-        }
-
-        return 0;
-    }
-
-    // GitHub API response models
-    private class GitHubRelease
-    {
-        [JsonPropertyName("tag_name")]
-        public string? TagName { get; set; }
-
-        [JsonPropertyName("name")]
-        public string? Name { get; set; }
-
-        [JsonPropertyName("body")]
-        public string? Body { get; set; }
-
-        [JsonPropertyName("assets")]
-        public List<GitHubAsset>? Assets { get; set; }
-    }
-
-    private class GitHubAsset
-    {
-        [JsonPropertyName("name")]
-        public string? Name { get; set; }
-
-        [JsonPropertyName("browser_download_url")]
-        public string? BrowserDownloadUrl { get; set; }
-
-        [JsonPropertyName("size")]
-        public long Size { get; set; }
-    }
 }
