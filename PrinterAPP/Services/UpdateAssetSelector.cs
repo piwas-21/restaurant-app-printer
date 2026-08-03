@@ -36,7 +36,7 @@ public static class UpdateAssetSelector
         if (assets is null)
             return null;
 
-        var candidates = assets.Where(a => !string.IsNullOrWhiteSpace(a.Name)).ToList();
+        var candidates = assets.ToList();
 
         if (platform == UpdatePlatform.Android)
         {
@@ -46,13 +46,16 @@ public static class UpdateAssetSelector
         }
 
         var arch = is64Bit ? "x64" : "x86";
-        return candidates.FirstOrDefault(a =>
-                   HasExtension(a, ".exe") &&
-                   a.Name!.Contains(arch, StringComparison.OrdinalIgnoreCase))
+        return candidates.FirstOrDefault(a => HasExtension(a, ".exe") && Contains(a, arch))
                // Legacy releases published a single un-suffixed installer.
                ?? candidates.FirstOrDefault(a => HasExtension(a, ".exe"));
     }
 
+    // Both matchers are null-safe rather than guarded by a prior filter: GitHub declares `name`
+    // nullable, and a name we cannot read simply matches nothing.
     private static bool HasExtension(GitHubAsset asset, string extension) =>
-        asset.Name!.EndsWith(extension, StringComparison.OrdinalIgnoreCase);
+        asset.Name?.EndsWith(extension, StringComparison.OrdinalIgnoreCase) == true;
+
+    private static bool Contains(GitHubAsset asset, string fragment) =>
+        asset.Name?.Contains(fragment, StringComparison.OrdinalIgnoreCase) == true;
 }
