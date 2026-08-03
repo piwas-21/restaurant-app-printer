@@ -99,30 +99,48 @@ public partial class UpdaterWindow : ContentPage
                 });
             });
 
-            bool success = await _updateService.DownloadAndInstallUpdateAsync(_updateInfo, progress);
+            var outcome = await _updateService.DownloadAndInstallUpdateAsync(_updateInfo, progress);
 
-            if (success)
+            switch (outcome)
             {
-                StatusLabel.Text = "Update successful! App will restart...";
-                StatusLabel.TextColor = CraftColors.SuccessText;
-            }
-            else
-            {
-                StatusLabel.Text = "Update failed. Please try again or download manually.";
-                StatusLabel.TextColor = CraftColors.Error;
-                UpdateButton.IsEnabled = true;
-                CheckButton.IsEnabled = true;
-                CloseButton.IsEnabled = true;
+                case UpdateInstallOutcome.Started:
+                    StatusLabel.Text = "Update successful! App will restart...";
+                    StatusLabel.TextColor = CraftColors.SuccessText;
+                    break;
+
+                // Not a failure and not a success: the download never started because Android blocks
+                // the install until this app is allowed to install unknown apps. Say what to do —
+                // reporting "successful" here (the old behaviour) left the operator on a stale build
+                // believing they had updated.
+                case UpdateInstallOutcome.PermissionRequired:
+                    StatusLabel.Text = "Allow \"Install unknown apps\" for PrinterApp in the settings "
+                                     + "screen that just opened, then press Update Now again.";
+                    StatusLabel.TextColor = CraftColors.WarningText;
+                    DownloadProgressBar.IsVisible = false;
+                    ReEnableControls();
+                    break;
+
+                default:
+                    StatusLabel.Text = "Update failed. Please try again or download manually.";
+                    StatusLabel.TextColor = CraftColors.Error;
+                    ReEnableControls();
+                    break;
             }
         }
         catch (Exception ex)
         {
             StatusLabel.Text = $"Error installing update: {ex.Message}";
             StatusLabel.TextColor = CraftColors.Error;
-            UpdateButton.IsEnabled = true;
-            CheckButton.IsEnabled = true;
-            CloseButton.IsEnabled = true;
+            ReEnableControls();
         }
+    }
+
+    /// <summary>Hands the screen back to the operator after an update attempt that did not launch.</summary>
+    private void ReEnableControls()
+    {
+        UpdateButton.IsEnabled = true;
+        CheckButton.IsEnabled = true;
+        CloseButton.IsEnabled = true;
     }
 
     private async void OnCloseClicked(object sender, EventArgs e)

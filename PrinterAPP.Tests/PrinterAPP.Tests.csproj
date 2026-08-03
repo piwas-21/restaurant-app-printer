@@ -97,6 +97,13 @@
     <Compile Include="..\PrinterAPP\Services\UnconfirmedOrderExpiry.cs" Link="Linked\UnconfirmedOrderExpiry.cs" />
     <Compile Include="..\PrinterAPP\Services\FeedStartupPolicy.cs" Link="Linked\FeedStartupPolicy.cs" />
     <Compile Include="..\PrinterAPP\Services\FeedWatchdogDecision.cs" Link="Linked\FeedWatchdogDecision.cs" />
+    <!-- Auto-update decisions (MAUI-free by design). Which artifact a platform downloads used to be
+         an #if ANDROID inside UpdateService, i.e. invisible to this project — and it was wrong, so
+         every Android "Update Now" fetched the Windows installer and failed. Both live here as pure
+         functions taking the platform as an argument, so CI can see both arms on any host. -->
+    <Compile Include="..\PrinterAPP\Models\GitHubRelease.cs" Link="Linked\GitHubRelease.cs" />
+    <Compile Include="..\PrinterAPP\Services\UpdateAssetSelector.cs" Link="Linked\UpdateAssetSelector.cs" />
+    <Compile Include="..\PrinterAPP\Services\ReleaseVersion.cs" Link="Linked\ReleaseVersion.cs" />
   </ItemGroup>
 
   <ItemGroup>

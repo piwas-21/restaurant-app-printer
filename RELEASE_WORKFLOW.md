@@ -27,9 +27,29 @@ workflow runs in). Create a **fine-grained PAT** scoped to **only** `piwas-21/pr
    ```
 5. Set an expiry reminder — when the PAT expires, releases fail to upload until it's regenerated.
 
-> **Migrating existing installs**: clients on a build older than 1.0.16 still poll the old updater URL
-> and can't auto-update to the fix. They must download the new build once from the public Releases page;
-> auto-update works for every release after that.
+> **Migrating existing installs** — two separate cut-offs, one per platform:
+>
+> | Platform | Auto-update works from | Older installs |
+> |---|---|---|
+> | Windows | **1.0.16** | Poll the old updater URL; can't reach the fix. |
+> | Android | **1.0.20** | Auto-update support did not exist. |
+>
+> Android builds before 1.0.20 had no `.apk` branch in `UpdateService`, so they evaluated the Windows
+> arm — and since `Environment.Is64BitOperatingSystem` is true on arm64, "Update Now" downloaded
+> `PrinterApp-Setup-x64.exe` (~300 MB) and failed in the batch-script install path with *"Update
+> failed. Please try again or download manually."* They also had no startup update prompt.
+>
+> Either way the device must download the new build **once** from the public Releases page; auto-update
+> works for every release after that. The APK is signed with the same keystore across releases
+> (`ANDROID_KEYSTORE_BASE64`), so it installs **in place** — no uninstall, and `config.json`, the API
+> key and printer settings survive. Verify before telling a client to sideload:
+>
+> ```bash
+> apksigner verify --print-certs PrinterApp-Android.apk
+> ```
+>
+> If the signer certificate differs from the build already on the device, the install fails with a
+> signature mismatch and the operator must uninstall first — losing their configuration.
 
 ## Step 1: Update Version Number
 
