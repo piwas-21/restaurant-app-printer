@@ -418,42 +418,44 @@ public class EventStreamingService : IEventStreamingService
                         }
                         else
                         {
-                            _logger.LogWarning("Order {OrderNumber} has no items! Attempting to fetch full details from API...", order.OrderNumber);
-
-                            try
-                            {
-                                // Extract ID from OrderNumber (e.g., "ORD-123" or "123")
-                                var orderIdStr = order.OrderNumber.Contains("/")
-                                    ? order.OrderNumber.Split('/').Last()
-                                    : order.OrderNumber;
-
-                                if (int.TryParse(orderIdStr, out var orderId))
-                                {
-                                    var fullOrder = await FetchOrderDetailsAsync(orderId, sourceEndpoint);
-                                    if (fullOrder != null && fullOrder.Items != null && fullOrder.Items.Any())
-                                    {
-                                        _logger.LogInformation("Successfully fetched full details for order {OrderNumber} with {Count} items",
-                                            order.OrderNumber, fullOrder.Items.Count);
-                                        order = fullOrder;
-                                        // Update the wrapper reference too (orderEvent is non-null in this
-                                        // block — see the `is { Order: not null }` guard above).
-                                        orderEvent.Order = fullOrder;
-                                    }
-                                    else
-                                    {
-                                        _logger.LogWarning("Failed to fetch items for order {OrderNumber} from API", order.OrderNumber);
-                                    }
-                                }
-                            }
-                            catch (Exception fetchEx)
-                            {
-                                _logger.LogError(fetchEx, "Error fetching full order details for {OrderNumber}", order.OrderNumber);
-                            }
+                            // There used to be an "enrich it from /api/orders/{id}" fallback here. It
+                            // never ran once, for three independent reasons, and its comment claimed
+                            // the opposite — so it is gone rather than repaired:
+                            //
+                            //  1. It derived the id with int.TryParse(order.OrderNumber). Order numbers
+                            //     are yyyyMMdd + a 4-digit sequence (OrderNumberGenerator), i.e. a
+                            //     12-digit string like 202607290001 — larger than int.MaxValue, so the
+                            //     parse failed on every real order and the request was never issued.
+                            //  2. /api/orders/{id} binds a Guid, so an int could not address an order
+                            //     there even if the parse had succeeded.
+                            //  3. It sent X-Api-Key to that endpoint, which is JWT-only and (since the
+                            //     2026-07 order IDOR fix) scoped to staff or the order's owner. A device
+                            //     key authenticates neither, so it would 401.
+                            //
+                            // Reviving it would need a device-facing detail endpoint — but NOT any new
+                            // plumbing for the id: the feed already carries it as order.Id. Nothing has
+                            // asked for that, and the feed includes the line graph, so an item-less
+                            // order is a never-observed edge rather than a gap being papered over.
+                            //
+                            // Note what happens next, because this branch does NOT stop it: control
+                            // falls through and the order is dispatched, and the cashier receipt is
+                            // printed unconditionally (kitchen tickets are gated on item count). So a
+                            // blank receipt does come out of the cashier printer. Say that plainly.
+                            _logger.LogWarning(
+                                "Order {OrderNumber} arrived from {Endpoint} with no items",
+                                order.OrderNumber, sourceEndpoint);
+                            _requestLogService.LogWarning(
+                                PollingLogOperation,
+                                $"Order {order.OrderNumber} arrived with no line items — its cashier receipt will print blank",
+                                "The device cannot recover the missing lines; it prints what the feed sent. " +
+                                "Check this order in the dashboard and reprint it from the Orders tab if the ticket is wrong.",
+                                sourceEndpoint);
                         }
 
-                        // Log parsed order with full JSON data
+                        // Log parsed order with full JSON data, keyed by the same order number the
+                        // dedup path above uses as orderKey.
                         _requestLogService.LogOrderReceived(
-                            int.TryParse(order.OrderNumber.Split('/').Last(), out var orderNum) ? orderNum : 0,
+                            order.OrderNumber,
                             order.TableNumber,
                             order.Total,
                             data,
@@ -493,9 +495,10 @@ public class EventStreamingService : IEventStreamingService
                         // Mark order as processed
                         MarkOrderAsProcessed(orderKey);
 
-                        // Log parsed order with full JSON data
+                        // Log parsed order with full JSON data, keyed by the same order number the
+                        // dedup path above uses as orderKey.
                         _requestLogService.LogOrderReceived(
-                            int.TryParse(order.OrderNumber.Split('/').Last(), out var orderNum) ? orderNum : 0,
+                            order.OrderNumber,
                             order.TableNumber,
                             order.Total,
                             data,
@@ -663,7 +666,7 @@ public class EventStreamingService : IEventStreamingService
             _logger.LogInformation(
                 "Order {OrderNumber} printed after being reported unrecoverable", orderNumber);
             _requestLogService.LogWarning(
-                "Order Polling",
+                PollingLogOperation,
                 $"Order {orderNumber} did print after all — ignore the earlier warning",
                 "It completed later than expected. Do not reprint it; that would produce a duplicate ticket.");
         }
@@ -732,49 +735,10 @@ public class EventStreamingService : IEventStreamingService
             // Both surfaces are non-blocking (they marshal to the UI thread), so reporting from
             // inside the dedup lock does not stall the poll loop.
             _requestLogService.LogError(
-                "Order Polling",
+                PollingLogOperation,
                 $"Order {orderNumber} may not have printed, and is too old to fetch again",
                 "The order was received but never confirmed printed. Check the printer and reprint " +
                 "it from the Orders tab if the ticket is missing.");
-        }
-    }
-    private async Task<Order?> FetchOrderDetailsAsync(int orderId, string sourceEndpoint)
-    {
-        try
-        {
-            var config = await _printerService.LoadConfigurationAsync();
-            if (string.IsNullOrWhiteSpace(config.ApiBaseUrl)) return null;
-
-            var url = $"{config.ApiBaseUrl.TrimEnd('/')}/api/orders/{orderId}";
-            _logger.LogDebug("Fetching order details from: {Url}", url);
-
-            using var httpClient = new HttpClient();
-            // The order-details endpoint needs the same X-Api-Key as the printer feed. Without it,
-            // this fallback returns 401 and silently drops the enrichment for item-less events.
-            if (!string.IsNullOrWhiteSpace(config.ApiKey))
-            {
-                httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.ApiKey);
-            }
-
-            var response = await httpClient.GetAsync(url);
-            if (!response.IsSuccessStatusCode)
-            {
-                _logger.LogWarning("Failed to fetch order {OrderId}: {StatusCode}", orderId, response.StatusCode);
-                return null;
-            }
-
-            var json = await response.Content.ReadAsStringAsync();
-            var order = JsonSerializer.Deserialize<Order>(json, new JsonSerializerOptions
-            {
-                PropertyNameCaseInsensitive = true
-            });
-
-            return order;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Exception fetching order {OrderId}", orderId);
-            return null;
         }
     }
     /// <summary>

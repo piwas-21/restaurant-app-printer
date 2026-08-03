@@ -14,8 +14,18 @@ namespace PrinterAPP.Services;
 /// </summary>
 public static class PrinterTransportResolver
 {
-    public static IPrinterTransport Resolve(string printerName) =>
-        PrinterEndpoint.TryParse(printerName, out var ip, out var port)
+    public static IPrinterTransport Resolve(string printerName)
+    {
+        // Checked FIRST so the diagnostic sink cannot be shadowed by the other two rules. It could
+        // not collide today (TryParse accepts only literal IPs, and no spooler name begins with
+        // 'file:'), but ordering it first means a future loosening of either rule cannot silently send
+        // a capture to hardware. This is also what makes a sink capture a REAL order print: this
+        // resolver is what OrderPrintService uses, not just the test-print path.
+        if (PrinterFileSink.TryParse(printerName, out var sinkDirectory))
+            return new FileSinkTransport(sinkDirectory);
+
+        return PrinterEndpoint.TryParse(printerName, out var ip, out var port)
             ? new NetworkTcpTransport(ip, port)
             : new WindowsSpoolerTransport(printerName);
+    }
 }

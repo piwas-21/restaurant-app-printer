@@ -194,9 +194,6 @@ public class OrderPrintService : IOrderPrintService
 
     public async Task<bool> PrintOrderAsync(Order order, PrinterType printerType, bool isManualPrint = false, CancellationToken cancellationToken = default)
     {
-        // Extract order number for logging (parse the numeric part)
-        int orderNumForLog = int.TryParse(order.OrderNumber.Split('/').Last(), out var orderNumParsed) ? orderNumParsed : 0;
-
         try
         {
             var config = await _printerService.LoadConfigurationAsync();
@@ -256,7 +253,7 @@ public class OrderPrintService : IOrderPrintService
             if (string.IsNullOrWhiteSpace(printerName))
             {
                 _logger.LogWarning("No printer configured for {PrinterType}", printerType);
-                _requestLogService.LogPrintResponse(printerType.ToString(), orderNumForLog, false, "No printer configured");
+                _requestLogService.LogPrintResponse(printerType.ToString(), order.OrderNumber, false, "No printer configured");
                 return false;
             }
 
@@ -269,7 +266,7 @@ public class OrderPrintService : IOrderPrintService
                 : FormatCashierReceipt(order, config, paperWidth);
 
             // Log print request with full content
-            _requestLogService.LogPrintRequest(printerType.ToString(), orderNumForLog, printerName, content);
+            _requestLogService.LogPrintRequest(printerType.ToString(), order.OrderNumber, printerName, content);
 
             for (int i = 0; i < copies; i++)
             {
@@ -287,11 +284,11 @@ public class OrderPrintService : IOrderPrintService
             {
                 _logger.LogInformation("Successfully printed order #{OrderNumber} to {PrinterType} printer ({Copies} copies)",
                     order.OrderNumber, printerType, copies);
-                _requestLogService.LogPrintResponse(printerType.ToString(), orderNumForLog, true, $"Printed {copies} {(copies > 1 ? "copies" : "copy")}");
+                _requestLogService.LogPrintResponse(printerType.ToString(), order.OrderNumber, true, $"Printed {copies} {(copies > 1 ? "copies" : "copy")}");
             }
             else
             {
-                _requestLogService.LogPrintResponse(printerType.ToString(), orderNumForLog, false, "Print operation failed");
+                _requestLogService.LogPrintResponse(printerType.ToString(), order.OrderNumber, false, "Print operation failed");
             }
 
             return success;
@@ -299,7 +296,7 @@ public class OrderPrintService : IOrderPrintService
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error printing order #{OrderNumber} to {PrinterType}", order.OrderNumber, printerType);
-            _requestLogService.LogPrintResponse(printerType.ToString(), orderNumForLog, false, $"Exception: {ex.Message}");
+            _requestLogService.LogPrintResponse(printerType.ToString(), order.OrderNumber, false, $"Exception: {ex.Message}");
             return false;
         }
     }
@@ -641,6 +638,21 @@ public class OrderPrintService : IOrderPrintService
             // Phase-2b: transport constructed per configured target (a per-printer value), so it
             // is not a DI singleton. See ADR-006 / PrinterTransportResolver.
             IPrinterTransport transport = PrinterTransportResolver.Resolve(printerName);
+
+            // A sink write SUCCEEDS, so without this every surface — the request log, the order
+            // history, the pipeline ack, fleet print-ack telemetry — reports a healthy print while
+            // no paper exists and the kitchen sees nothing. A diagnostic left switched on would
+            // therefore be invisible in exactly the situation where it matters most. Warn on every
+            // sink-routed print so the condition is greppable in the logs rather than resting on a
+            // comment. Deliberately not an error: the operator asked for this, and failing the print
+            // would make the capture unusable.
+            if (transport is FileSinkTransport sink)
+            {
+                _logger.LogWarning(
+                    "DIAGNOSTIC SINK ACTIVE for {PrinterName}: order bytes captured to {Directory}, NOT printed. " +
+                    "No paper is produced while this target is configured.",
+                    printerName, sink.CaptureDirectory);
+            }
 
             if (transport is WindowsSpoolerTransport)
             {

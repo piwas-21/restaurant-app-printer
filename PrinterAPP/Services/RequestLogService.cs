@@ -53,29 +53,29 @@ public class RequestLogService : IRequestLogService
         AddLogEntry(entry);
     }
 
-    public void LogOrderReceived(int orderId, int? tableNumber, decimal total, string? orderJson = null, string? source = null)
+    public void LogOrderReceived(string orderNumber, int? tableNumber, decimal total, string? orderJson = null, string? source = null)
     {
-        var entry = CreateLogEntry(LogType.Order, $"Order #{orderId}", $"Table {tableNumber}", $"${total:F2}", source ?? "General");
+        var entry = CreateLogEntry(LogType.Order, OrderLabel(orderNumber), $"Table {tableNumber}", $"${total:F2}", source ?? "General");
         entry.ResponseBody = orderJson;
         AddLogEntry(entry);
     }
 
-    public void LogPrintRequest(string printerType, int orderId, string printerName, string? printContent = null)
+    public void LogPrintRequest(string printerType, string orderNumber, string printerName, string? printContent = null)
     {
         var source = printerType.ToLower() == "kitchen" ? "Kitchen" : "Service";
-        var entry = CreateLogEntry(LogType.PrintRequest, $"{printerType} Print", $"Order #{orderId}", $"Printer: {printerName}", source);
+        var entry = CreateLogEntry(LogType.PrintRequest, $"{printerType} Print", OrderLabel(orderNumber), $"Printer: {printerName}", source);
         entry.RequestBody = printContent;
         AddLogEntry(entry);
     }
 
-    public void LogPrintResponse(string printerType, int orderId, bool success, string? error = null, string? details = null)
+    public void LogPrintResponse(string printerType, string orderNumber, bool success, string? error = null, string? details = null)
     {
         var source = printerType.ToLower() == "kitchen" ? "Kitchen" : "Service";
         var status = success ? "✓ Success" : "✗ Failed";
         var message = error ?? "Printed successfully";
         var entry = CreateLogEntry(success ? LogType.PrintSuccess : LogType.PrintError,
                $"{printerType} Result",
-               $"Order #{orderId} - {status}",
+               $"{OrderLabel(orderNumber)} - {status}",
                message,
                source);
         entry.ResponseBody = details;
@@ -93,6 +93,12 @@ public class RequestLogService : IRequestLogService
         var entry = CreateLogEntry(LogType.Warning, operation, $"Warning: {message}", details ?? string.Empty, source ?? "General");
         AddLogEntry(entry);
     }
+
+    // Order.OrderNumber is declared non-nullable, but it is populated by JSON deserialization —
+    // an explicit `"orderNumber": null` in the feed lands here as null regardless. A bare "Order #"
+    // would read like a rendering bug, so name the gap instead.
+    private static string OrderLabel(string? orderNumber) =>
+        string.IsNullOrWhiteSpace(orderNumber) ? "Order #(no number)" : $"Order #{orderNumber}";
 
     private LogEntry CreateLogEntry(LogType type, string operation, string message, string details, string source = "General")
     {

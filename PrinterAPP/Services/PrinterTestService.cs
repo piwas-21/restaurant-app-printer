@@ -5,7 +5,8 @@ using PrinterAPP.Models;
 namespace PrinterAPP.Services;
 
 /// <summary>
-/// Builds and sends ESC/POS test receipts, routing per target kind: network targets go over
+/// Builds and sends ESC/POS test receipts, routing per target kind: file-sink targets are written
+/// to disk (<see cref="FileSinkTransport"/>); network targets go over
 /// <see cref="NetworkTcpTransport"/>; Windows spooler targets delegate to the legacy
 /// <see cref="IPrinterService.PrintTestReceiptAsync"/> path (thermal detection, retries,
 /// port/HTML fallbacks — byte-identical to before), whose raw spooler write goes through
@@ -27,6 +28,16 @@ public class PrinterTestService : IPrinterTestService
     {
         ArgumentNullException.ThrowIfNull(target);
         ArgumentNullException.ThrowIfNull(config);
+
+        // Pattern-matched rather than `target.SinkDirectory!`: Kind == FileSink does guarantee the
+        // directory (PrinterTestTarget.Resolve sets them together), but asserting that with a
+        // null-forgiving operator buys nothing and turns a future inconsistency into a
+        // NullReferenceException inside the transport. The unreachable branch answers in the same
+        // shape as this method's other refusals.
+        if (target.Kind == PrinterTransportKind.FileSink)
+            return target.SinkDirectory is { } sinkDirectory
+                ? await TestFileSinkAsync(sinkDirectory, label, display)
+                : $"{display} printer: ✗ Sink target '{target.RawText}' resolved without a directory";
 
         if (target.Kind == PrinterTransportKind.NetworkTcp)
         {
@@ -52,6 +63,24 @@ public class PrinterTestService : IPrinterTestService
         catch (Exception ex)
         {
             return $"{display} printer (network {ip}:{port}): ✗ {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Writes the test receipt to the diagnostic file sink and reports the DIRECTORY back, because
+    /// a capture nobody can find is no better than no capture — there is no paper to look at.
+    /// </summary>
+    public async Task<string> TestFileSinkAsync(string directory, string label, string display)
+    {
+        try
+        {
+            var transport = new FileSinkTransport(directory);
+            await transport.SendAsync(BuildTestReceipt(label), CancellationToken.None);
+            return $"{display} printer (file sink): ✓ Wrote capture to {transport.CaptureDirectory}";
+        }
+        catch (Exception ex)
+        {
+            return $"{display} printer (file sink {directory}): ✗ {ex.Message}";
         }
     }
 
