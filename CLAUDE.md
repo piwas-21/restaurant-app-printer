@@ -146,7 +146,15 @@ Grep for the type/method/key you're adding or modifying. List every callsite. Co
 ## §7 — Quality gates (source of truth `.github/workflows/ci.yml` + `.pre-commit-config.yaml`)
 
 - **Pre-commit** (blocking): trailing-ws / EOF / YAML-JSON-XML checks / large-files / secret-scan (detect-secrets) / no-commit-to-protected; file-length (§4). No build gate in pre-commit — `dotnet build PrinterAPP.sln` is a manual pre-merge step on Windows.
-- **CI** (`ci.yml`): `dotnet test` on `PrinterAPP.Tests` (plain net10.0, runs on ubuntu-latest — no MAUI workloads needed, since DEV-PHASES W1), file-length (§4), Gitleaks, TruffleHog (PRs only), Trivy fs. ⚠️ `dotnet build`/`dotnet format` for the MAUI app heads still need a Windows runner (CodeQL deferred for the same reason, issue #4) — `build-windows.{sh,ps1}` is the pre-merge build source of truth.
+- **CI** (`ci.yml`), three jobs: `dotnet test` on `PrinterAPP.Tests` (plain net10.0, ubuntu-latest — no
+  MAUI workloads needed, since DEV-PHASES W1); **`maui_compile`**, which builds the MAUI app head for
+  the **android TFM** on ubuntu (`dotnet workload restore` + `dotnet build -f net10.0-android`); and
+  `checks`, one job running file-length (§4), Gitleaks, TruffleHog (PRs only) and Trivy fs in sequence
+  (four sub-minute jobs each billed a whole minute is four billed minutes for ~40 s of work — this repo
+  is private and billed). ⚠️ Still Windows-only, therefore still uncovered by CI: the **Windows TFM** —
+  the `#if WINDOWS` bodies (`WindowsPrinterService`'s P/Invoke) and Windows-only XAML, plus
+  `dotnet format` and CodeQL (issue #4). `build-windows.{ps1,sh}` remains the pre-merge source of truth
+  for those.
 - **Weekly** `security-audit.yml` (cron): OSV full-tree, Trivy fs (HIGH/CRITICAL), gitleaks full-history, `dotnet list package --vulnerable` — fails red on findings.
 - **New-dev setup**: `pwsh -File scripts/setup_hooks.ps1` (Windows) or `bash scripts/setup_hooks.sh` (macOS/Linux — hooks only; build needs Windows).
 
