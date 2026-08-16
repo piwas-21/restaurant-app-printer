@@ -64,7 +64,12 @@ Edit `PrinterAPP/PrinterAPP.csproj` and increment the version:
 
 GitHub Actions (`build-release.yml`) builds **both platforms** on a version tag and attaches them to
 the release:
-- **Windows** (`build-windows` job) — `PrinterApp-Setup-x64.exe` / `-x86.exe` (consumed by the in-app auto-updater).
+- **Windows** (`build-windows` matrix, one leg per RID, then the `release-windows` job) —
+  `PrinterApp-Setup-x64.exe` / `-x86.exe` (consumed by the in-app auto-updater). The legs build in
+  parallel and only upload artifacts; `release-windows` attaches both files in one call, so the two
+  legs cannot race to create the same release. If one arch fails, the other is still released, and a
+  release with **no** installer is refused outright — the auto-updater would otherwise see a newer
+  version it cannot download.
 - **Android** (`build-android` job) — `PrinterApp-Android.apk` (sideload).
 
 1. Commit your changes:
