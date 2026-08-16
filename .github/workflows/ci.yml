@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
         with:
           dotnet-version: '10.0.x' # matches global.json (10.0.101, rollForward latestFeature)
@@ -72,7 +72,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           # gitleaks scans the whole tree and TruffleHog diffs base..head — both need history.
           fetch-depth: 0
@@ -102,7 +102,7 @@ jobs:
       # every push, so coverage doesn't regress.
       - name: TruffleHog (secret scan, complementary to gitleaks)
         if: ${{ !cancelled() && github.event_name == 'pull_request' }}
-        uses: trufflesecurity/trufflehog@cb6aeefd6e2498240d0418e63f69684d28337e7b # v3.91.0
+        uses: trufflesecurity/trufflehog@bcfcf73aaf4759d4dadc2783177c245a02792318 # v3.97.0
         with:
           path: ./
           base: ${{ github.event.pull_request.base.sha }}
