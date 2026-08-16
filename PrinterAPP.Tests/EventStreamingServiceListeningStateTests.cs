@@ -99,8 +99,8 @@ public sealed class EventStreamingServiceListeningStateTests
 
     private static async Task<bool> WaitUntilAsync(Func<bool> condition)
     {
-        // The loop's first act is an awaited Task.Delay, which cancels promptly — this is a short
-        // convergence wait, not a sleep.
+        // The loop polls immediately and then awaits Task.Delay, both of which observe the token
+        // promptly — this is a short convergence wait, not a sleep.
         for (var i = 0; i < 100; i++)
         {
             if (condition())
@@ -134,23 +134,5 @@ public sealed class EventStreamingServiceListeningStateTests
             Task.FromResult(new PrinterConfiguration { ApiBaseUrl = _apiBaseUrl });
 
         public Task SaveConfigurationAsync(PrinterConfiguration config) => Task.CompletedTask;
-    }
-
-    private sealed class NoopRequestLogService : IRequestLogService
-    {
-        public System.Collections.ObjectModel.ReadOnlyObservableCollection<LogEntry> Logs { get; } =
-            new(new System.Collections.ObjectModel.ObservableCollection<LogEntry>());
-
-        public event EventHandler<LogEntry>? LogAdded;
-
-        public void LogSSEConnection(string endpoint, string status, string? url = null, Dictionary<string, string>? headers = null) { }
-        public void LogSSEResponse(string endpoint, int statusCode, Dictionary<string, string>? responseHeaders = null) { }
-        public void LogSSEEvent(string eventType, string data, string? rawData = null, string? source = null) { }
-        public void LogOrderReceived(string orderNumber, int? tableNumber, decimal total, string? orderJson = null, string? source = null) { }
-        public void LogPrintRequest(string printerType, string orderNumber, string printerName, string? printContent = null) { }
-        public void LogPrintResponse(string printerType, string orderNumber, bool success, string? error = null, string? details = null) { }
-        public void LogError(string operation, string message, string? details = null) { }
-        public void LogWarning(string operation, string message, string? details = null, string? source = null) { }
-        public void ClearLogs() => LogAdded?.Invoke(this, new LogEntry());
     }
 }

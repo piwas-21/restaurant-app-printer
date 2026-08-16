@@ -70,7 +70,7 @@ public class OrderFeedE2ETests
         {
             await feed.StartListeningAsync();
 
-            // First poll fires after a 5s delay; allow a few cycles for a slow/cold backend.
+            // The first poll fires immediately, then every 5s; allow a few cycles for a slow/cold backend.
             var polled = await WaitUntilAsync(() => feed.LastSuccessfulPollAt is not null, TimeSpan.FromSeconds(25));
 
             Assert.True(polled,
