@@ -166,8 +166,18 @@ develop                 ← DEFAULT + integration branch; all feature work targe
 main                    ← production RELEASES ONLY; updated solely via a develop→main release PR
 ```
 
-- **Never push directly to `main` or `develop`** — a GitHub **Ruleset** (`main-develop`, **no bypass**) blocks it server-side (direct push / force-push / deletion), and the pre-commit `no-commit-to-branch` hook blocks it locally. Always open a PR.
-- **Branch off `develop`; open every `feature/`·`fix/`·`chore/`·`docs/`·`test/` PR to `develop`.** Merge only when **all CI checks are green and review comments are resolved** (the ruleset requires it).
+- **Never push directly to `main` or `develop`.** Enforcement here is **local only**, unlike the other
+  app repos: this repo is **private on a free org plan**, where GitHub offers neither rulesets nor
+  branch protection (`GET /repos/.../rulesets` → *403 "Upgrade to GitHub Pro or make this repository
+  public"*; `GET /repos/.../branches/{main,develop}` → `"protected": false`, verified 2026-08-16). The
+  earlier claim that a no-bypass `main-develop` Ruleset blocked pushes server-side was **wrong for this
+  repo**. What actually stands between a mistake and `develop` is the pre-commit `no-commit-to-branch`
+  hook, the push-time review gate, and the merge gate — all of them local, all of them bypassable by
+  anyone who chooses to. Treat that as a reason for MORE care, not less.
+- **Branch off `develop`; open every `feature/`·`fix/`·`chore/`·`docs/`·`test/` PR to `develop`.**
+  Merge only via `scripts/pr-merge-gate.sh piwas-21/restaurant-app-printer <pr> --merge`, which
+  requires **every** CI check green (by state, not by name), zero unresolved review threads and zero
+  open Sonar issues. Since nothing is required server-side, that script is the gate.
 - **Releases:** open a PR **`develop` → `main`**, then tag `v*` on `main` → `build-release.yml` publishes the Windows exe + Android APK to the public releases repo.
 - One issue = one branch. Delete branch after merge (`gh pr merge --delete-branch`).
 - Branch naming: `feature/`, `fix/`, `chore/`, `docs/`, `test/`.
