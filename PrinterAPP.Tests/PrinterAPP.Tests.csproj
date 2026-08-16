@@ -108,6 +108,11 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+    <!-- Only so the DI-construction guard below can use the same container MauiProgram does:
+         EventStreamingService's poll interval is an OPTIONAL constructor parameter, and the app head
+         (which no PR job compiles) registers the type by interface. See
+         EventStreamingServiceDependencyInjectionTests. -->
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
   </ItemGroup>
 
 </Project>
