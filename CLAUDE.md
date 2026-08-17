@@ -21,7 +21,7 @@
 |---|---|
 | Any task | This file |
 | Refactoring sprint task | [docs/SPRINT-PLAN.md](docs/SPRINT-PLAN.md) — find the task ID, read its acceptance criteria |
-| Quality/security gate work | [docs/QUALITY-SECURITY-PLAN.md](docs/QUALITY-SECURITY-PLAN.md) |
+| Quality/security gate work | §7 below (current gates) + the workspace [DEV-PHASES-PLAN.md](../docs/plans/DEV-PHASES-PLAN.md) §2 coverage matrix |
 | Test work | [docs/TEST-COVERAGE-PLAN.md](docs/TEST-COVERAGE-PLAN.md) |
 | Security review / threat model | [docs/SECURITY-AUDIT.md](docs/SECURITY-AUDIT.md) |
 | Coding conventions detail | [docs/DEVELOPMENT-GUIDELINES.md](docs/DEVELOPMENT-GUIDELINES.md) |
@@ -157,6 +157,22 @@ Grep for the type/method/key you're adding or modifying. List every callsite. Co
   for those.
 - **Weekly** `security-audit.yml` (cron): OSV full-tree, Trivy fs (HIGH/CRITICAL), gitleaks full-history, `dotnet list package --vulnerable` — fails red on findings.
 - **New-dev setup**: `pwsh -File scripts/setup_hooks.ps1` (Windows) or `bash scripts/setup_hooks.sh` (macOS/Linux — hooks only; build needs Windows).
+
+### Not enforced yet (planned gates — do not lose these)
+
+Carried over from the deleted GitLab-era `docs/QUALITY-SECURITY-PLAN.md` (2026-08-17); everything else in
+that doc is either shipped above or GitLab-only. Cross-repo status lives in the workspace
+[DEV-PHASES-PLAN.md](../docs/plans/DEV-PHASES-PLAN.md) §2.
+
+| Gate | Status / blocker |
+|---|---|
+| `dotnet format --verify-no-changes` + XAML format (XamlStyler) | needs a Windows runner for the MAUI workload; same constraint as CodeQL ([#4](https://github.com/piwas-21/restaurant-app-printer/issues/4)) |
+| Roslyn analyzers (SonarAnalyzer/SecurityCodeScan) + `TreatWarningsAsErrors` | deferred in `Directory.Build.props` until the CS86xx nullable debt burns down |
+| SAST / SonarCloud quality gate | none on this repo (DEV-PHASES §2 D1 = "scans only, no SAST"); the merge gate's Sonar step is therefore a no-op here |
+| Coverage floor on `PrinterAPP.Tests` | tests run in CI but no minimum is enforced; target in [docs/TEST-COVERAGE-PLAN.md](docs/TEST-COVERAGE-PLAN.md) |
+| Automated **DTO-drift check** vs `backend/.../Features/**/Dtos/` | §5.3 / §6.1 are enforced by review only; the cross-repo diff script was specced and never built — the highest-value missing gate for this repo (silent drift = no ticket at the till) |
+| Release supply chain: Authenticode-sign the **Windows** artifact, publish `SHA256SUMS` + SBOM, verify the last release's signature | `build-release.yml` signs the **Android** APK only; the unsigned/unhashed Windows exe is the other half of SECURITY-AUDIT C1 / SPRINT-PLAN PS1 (client-side update verification has nothing to verify against) |
+| Dependency hygiene extras: `dotnet list package --outdated`, license audit (block GPL/AGPL transitives) | weekly `security-audit.yml` covers CVEs + secrets only |
 
 ---
 
