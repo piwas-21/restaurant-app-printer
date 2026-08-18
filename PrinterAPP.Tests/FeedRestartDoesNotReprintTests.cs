@@ -80,10 +80,12 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
 
         // Wait for the restarted feed to actually poll, so "nothing printed" cannot pass simply
         // because nothing happened yet.
+        // TWO polls, not one: the first proves the restarted feed is talking to the backend, the
+        // second proves it saw the re-emitted order again and still declined to print it. A flat
+        // sleep used to stand in for this; it asserted nothing and its length was guesswork.
         Assert.True(
-            await WaitUntilAsync(() => Volatile.Read(ref _requestCount) > requestsBefore),
-            "the restarted feed never polled");
-        await Task.Delay(500);
+            await WaitUntilAsync(() => Volatile.Read(ref _requestCount) > requestsBefore + 1),
+            "the restarted feed never polled twice");
         await second.StopListeningAsync();
 
         Assert.True(
@@ -172,7 +174,7 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
         var log = new CapturingRequestLogService();
         var feed = new EventStreamingService(
             new StubPrinterService(_baseUrl), log, new InMemoryFeedCursorStore(),
-            NullLogger<EventStreamingService>.Instance);
+            NullLogger<EventStreamingService>.Instance, pollInterval: TestPollInterval);
 
         var received = new List<string>();
         feed.OrderReceived += (_, e) => { if (e.Order is not null) received.Add(e.Order.OrderNumber); };
@@ -204,7 +206,7 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
         var log = new CapturingRequestLogService();
         var feed = new EventStreamingService(
             new StubPrinterService(_baseUrl), log, new InMemoryFeedCursorStore(),
-            NullLogger<EventStreamingService>.Instance);
+            NullLogger<EventStreamingService>.Instance, pollInterval: TestPollInterval);
 
         var received = new List<string>();
         feed.OrderReceived += (_, e) => { if (e.Order is not null) received.Add(e.Order.OrderNumber); };
@@ -234,11 +236,16 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
             FeedCursorStore.MaxLookBack > EventStreamingService.UnconfirmedRetention,
             "these tests rely on a fresh cursor starting already past the retention window");
 
+    // The property under test is the restart/dedup semantics, never the wall-clock gap between polls,
+    // so the feed is driven at a tiny interval. Production keeps the 5 s default.
+    private static readonly TimeSpan TestPollInterval = TimeSpan.FromMilliseconds(20);
+
     private EventStreamingService CreateFeed(IFeedCursorStore cursorStore) => new(
         new StubPrinterService(_baseUrl),
         new NoopRequestLogService(),
         cursorStore,
-        NullLogger<EventStreamingService>.Instance);
+        NullLogger<EventStreamingService>.Instance,
+        pollInterval: TestPollInterval);
 
     private async Task ServeAsync()
     {
@@ -327,7 +334,8 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
 
     private static async Task<bool> WaitUntilAsync(Func<bool> condition)
     {
-        // The poll loop waits 5s before its first request, so allow well beyond that.
+        // The feed polls immediately on start and then every TestPollInterval, so 16 s is a generous
+        // convergence budget rather than a wait for a known delay.
         for (var i = 0; i < 160; i++)
         {
             if (condition())
@@ -387,23 +395,5 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
                 _warnings.Add($"{operation}: {message}");
             }
         }
-    }
-
-    private class NoopRequestLogService : IRequestLogService
-    {
-        public System.Collections.ObjectModel.ReadOnlyObservableCollection<LogEntry> Logs { get; } =
-            new(new System.Collections.ObjectModel.ObservableCollection<LogEntry>());
-
-        public event EventHandler<LogEntry>? LogAdded;
-
-        public void LogSSEConnection(string endpoint, string status, string? url = null, Dictionary<string, string>? headers = null) { }
-        public void LogSSEResponse(string endpoint, int statusCode, Dictionary<string, string>? responseHeaders = null) { }
-        public void LogSSEEvent(string eventType, string data, string? rawData = null, string? source = null) { }
-        public void LogOrderReceived(string orderNumber, int? tableNumber, decimal total, string? orderJson = null, string? source = null) { }
-        public void LogPrintRequest(string printerType, string orderNumber, string printerName, string? printContent = null) { }
-        public void LogPrintResponse(string printerType, string orderNumber, bool success, string? error = null, string? details = null) { }
-        public virtual void LogError(string operation, string message, string? details = null) { }
-        public virtual void LogWarning(string operation, string message, string? details = null, string? source = null) { }
-        public void ClearLogs() => LogAdded?.Invoke(this, new LogEntry());
     }
 }

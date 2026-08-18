@@ -6,9 +6,11 @@ name: CI
 #
 # Unit tests run here on Linux: PrinterAPP.Tests targets plain net10.0 with
 # source-linked transport files, so it needs no MAUI workloads and no Windows.
-# Still out-of-scope (need a Windows runner): dotnet build / format for the
-# MAUI Windows TFM — build-windows.{sh,ps1} remains the pre-merge source of
-# truth for the app heads.
+# The MAUI app head is compiled for the ANDROID TFM by maui_compile below, which
+# covers the 56% of PrinterAPP/ that the test project does not source-link.
+# Still out-of-scope (needs a Windows runner): the Windows TFM — the `#if WINDOWS`
+# bodies (WindowsPrinterService's P/Invoke) and Windows-only XAML. For those,
+# build-windows.{sh,ps1} remains the pre-merge source of truth.
 #
 # Security: this workflow uses no untrusted-input expressions
 # (PR title/body/branch/commit) in run: commands. All inputs are
@@ -56,61 +58,108 @@ jobs:
       - name: Build E2E project (compile-only guard on source-linked files)
         run: dotnet build PrinterAPP.E2E/PrinterAPP.E2E.csproj -c Release --nologo
 
-  file_length:
-    name: file-length (CLAUDE.md §4)
+  # COVERAGE, not speed — this job deliberately COSTS time.
+  #
+  # PrinterAPP.Tests reaches production code through 52 explicit <Compile Include>
+  # source links, which is 4,826 of PrinterAPP/'s 10,971 LOC. The other 6,145 LOC —
+  # MainPage.xaml.cs, OrderPipeline.cs (the component that drives the feed into the
+  # printers), Platforms/Android/OrderFeedForegroundService.cs, UpdateService.cs —
+  # were compiled by NO push or PR workflow. The first thing that ever tried was
+  # `Build and Release` on a `v*` tag, so a compile error in the app head surfaced
+  # as a RED RELEASE rather than a red PR.
+  #
+  # This needs no Windows runner: build-release.yml already proves net10.0-android
+  # builds on ubuntu with setup-java + `dotnet workload restore`. Debug, no APK
+  # packaging, no signing, no secrets.
+  maui_compile:
+    name: compile the MAUI app head (android TFM)
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - run: bash scripts/check-file-length.sh --all
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: '10.0.x' # matches global.json (10.0.101, rollForward latestFeature)
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '17' # same JDK build-release.yml's android job ships with
 
-  gitleaks:
-    name: gitleaks (secret scan)
+      # NuGet only — deliberately NOT the workload packs. Package content is
+      # immutable per version, so a hit cannot change what is built; a stale
+      # workload cache silently building against different packs is the classic
+      # way this goes wrong, and this repo auto-updates customer machines.
+      - name: Cache NuGet packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: nuget-maui-android-${{ hashFiles('**/*.csproj', 'global.json') }}
+          restore-keys: nuget-maui-android-
+
+      # On Linux the Windows TFM is OS-conditioned away, so this pulls android only
+      # — same call security-audit.yml makes weekly and build-release.yml makes per tag.
+      - name: Restore MAUI workloads (android)
+        run: dotnet workload restore PrinterAPP/PrinterAPP.csproj
+
+      - name: Build the app head
+        run: dotnet build PrinterAPP/PrinterAPP.csproj -c Debug -f net10.0-android --nologo
+
+  # One job, four scans. GitHub bills each JOB rounded up to the whole minute, so
+  # file-length (3-6s) + gitleaks (7-12s) + TruffleHog (11-14s) + Trivy (9-31s)
+  # used to cost 4 billed minutes to do 30-63 seconds of work — on a repo that is
+  # private and therefore billed. Their summed duration is shorter than the
+  # dotnet_test job in every sampled run, so serialising them costs zero wall clock.
+  #
+  # Nothing is removed, weakened or re-scoped: every scan keeps its own SHA-pinned
+  # action, its own arguments and its own severity threshold. `!cancelled()` on each
+  # step preserves the one property the split gave us for free — a gitleaks hit must
+  # not hide the Trivy result — so a failing scan still reports every other scan's
+  # findings in the same log, and the job still fails.
+  checks:
+    name: hygiene + secret + misconfig scans
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
+          # gitleaks scans the whole tree and TruffleHog diffs base..head — both need history.
           fetch-depth: 0
+
+      - name: file-length (CLAUDE.md §4)
+        if: ${{ !cancelled() }}
+        run: bash scripts/check-file-length.sh --all
+
       # Use the binary directly — gitleaks-action requires a paid license
       # for organizations ($200+/yr); the OSS CLI is free under the MIT
       # license and does the same scan.
       - name: Install gitleaks
+        if: ${{ !cancelled() }}
         run: |
           GITLEAKS_VERSION=8.21.2
           curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
             | tar -xzf - -C /tmp gitleaks
           sudo mv /tmp/gitleaks /usr/local/bin/gitleaks
-      - name: Run gitleaks
+
+      - name: gitleaks (secret scan)
+        if: ${{ !cancelled() }}
         run: gitleaks detect --verbose --redact --source .
 
-  trufflehog:
-    name: TruffleHog (secret scan, complementary to gitleaks)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    # Only run on PRs — TruffleHog's diff-scan needs BASE != HEAD.
-    # On a push to main/develop, BASE (default branch) == HEAD, which
-    # the action errors on. Gitleaks already does the full-filesystem
-    # secret scan on every push, so coverage doesn't regress.
-    if: github.event_name == 'pull_request'
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          fetch-depth: 0
-      - uses: trufflesecurity/trufflehog@cb6aeefd6e2498240d0418e63f69684d28337e7b # v3.91.0
+      # Complementary to gitleaks, and only on PRs — TruffleHog's diff-scan needs
+      # BASE != HEAD. On a push to main/develop, BASE (default branch) == HEAD, which
+      # the action errors on. Gitleaks already does the full-filesystem secret scan on
+      # every push, so coverage doesn't regress.
+      - name: TruffleHog (secret scan, complementary to gitleaks)
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
+        uses: trufflesecurity/trufflehog@cb6aeefd6e2498240d0418e63f69684d28337e7b # v3.91.0
         with:
           path: ./
           base: ${{ github.event.pull_request.base.sha }}
           head: ${{ github.event.pull_request.head.sha }}
           extra_args: --only-verified
 
-  trivy_fs:
-    name: Trivy filesystem (misconfig + secrets)
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-      - uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      - name: Trivy filesystem (misconfig + secrets)
+        if: ${{ !cancelled() }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           scan-type: fs
           scan-ref: .

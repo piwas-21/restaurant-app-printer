@@ -21,7 +21,7 @@
 |---|---|
 | Any task | This file |
 | Refactoring sprint task | [docs/SPRINT-PLAN.md](docs/SPRINT-PLAN.md) — find the task ID, read its acceptance criteria |
-| Quality/security gate work | [docs/QUALITY-SECURITY-PLAN.md](docs/QUALITY-SECURITY-PLAN.md) |
+| Quality/security gate work | §7 below (current gates) + the workspace [DEV-PHASES-PLAN.md](../docs/plans/DEV-PHASES-PLAN.md) §2 coverage matrix |
 | Test work | [docs/TEST-COVERAGE-PLAN.md](docs/TEST-COVERAGE-PLAN.md) |
 | Security review / threat model | [docs/SECURITY-AUDIT.md](docs/SECURITY-AUDIT.md) |
 | Coding conventions detail | [docs/DEVELOPMENT-GUIDELINES.md](docs/DEVELOPMENT-GUIDELINES.md) |
@@ -76,7 +76,7 @@ PrinterAPP/
 - **Service-oriented with dependency injection** via `MauiProgram.cs`. Every service registered as `AddSingleton<IFoo, Foo>()`.
 - **MVVM with code-behind**: standard MAUI pattern. View binds to code-behind directly; pure ViewModel layer is intentionally absent at this scale.
 - **Intelligent printer routing**: orders dispatch to Cashier, Front Kitchen, or Back Kitchen printers based on each line's `KitchenType`. Since backend PR #237 made `OrderDto.Items` **root-only**, a bundle's components live only in `OrderItem.SideItems`, nested to arbitrary depth — so routing walks the whole tree (`KitchenTicketFilter`, a pure function like `FeedWatchdogDecision`), never just the top level. A component whose kitchen differs from its parent's goes to *its own* kitchen's ticket, which carries the parent line as context. **Anything that reasons about "the order's items" must recurse** — a top-level-only scan silently prints no ticket at all for that kitchen.
-- **5-second SSE polling** with a 1-hour deduplication window so re-emitted orders during reconnects don't double-print. The poll cursor and dedup set are **persisted** (`IFeedCursorStore`), so a restart resumes instead of re-printing the last 30 minutes. A dedup entry is persisted only once the print path confirms the order (`ConfirmOrderHandled`) — a kill between dispatch and print must re-drive the order, never silently suppress it. Three timings are coupled and must stay ordered — `unconfirmed retention (25 min) < cursor look-back clamp (30 min) < dedup window (1 h)`. The clamp must stay under the dedup window or a re-fetch reaches orders no surviving dedup entry guards (reprints); unconfirmed retention must stay under the clamp or an unconfirmed order's cursor floor is discarded by the very load it exists to influence (silently dropped ticket). An unconfirmed order that ages out is reported to the Errors page — past that point it genuinely cannot be recovered.
+- **5-second SSE polling** — the first poll fires immediately on start (a restarted Android foreground service must not leave the pass blind), every one after it 5 s apart; the interval is a constructor parameter defaulting to 5 s so tests can drive the loop without paying its wall clock — with a 1-hour deduplication window so re-emitted orders during reconnects don't double-print. The poll cursor and dedup set are **persisted** (`IFeedCursorStore`), so a restart resumes instead of re-printing the last 30 minutes. A dedup entry is persisted only once the print path confirms the order (`ConfirmOrderHandled`) — a kill between dispatch and print must re-drive the order, never silently suppress it. Three timings are coupled and must stay ordered — `unconfirmed retention (25 min) < cursor look-back clamp (30 min) < dedup window (1 h)`. The clamp must stay under the dedup window or a re-fetch reaches orders no surviving dedup entry guards (reprints); unconfirmed retention must stay under the clamp or an unconfirmed order's cursor floor is discarded by the very load it exists to influence (silently dropped ticket). An unconfirmed order that ages out is reported to the Errors page — past that point it genuinely cannot be recovered.
 - **Feed watchdog** (`IFeedWatchdog`): restarts a feed that died or stopped completing polls. It must never override a deliberate stop — see `FeedWatchdogDecision`, where all of that logic lives as a pure, tested function.
 - **Headless order pipeline** (`IOrderPipeline`): the feed→print→history→ack path is owned by a service, not a page, so it runs with no Activity. On Android an `OrderFeedForegroundService` hosts it (see [ADR-007](docs/adr/ADR-007-android-foreground-service.md)); on Windows it runs in-process. **Never move print or feed logic back into a page** — that is what made the app stop printing whenever it was minimised.
 - **ESC/POS** thermal printer commands with Turkish character support (codepage PC857) — see `OrderPrintService.cs`.
@@ -146,9 +146,33 @@ Grep for the type/method/key you're adding or modifying. List every callsite. Co
 ## §7 — Quality gates (source of truth `.github/workflows/ci.yml` + `.pre-commit-config.yaml`)
 
 - **Pre-commit** (blocking): trailing-ws / EOF / YAML-JSON-XML checks / large-files / secret-scan (detect-secrets) / no-commit-to-protected; file-length (§4). No build gate in pre-commit — `dotnet build PrinterAPP.sln` is a manual pre-merge step on Windows.
-- **CI** (`ci.yml`): `dotnet test` on `PrinterAPP.Tests` (plain net10.0, runs on ubuntu-latest — no MAUI workloads needed, since DEV-PHASES W1), file-length (§4), Gitleaks, TruffleHog (PRs only), Trivy fs. ⚠️ `dotnet build`/`dotnet format` for the MAUI app heads still need a Windows runner (CodeQL deferred for the same reason, issue #4) — `build-windows.{sh,ps1}` is the pre-merge build source of truth.
+- **CI** (`ci.yml`), three jobs: `dotnet test` on `PrinterAPP.Tests` (plain net10.0, ubuntu-latest — no
+  MAUI workloads needed, since DEV-PHASES W1); **`maui_compile`**, which builds the MAUI app head for
+  the **android TFM** on ubuntu (`dotnet workload restore` + `dotnet build -f net10.0-android`); and
+  `checks`, one job running file-length (§4), Gitleaks, TruffleHog (PRs only) and Trivy fs in sequence
+  (four sub-minute jobs each billed a whole minute is four billed minutes for ~40 s of work — this repo
+  is private and billed). ⚠️ Still Windows-only, therefore still uncovered by CI: the **Windows TFM** —
+  the `#if WINDOWS` bodies (`WindowsPrinterService`'s P/Invoke) and Windows-only XAML, plus
+  `dotnet format` and CodeQL (issue #4). `build-windows.{ps1,sh}` remains the pre-merge source of truth
+  for those.
 - **Weekly** `security-audit.yml` (cron): OSV full-tree, Trivy fs (HIGH/CRITICAL), gitleaks full-history, `dotnet list package --vulnerable` — fails red on findings.
 - **New-dev setup**: `pwsh -File scripts/setup_hooks.ps1` (Windows) or `bash scripts/setup_hooks.sh` (macOS/Linux — hooks only; build needs Windows).
+
+### Not enforced yet (planned gates — do not lose these)
+
+Carried over from the deleted GitLab-era `docs/QUALITY-SECURITY-PLAN.md` (2026-08-17); everything else in
+that doc is either shipped above or GitLab-only. Cross-repo status lives in the workspace
+[DEV-PHASES-PLAN.md](../docs/plans/DEV-PHASES-PLAN.md) §2.
+
+| Gate | Status / blocker |
+|---|---|
+| `dotnet format --verify-no-changes` + XAML format (XamlStyler) | needs a Windows runner for the MAUI workload; same constraint as CodeQL ([#4](https://github.com/piwas-21/restaurant-app-printer/issues/4)) |
+| Roslyn analyzers (SonarAnalyzer/SecurityCodeScan) + `TreatWarningsAsErrors` | deferred in `Directory.Build.props` until the CS86xx nullable debt burns down |
+| SAST / SonarCloud quality gate | none on this repo (DEV-PHASES §2 D1 = "scans only, no SAST"); the merge gate's Sonar step is therefore a no-op here |
+| Coverage floor on `PrinterAPP.Tests` | tests run in CI but no minimum is enforced; target in [docs/TEST-COVERAGE-PLAN.md](docs/TEST-COVERAGE-PLAN.md) |
+| Automated **DTO-drift check** vs `backend/.../Features/**/Dtos/` | §5.3 / §6.1 are enforced by review only; the cross-repo diff script was specced and never built — the highest-value missing gate for this repo (silent drift = no ticket at the till) |
+| Release supply chain: Authenticode-sign the **Windows** artifact, publish `SHA256SUMS` + SBOM, verify the last release's signature | `build-release.yml` signs the **Android** APK only; the unsigned/unhashed Windows exe is the other half of SECURITY-AUDIT C1 / SPRINT-PLAN PS1 (client-side update verification has nothing to verify against) |
+| Dependency hygiene extras: `dotnet list package --outdated`, license audit (block GPL/AGPL transitives) | weekly `security-audit.yml` covers CVEs + secrets only |
 
 ---
 
@@ -166,8 +190,18 @@ develop                 ← DEFAULT + integration branch; all feature work targe
 main                    ← production RELEASES ONLY; updated solely via a develop→main release PR
 ```
 
-- **Never push directly to `main` or `develop`** — a GitHub **Ruleset** (`main-develop`, **no bypass**) blocks it server-side (direct push / force-push / deletion), and the pre-commit `no-commit-to-branch` hook blocks it locally. Always open a PR.
-- **Branch off `develop`; open every `feature/`·`fix/`·`chore/`·`docs/`·`test/` PR to `develop`.** Merge only when **all CI checks are green and review comments are resolved** (the ruleset requires it).
+- **Never push directly to `main` or `develop`.** Enforcement here is **local only**, unlike the other
+  app repos: this repo is **private on a free org plan**, where GitHub offers neither rulesets nor
+  branch protection (`GET /repos/.../rulesets` → *403 "Upgrade to GitHub Pro or make this repository
+  public"*; `GET /repos/.../branches/{main,develop}` → `"protected": false`, verified 2026-08-16). The
+  earlier claim that a no-bypass `main-develop` Ruleset blocked pushes server-side was **wrong for this
+  repo**. What actually stands between a mistake and `develop` is the pre-commit `no-commit-to-branch`
+  hook, the push-time review gate, and the merge gate — all of them local, all of them bypassable by
+  anyone who chooses to. Treat that as a reason for MORE care, not less.
+- **Branch off `develop`; open every `feature/`·`fix/`·`chore/`·`docs/`·`test/` PR to `develop`.**
+  Merge only via `scripts/pr-merge-gate.sh piwas-21/restaurant-app-printer <pr> --merge`, which
+  requires **every** CI check green (by state, not by name), zero unresolved review threads and zero
+  open Sonar issues. Since nothing is required server-side, that script is the gate.
 - **Releases:** open a PR **`develop` → `main`**, then tag `v*` on `main` → `build-release.yml` publishes the Windows exe + Android APK to the public releases repo.
 - One issue = one branch. Delete branch after merge (`gh pr merge --delete-branch`).
 - Branch naming: `feature/`, `fix/`, `chore/`, `docs/`, `test/`.

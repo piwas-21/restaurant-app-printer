@@ -11,8 +11,9 @@ on:
 permissions:
   contents: read
 
-# Two independent jobs so a failure in one platform still releases the other.
-# Windows -> self-contained .exe installers (consumed by the in-app auto-updater).
+# Independent jobs so a failure in one platform still releases the other.
+# Windows -> self-contained .exe installers (consumed by the in-app auto-updater),
+#            built per-RID in a matrix, then published by a single release job.
 # Android -> a sideloadable .apk attached to the GitHub Release.
 #
 # Android signing secrets (repo Settings -> Secrets and variables -> Actions). If absent, the
@@ -26,8 +27,29 @@ permissions:
 #   then:  base64 -i printerapp.keystore | pbcopy   (paste into ANDROID_KEYSTORE_BASE64)
 
 jobs:
+  # The two Windows RIDs ran sequentially in ONE job: 201s for x64 then 134s for x86,
+  # behind a 170s workload restore — 554s of tag-to-release latency. They are
+  # independent builds, so they are now a matrix and overlap.
+  #
+  # The trade is stated rather than hidden: this makes BILLING slightly WORSE, because
+  # each leg pays its own 170s workload restore on a Windows runner (billed at 2x, each
+  # job rounded up to the whole minute). Measured baseline ~20 billed min per release;
+  # expect ~27. What it buys is ~164s off the time between pushing a tag and the
+  # installer existing — which matters when the tag is a hotfix for a kitchen mid-service,
+  # and not at all otherwise. If that ever stops being worth ~7 billed minutes, this is a
+  # one-commit revert.
+  #
+  # Uploading is a separate job on purpose: two matrix legs racing to create the SAME
+  # release tag in the releases repo is a real race, so the legs only produce artifacts
+  # and one job publishes both files in a single call — exactly the call that ran before.
   build-windows:
     runs-on: windows-latest
+    strategy:
+      # A failure in one arch must not cancel the other: the file's stated design goal
+      # ("a failure in one platform still releases the other"), extended to arches.
+      fail-fast: false
+      matrix:
+        rid: [win-x64, win-x86]
 
     steps:
     - name: Checkout code
@@ -51,24 +73,61 @@ jobs:
     # with `-f`, and the `-r win-x64` RID leaks into it — trying to restore an Android Mono
     # runtime pack for win-x64 that doesn't exist (NU1102). Isolating to the Windows TFM
     # keeps the restore Windows-only.
-    - name: Build and Publish (x64)
+    - name: Build and Publish (${{ matrix.rid }})
       env:
         SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-      run: dotnet publish PrinterAPP/PrinterAPP.csproj -c Release -f net10.0-windows10.0.19041.0 -p:TargetFrameworks=net10.0-windows10.0.19041.0 -r win-x64 --self-contained -p:PublishSingleFile=true -p:SentryDsn="$SENTRY_DSN" -o ./publish/x64
+      run: dotnet publish PrinterAPP/PrinterAPP.csproj -c Release -f net10.0-windows10.0.19041.0 -p:TargetFrameworks=net10.0-windows10.0.19041.0 -r ${{ matrix.rid }} --self-contained -p:PublishSingleFile=true -p:SentryDsn="$SENTRY_DSN" -o ./publish/${{ matrix.rid }}
 
-    - name: Build and Publish (x86)
-      env:
-        SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
-      run: dotnet publish PrinterAPP/PrinterAPP.csproj -c Release -f net10.0-windows10.0.19041.0 -p:TargetFrameworks=net10.0-windows10.0.19041.0 -r win-x86 --self-contained -p:PublishSingleFile=true -p:SentryDsn="$SENTRY_DSN" -o ./publish/x86
-
-    - name: Rename Executables
+    # The installer name is the auto-updater's contract: UpdateAssetSelector matches
+    # "x64"/"x86" in the asset name and falls back to ANY .exe if it finds no arch match.
+    # Renaming or dropping one of these is therefore not cosmetic — a 32-bit device that
+    # finds no x86 asset would be offered the x64 installer it cannot run.
+    - name: Rename Executable
+      shell: pwsh
       run: |
-        ren publish\x64\PrinterAPP.exe PrinterApp-Setup-x64.exe
-        ren publish\x86\PrinterAPP.exe PrinterApp-Setup-x86.exe
+        $arch = "${{ matrix.rid }}".Replace("win-", "")
+        Rename-Item "publish/${{ matrix.rid }}/PrinterAPP.exe" "PrinterApp-Setup-$arch.exe"
+
+    - name: Upload installer for the release job
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: windows-installer-${{ matrix.rid }}
+        path: publish/${{ matrix.rid }}/PrinterApp-Setup-*.exe
+        if-no-files-found: error
+        retention-days: 7
+
+  release-windows:
+    needs: build-windows
+    # `always()` so a release still happens with whatever arch DID build — the same
+    # property fail-fast: false gives the matrix. `!cancelled()` alone would not be enough
+    # here, because `needs` failure would otherwise skip this job.
+    if: ${{ always() && startsWith(github.ref, 'refs/tags/') }}
+    runs-on: ubuntu-latest
+    steps:
+    - name: Download the built installers
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      with:
+        pattern: windows-installer-*
+        merge-multiple: true
+        path: publish
+
+    - name: Refuse to publish an empty Windows release
+      shell: bash
+      run: |
+        set -euo pipefail
+        ls -l publish/
+        # Publishing a release with no installer would leave the auto-updater seeing a
+        # newer version it cannot download, on every device, until the next tag.
+        if ! ls publish/PrinterApp-Setup-*.exe >/dev/null 2>&1; then
+          echo "::error::no Windows installer was produced — both matrix legs failed"
+          exit 1
+        fi
+        if [ ! -f publish/PrinterApp-Setup-x86.exe ] || [ ! -f publish/PrinterApp-Setup-x64.exe ]; then
+          echo "::warning::only one architecture built; releasing it alone (see the build-windows logs)"
+        fi
 
     - name: Upload Windows Release Assets
       uses: softprops/action-gh-release@v3
-      if: startsWith(github.ref, 'refs/tags/')
       with:
         # Publish to the PUBLIC releases repo so the client (and the in-app updater)
         # can download without a GitHub account. Source stays private.
@@ -76,9 +135,7 @@ jobs:
         # The tag was pushed to the source repo; name the release tag explicitly so it's
         # deterministic in the target repo (which has its own commit history).
         tag_name: ${{ github.ref_name }}
-        files: |
-          publish/x64/PrinterApp-Setup-x64.exe
-          publish/x86/PrinterApp-Setup-x86.exe
+        files: publish/PrinterApp-Setup-*.exe
         # Fine-grained PAT with Contents:read/write on piwas-21/printer-app-releases ONLY.
         # The default GITHUB_TOKEN can't reach another repo. See RELEASE_WORKFLOW.md.
         token: ${{ secrets.RELEASES_REPO_TOKEN }}

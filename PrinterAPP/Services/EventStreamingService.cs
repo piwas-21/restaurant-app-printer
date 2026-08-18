@@ -65,6 +65,11 @@ public class EventStreamingService : IEventStreamingService
     private DateTime _lastPollTime;
     private Task? _pollingTask;  // Primary polling mechanism
 
+    /// <summary>How long the feed waits between polls. Injectable so tests can drive the loop at a
+    /// realistic shape without paying its wall clock; production always uses the 5 s default.</summary>
+    private readonly TimeSpan _pollInterval;
+    private static readonly TimeSpan DefaultPollInterval = TimeSpan.FromSeconds(5);
+
     // The cursor is rewritten on every advance, so the routine case is debounced; a batch that
     // actually printed something forces an immediate write, because that is the state whose loss
     // causes a duplicate ticket.
@@ -81,16 +86,24 @@ public class EventStreamingService : IEventStreamingService
     private DateTime? _lastSuccessfulPollAt;
     public DateTime? LastSuccessfulPollAt => _lastSuccessfulPollAt;
 
+    /// <param name="pollInterval">Optional override for the gap between polls. Defaults to 5 s, which
+    /// is what every production caller gets — MauiProgram registers the type by interface and the
+    /// DI container fills the default. Tests pass a tiny value so the loop's shape is exercised
+    /// without waiting out real seconds.</param>
     public EventStreamingService(
         IPrinterService printerService,
         IRequestLogService requestLogService,
         IFeedCursorStore cursorStore,
-        ILogger<EventStreamingService> logger)
+        ILogger<EventStreamingService> logger,
+        TimeSpan? pollInterval = null)
     {
         _printerService = printerService;
         _requestLogService = requestLogService;
         _cursorStore = cursorStore;
         _logger = logger;
+        _pollInterval = pollInterval is { } supplied && supplied > TimeSpan.Zero
+            ? supplied
+            : DefaultPollInterval;
 
         // Restored here rather than in StartListeningAsync so the cursor is already correct if
         // anything reads it before the feed starts. Load never throws; a missing or unreadable file
@@ -126,10 +139,11 @@ public class EventStreamingService : IEventStreamingService
         _isListening = true;
 
         // Use ONLY polling for maximum reliability (SSE was unreliable)
-        // Poll every 5 seconds for confirmed orders
+        // Poll immediately, then every _pollInterval (5 s in production) for confirmed orders
         _pollingTask = RunPollLoopAsync(config.ApiBaseUrl, _cancellationTokenSource);
 
-        OnConnectionStatusChanged("Connected - polling for orders every 5s");
+        OnConnectionStatusChanged(
+            $"Connected - polling for orders every {_pollInterval.TotalSeconds:0.##}s");
         _logger.LogInformation("Started POLLING-ONLY mode for order updates (no SSE)");
     }
 
@@ -742,7 +756,7 @@ public class EventStreamingService : IEventStreamingService
         }
     }
     /// <summary>
-    /// POLLING-ONLY mechanism - polls for confirmed orders every 5 seconds
+    /// POLLING-ONLY mechanism - polls at once, then every poll interval (5 seconds by default)
     /// SSE was unreliable, so we use pure polling for guaranteed delivery
     /// </summary>
     /// <summary>
@@ -788,17 +802,17 @@ public class EventStreamingService : IEventStreamingService
 
     private async Task PollForOrdersAsync(string apiBaseUrl, CancellationToken cancellationToken)
     {
-        const int pollingIntervalSeconds = 5;
         var baseUrl = apiBaseUrl.TrimEnd('/');
 
         _logger.LogInformation("========================================");
         _logger.LogInformation("🔄 POLLING SERVICE STARTED");
         _logger.LogInformation("   API Base URL: {Url}", baseUrl);
-        _logger.LogInformation("   Interval: {Interval} seconds", pollingIntervalSeconds);
+        _logger.LogInformation("   Interval: {Interval} seconds", _pollInterval.TotalSeconds);
         _logger.LogInformation("========================================");
 
         // Also log to debug output for WPF apps
-        System.Diagnostics.Debug.WriteLine($"[POLLING] Started - URL: {baseUrl}, Interval: {pollingIntervalSeconds}s");
+        System.Diagnostics.Debug.WriteLine(
+            $"[POLLING] Started - URL: {baseUrl}, Interval: {_pollInterval.TotalSeconds}s");
 
         int pollCount = 0;
 
@@ -806,7 +820,21 @@ public class EventStreamingService : IEventStreamingService
         {
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(pollingIntervalSeconds), cancellationToken);
+                // The wait is skipped on the FIRST iteration only, so a feed that has just started
+                // polls immediately instead of leaving the pass blind for 5 s. That window is not
+                // hypothetical: the Android foreground service restarts itself (START_STICKY,
+                // BOOT_COMPLETED), and every one of those restarts used to begin with 5 s of
+                // deliberate silence before the first request.
+                //
+                // Guarding the delay is not the same as moving it below the poll body: the
+                // non-2xx branch below ends its iteration with `continue`, which would jump PAST a
+                // trailing delay and turn a backend outage into an unthrottled request loop against
+                // that backend. Keeping the delay at the top, skipped once, preserves the throttle on
+                // every path.
+                if (pollCount > 0)
+                {
+                    await Task.Delay(_pollInterval, cancellationToken);
+                }
 
                 pollCount++;
                 // Dedicated printer-feed endpoint. Auth is the X-Api-Key header added below —

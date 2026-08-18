@@ -91,22 +91,59 @@ public class NetworkTcpTransportTests
         using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         // Bring the listener up shortly after the (refused) first attempt, inside the retry window.
+        //
+        // On a DEDICATED thread with a blocking sleep, not Task.Run + await Task.Delay: the rest of
+        // this suite now finishes in a couple of seconds instead of idling through 5-second poll
+        // delays, so the two-core CI runner's thread pool is genuinely busy while this test runs. A
+        // pool-scheduled listener start can then land after the 800 ms retry has already been
+        // refused a second time — observed as a real CI failure. A dedicated thread cannot be
+        // starved, and nothing else here depends on the pool being free.
+        var listenerUp = new TaskCompletionSource<TcpListener>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var server = new Thread(() =>
+        {
+            try
+            {
+                Thread.Sleep(150);
+                var listener = new TcpListener(IPAddress.Loopback, port);
+                listener.Start();
+                listenerUp.SetResult(listener);
+            }
+            catch (Exception ex)
+            {
+                listenerUp.SetException(ex);
+            }
+        })
+        { IsBackground = true };
+        server.Start();
+
         var serverReceived = Task.Run(async () =>
         {
-            await Task.Delay(150, cts.Token);
-            var listener = new TcpListener(IPAddress.Loopback, port);
-            listener.Start();
+            var listener = await listenerUp.Task;
             try { return await AcceptAndReadAllAsync(listener, cts.Token); }
             finally { listener.Stop(); }
         }, cts.Token);
 
+        var retryDelay = TimeSpan.FromMilliseconds(800); // > the 150ms listener-start delay
         var transport = new NetworkTcpTransport(
             IPAddress.Loopback, port,
             connectTimeout: ShortTimeout, writeTimeout: ShortTimeout,
-            retryDelay: TimeSpan.FromMilliseconds(800)); // > the 150ms listener-start delay
+            retryDelay: retryDelay);
 
+        var elapsed = System.Diagnostics.Stopwatch.StartNew();
         await transport.SendAsync(payload, cts.Token); // succeeds on the retry
+        elapsed.Stop();
+
         Assert.Equal(payload, await serverReceived);
+
+        // The retry path is what this test exists for, and until now nothing pinned that it ran: if
+        // the listener ever came up before the FIRST connect, the send would simply succeed and the
+        // test would pass green while covering nothing. Only the retry can take longer than the
+        // retry delay.
+        Assert.True(
+            elapsed.Elapsed >= retryDelay - TimeSpan.FromMilliseconds(100),
+            $"the send completed in {elapsed.ElapsedMilliseconds}ms, faster than the {retryDelay.TotalMilliseconds}ms "
+            + "retry delay — the first connect was not refused, so the retry was never exercised");
     }
 
     [Fact]
