@@ -48,7 +48,7 @@ The API key is:
 
 ### Mitigation for the negatives
 - API keys are scoped to the printer-feed endpoint only via the filter — a leak doesn't grant access to user-shaped endpoints.
-- Document a rotation runbook: the backend admin UI must support generating + revoking keys per printer. (Tracked in `docs/SPRINT-PLAN.md`.)
+- Document a rotation runbook: the backend admin UI must support generating + revoking keys per printer. (Not built.)
 - For at-rest protection of `config.json`, future work can wrap it with the Windows Data Protection API (DPAPI) so the file is decryptable only by the workstation user account. Not in scope for the initial migration.
 
 ## Alternatives considered
