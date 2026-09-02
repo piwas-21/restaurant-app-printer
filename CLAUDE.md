@@ -1,7 +1,8 @@
 # RUMI Printer-App — Agent Rules
 
 > Auto-loaded by Claude Code on every session in this repository. These rules apply to ALL code changes in `printer-app/`.
-> First read on a cold session: this file → [docs/SPRINT-PLAN.md](docs/SPRINT-PLAN.md) (refactoring track) + the sprint task you're picking up.
+> First read on a cold session: this file + the GitHub issue you're picking up. Cross-repo state lives in the
+> workspace [ROADMAP.md](../ROADMAP.md).
 
 ---
 
@@ -20,9 +21,8 @@
 | When | Read |
 |---|---|
 | Any task | This file |
-| Refactoring sprint task | [docs/SPRINT-PLAN.md](docs/SPRINT-PLAN.md) — find the task ID, read its acceptance criteria |
 | Quality/security gate work | §7 below (current gates) + the workspace [DEV-PHASES-PLAN.md](../docs/plans/DEV-PHASES-PLAN.md) §2 coverage matrix |
-| Test work | [docs/TEST-COVERAGE-PLAN.md](docs/TEST-COVERAGE-PLAN.md) |
+| Test work | [docs/DEVELOPMENT-GUIDELINES.md](docs/DEVELOPMENT-GUIDELINES.md) §Testing |
 | Security review / threat model | [docs/SECURITY-AUDIT.md](docs/SECURITY-AUDIT.md) |
 | Coding conventions detail | [docs/DEVELOPMENT-GUIDELINES.md](docs/DEVELOPMENT-GUIDELINES.md) |
 | Architectural decisions | [docs/adr/README.md](docs/adr/README.md) — index of ADRs |
@@ -169,9 +169,9 @@ that doc is either shipped above or GitLab-only. Cross-repo status lives in the 
 | `dotnet format --verify-no-changes` + XAML format (XamlStyler) | needs a Windows runner for the MAUI workload; same constraint as CodeQL ([#4](https://github.com/piwas-21/restaurant-app-printer/issues/4)) |
 | Roslyn analyzers (SonarAnalyzer/SecurityCodeScan) + `TreatWarningsAsErrors` | deferred in `Directory.Build.props` until the CS86xx nullable debt burns down |
 | SAST / SonarCloud quality gate | none on this repo (DEV-PHASES §2 D1 = "scans only, no SAST"); the merge gate's Sonar step is therefore a no-op here |
-| Coverage floor on `PrinterAPP.Tests` | tests run in CI but no minimum is enforced; target in [docs/TEST-COVERAGE-PLAN.md](docs/TEST-COVERAGE-PLAN.md) |
+| Coverage floor on `PrinterAPP.Tests` | tests run in CI but no minimum is enforced, and no target has been agreed |
 | Automated **DTO-drift check** vs `backend/.../Features/**/Dtos/` | §5.3 / §6.1 are enforced by review only; the cross-repo diff script was specced and never built — the highest-value missing gate for this repo (silent drift = no ticket at the till) |
-| Release supply chain: Authenticode-sign the **Windows** artifact, publish `SHA256SUMS` + SBOM, verify the last release's signature | `build-release.yml` signs the **Android** APK only; the unsigned/unhashed Windows exe is the other half of SECURITY-AUDIT C1 / SPRINT-PLAN PS1 (client-side update verification has nothing to verify against) |
+| Release supply chain: Authenticode-sign the **Windows** artifact, publish `SHA256SUMS` + SBOM, verify the last release's signature | `build-release.yml` signs the **Android** APK only; the unsigned/unhashed Windows exe is the other half of SECURITY-AUDIT C1 (client-side update verification has nothing to verify against) |
 | Dependency hygiene extras: `dotnet list package --outdated`, license audit (block GPL/AGPL transitives) | weekly `security-audit.yml` covers CVEs + secrets only |
 
 ---
@@ -261,10 +261,9 @@ Never commit:
 
 ### Starting
 1. Read this file (auto-loaded).
-2. Read [docs/SPRINT-PLAN.md](docs/SPRINT-PLAN.md) if picking up a sprint task.
-3. On Windows: run `dotnet build PrinterAPP.sln` — confirm baseline green.
-4. On macOS / Linux: limited to non-build edits (or use `dotnet build` against a different TFM for syntax-only validation).
-5. Check `git status` — start from clean tree on `develop`.
+2. On Windows: run `dotnet build PrinterAPP.sln` — confirm baseline green.
+3. On macOS / Linux: limited to non-build edits (or use `dotnet build` against a different TFM for syntax-only validation).
+4. Check `git status` — start from clean tree on `develop`.
 
 ### During implementation
 1. Output the §6 verification block before writing code.

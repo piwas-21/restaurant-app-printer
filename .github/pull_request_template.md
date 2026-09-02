@@ -9,7 +9,7 @@
 - ...
 
 ## Sprint task / issue
-<!-- Link the sprint task (docs/SPRINT-PLAN.md task ID) or GitHub issue number. -->
+<!-- Link the GitHub issue number. -->
 - Closes #
 - Sprint task:
 
