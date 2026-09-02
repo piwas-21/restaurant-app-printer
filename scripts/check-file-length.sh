@@ -94,7 +94,7 @@ if [[ "${1:-}" == "--regen-baseline" ]]; then
   cat > "$BASELINE_PATH" <<'HEADER'
 # Printer-App file-length baseline.
 # Files listed here exceed the CLAUDE.md §4 limit and are tracked
-# for refactor (see docs/SPRINT-PLAN.md). The file-length checker
+# for refactor (workspace ROADMAP.md, Track R). The file-length checker
 # (scripts/check-file-length.sh) skips these so existing debt
 # doesn't block new MRs; new violations still block.
 #

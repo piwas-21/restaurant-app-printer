@@ -361,10 +361,7 @@ Key rules:
 
 ## Testing
 
-See `docs/TEST-COVERAGE-PLAN.md` for full strategy.
-
-- **No test project currently exists** -- must be created
-- Target: 80%+ coverage with 51 tests
-- xUnit + Moq + FluentAssertions
+- Tests live in `PrinterAPP.Tests/` (xUnit + Moq + FluentAssertions) and run in CI
+- No coverage floor is enforced on this project, and no target has been agreed
 - Test critical business logic: deduplication, encoding, routing, pricing
 - CI/CD: Tests must run in GitHub Actions before release
