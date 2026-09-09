@@ -170,7 +170,7 @@ that doc is either shipped above or GitLab-only. Cross-repo status lives in the 
 |---|---|
 | `dotnet format --verify-no-changes` + XAML format (XamlStyler) | needs a Windows runner for the MAUI workload; same constraint as CodeQL ([#4](https://github.com/piwas-21/restaurant-app-printer/issues/4)) |
 | Roslyn analyzers (SonarAnalyzer/SecurityCodeScan) + `TreatWarningsAsErrors` | deferred in `Directory.Build.props` until the CS86xx nullable debt burns down |
-| SAST / SonarCloud quality gate | none on this repo (DEV-PHASES §2 D1 = "scans only, no SAST"); the merge gate's Sonar step is therefore a no-op here |
+| SAST / SonarCloud quality gate | ACTIVE on this repo — a SonarCloud project exists and PRs are analysed; the merge gate's Sonar step (quality gate + zero open delta issues) is enforced, not a no-op |
 | Coverage floor on `PrinterAPP.Tests` | tests run in CI but no minimum is enforced, and no target has been agreed |
 | Automated **DTO-drift check** vs `backend/.../Features/**/Dtos/` | §5.3 / §6.1 are enforced by review only; the cross-repo diff script was specced and never built — the highest-value missing gate for this repo (silent drift = no ticket at the till) |
 | Release supply chain: Authenticode-sign the **Windows** artifact, publish `SHA256SUMS` + SBOM, verify the last release's signature | `build-release.yml` signs the **Android** APK only; the unsigned/unhashed Windows exe is the other half of SECURITY-AUDIT C1 (client-side update verification has nothing to verify against) |
