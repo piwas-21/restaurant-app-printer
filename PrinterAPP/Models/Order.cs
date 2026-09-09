@@ -24,6 +24,13 @@ public class Order
     public decimal DeliveryFee { get; set; }
     public decimal Discount { get; set; }
     public decimal DiscountPercentage { get; set; }
+
+    /// <summary>
+    /// Customer-specific discount money, SEPARATE from <see cref="Discount"/> (backend
+    /// OrderPricingService.RecalculateTotal: sale = items + fee - Discount - CustomerDiscountAmount).
+    /// Without it the printed breakdown cannot reconcile against Total.
+    /// </summary>
+    public decimal CustomerDiscountAmount { get; set; }
     public decimal Tip { get; set; }
     public decimal Total { get; set; }
     public decimal TotalPaid { get; set; }
@@ -34,7 +41,18 @@ public class Order
     public DateTime OrderDate { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
+
+    /// <summary>
+    /// The language this order's mails are written in — frozen at creation from the guest's own
+    /// request (backend OrderDto.PreferredLanguage). Print-language "auto" resolves against it.
+    /// </summary>
+    public string? PreferredLanguage { get; set; }
+
+    // Additional Info
     public string? Notes { get; set; }
+
+    /// <summary>Applied voucher code (backend OrderDto.PromoCode) — explains a printed discount.</summary>
+    public string? PromoCode { get; set; }
     public DeliveryAddress? DeliveryAddress { get; set; }
     public List<OrderItem> Items { get; set; } = new();
     public List<Payment>? Payments { get; set; }

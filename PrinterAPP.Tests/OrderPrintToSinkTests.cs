@@ -204,6 +204,129 @@ public class OrderPrintToSinkTests
         Assert.Contains("(1x Menu Deal)", backTicket);
     }
 
+    /// <summary>
+    /// The partner complaint, end to end: a cashier receipt must carry the ingredient rows the
+    /// backend froze at checkout (a quantity-one selection is an explicit choice, not a default to
+    /// hide) and the bundle components hanging under an item — through the real compose→send path.
+    /// </summary>
+    [Fact]
+    public async Task PrintOrderAsync_Cashier_PrintsIngredientCustomizations_AndComponents()
+    {
+        using var sink = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        var order = new Order
+        {
+            OrderNumber = "202609040001",
+            Type = "TakeAway",
+            Status = "Confirmed",
+            Total = 21.40m,
+            OrderDate = DateTime.Now,
+            Items =
+            {
+                new OrderItem
+                {
+                    ProductName = "Adana Kebab",
+                    Quantity = 1,
+                    ItemTotal = 21.40m,
+                    IngredientCustomizations =
+                    [
+                        new IngredientCustomization { IngredientName = "Onion", Quantity = 0, IsRemoved = true },
+                        new IngredientCustomization { IngredientName = "Hot Sauce", Quantity = 1, IsRemoved = false },
+                    ],
+                    SideItems = [new OrderItem { ProductName = "Ayran", Quantity = 1 }],
+                },
+            },
+        };
+
+        var (ok, ticket) = await PrintToSinkAsync(order, sink, cts.Token);
+
+        Assert.True(ok, "PrintOrderAsync reported failure");
+        Assert.Contains("- NO Onion", ticket);
+        Assert.Contains("+ Hot Sauce", ticket); // selected at quantity one — used to be filtered off
+        Assert.Contains("+ 1x Ayran", ticket);  // side item — used to be cashier-invisible
+        Assert.Contains("Adana Kebab", ticket);
+    }
+
+    /// <summary>A fixed venue language choice must localize the receipt labels on the wire.</summary>
+    [Fact]
+    public async Task PrintOrderAsync_Cashier_LocalizesLabels_ToTheConfiguredLanguage()
+    {
+        using var sink = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        var order = MinimalOrder();
+
+        var (ok, ticket) = await PrintToSinkAsync(order, sink, cts.Token,
+            config => config.PrintLanguage = "de");
+
+        Assert.True(ok, "PrintOrderAsync reported failure");
+        Assert.Contains("Zwischensumme", ticket); // localized Subtotal
+        Assert.Contains("Im Lokal", ticket);      // localized DineIn
+        Assert.DoesNotContain("Subtotal", ticket);
+    }
+
+    /// <summary>
+    /// The "order language" option: no fixed choice, the guest's PreferredLanguage picks the labels,
+    /// with English where the order carries none.
+    /// </summary>
+    [Fact]
+    public async Task PrintOrderAsync_Cashier_AutoLanguage_FollowsTheOrdersPreferredLanguage()
+    {
+        using var frenchSink = new Sink();
+        using var englishSink = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        var french = MinimalOrder();
+        french.PreferredLanguage = "fr";
+        var (okFrench, frenchTicket) = await PrintToSinkAsync(french, frenchSink, cts.Token,
+            config => config.PrintLanguage = PrintLanguagePolicy.Auto);
+        Assert.True(okFrench, "french print reported failure");
+        Assert.Contains("Sous-total", frenchTicket);
+
+        var english = MinimalOrder();
+        var (okEnglish, englishTicket) = await PrintToSinkAsync(english, englishSink, cts.Token,
+            config => config.PrintLanguage = PrintLanguagePolicy.Auto);
+        Assert.True(okEnglish, "english print reported failure");
+        Assert.Contains("Subtotal", englishTicket);
+    }
+
+    private static Order MinimalOrder() => new()
+    {
+        OrderNumber = "202609040002",
+        Type = "DineIn",
+        TableNumber = 5,
+        Status = "Confirmed",
+        SubTotal = 12.50m,
+        Total = 12.50m,
+        OrderDate = DateTime.Now,
+        Items = { new OrderItem { ProductName = "Pide", Quantity = 1, ItemTotal = 12.50m } },
+    };
+
+    private static async Task<(bool Ok, string Ticket)> PrintToSinkAsync(
+        Order order, Sink sink, CancellationToken ct,
+        Action<PrinterConfiguration>? configure = null)
+    {
+        using var paths = new TempPathProvider();
+        var config = new PrinterConfiguration
+        {
+            CashierPrinterName = sink.PrinterName,
+            CashierAutoPrint = true,
+            CashierPrintCopies = 1,
+        };
+        configure?.Invoke(config);
+
+        var service = new OrderPrintService(
+            new StubPrinterService(config),
+            new CapturingRequestLogService(),
+            NullLogger<OrderPrintService>.Instance,
+            paths);
+
+        var ok = await service.PrintOrderAsync(order, PrinterType.Cashier, isManualPrint: true, ct);
+        var ticket = ok ? await sink.ReadTicketAsync(ct) : string.Empty;
+        return (ok, ticket);
+    }
+
     private static Order BundleOrder(params OrderItem[] items) => new()
     {
         OrderNumber = "BUNDLE-1",

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using Microsoft.Extensions.Logging;
 using PrinterAPP.Models;
@@ -304,6 +305,7 @@ public class OrderPrintService : IOrderPrintService
     private string FormatKitchenReceipt(Order order, PrinterConfiguration config, int paperWidth, string? kitchenName = null)
     {
         var sb = new StringBuilder();
+        var labels = PrintLabelCatalog.For(PrintLanguagePolicy.Resolve(config.PrintLanguage, order.PreferredLanguage));
 
         // Initialize printer and set Turkish code page for character support
         sb.Append(ESC_INIT);
@@ -332,11 +334,11 @@ public class OrderPrintService : IOrderPrintService
         sb.Append(ESC_SIZE_TALL);
         if (order.TableNumber.HasValue && order.TableNumber.Value > 0)
         {
-            sb.AppendLine($"Type: {order.Type} - Table {order.TableNumber}");
+            sb.AppendLine($"{labels.Type}: {labels.OrderType(order.Type)} - {labels.Table} {order.TableNumber}");
         }
         else
         {
-            sb.AppendLine($"Type: {order.Type}");
+            sb.AppendLine($"{labels.Type}: {labels.OrderType(order.Type)}");
         }
         sb.Append(ESC_SIZE_NORMAL);
 
@@ -344,10 +346,17 @@ public class OrderPrintService : IOrderPrintService
         if (!string.IsNullOrWhiteSpace(order.CustomerName))
         {
             sb.Append(EXTRA_DARK_ON);
-            sb.AppendLine($"Customer: {order.CustomerName}");
+            sb.AppendLine($"{labels.Customer}: {order.CustomerName}");
             sb.Append(EXTRA_DARK_OFF);
         }
 
+        // Order-level notes — the kitchen reads them at the top, never buried under the items.
+        if (!string.IsNullOrWhiteSpace(order.Notes))
+        {
+            sb.Append(EXTRA_DARK_ON);
+            sb.AppendLine($"{labels.Notes}: {order.Notes}");
+            sb.Append(EXTRA_DARK_OFF);
+        }
 
         sb.AppendLine(new string('-', paperWidth == 80 ? 48 : 32));
 
@@ -358,10 +367,7 @@ public class OrderPrintService : IOrderPrintService
         {
             foreach (var item in order.Items)
             {
-                // Log each item for debugging
-                _logger.LogInformation("Item: {Quantity}x {ProductName}", item.Quantity, item.ProductName);
-
-                AppendKitchenItem(sb, item, depth: 0);
+                ReceiptComposer.AppendKitchenItemLines(sb, item, depth: 0, labels);
                 sb.AppendLine();
             }
         }
@@ -369,7 +375,7 @@ public class OrderPrintService : IOrderPrintService
         {
             // No items found - log warning
             _logger.LogWarning("No items found in order {OrderNumber}", order.OrderNumber);
-            sb.AppendLine("(No items in order)");
+            sb.AppendLine(labels.NoItems);
         }
 
         sb.AppendLine();
@@ -385,81 +391,10 @@ public class OrderPrintService : IOrderPrintService
         return sb.ToString();
     }
 
-    /// <summary>
-    /// Writes one line of the kitchen ticket and everything hanging off it. Recursive because a
-    /// bundle nests to arbitrary depth since backend PR #237 — the previous one-level-deep render
-    /// showed a grandchild nowhere, and showed a child's name and quantity but never its "NO onion"
-    /// or its note (both of which used to print, back when every child was its own top-level row).
-    /// </summary>
-    private static void AppendKitchenItem(StringBuilder sb, OrderItem item, int depth)
-    {
-        var indent = new string(' ', depth * 3);
-
-        // A line this kitchen does not make (KitchenTicketFilter kept it only to say what the
-        // components below it belong to — a FrontKitchen combo on the back kitchen's ticket).
-        // Parenthesised and left at normal size so it doesn't read as a dish to prepare; the
-        // components under it are the work.
-        if (item.IsContextOnly)
-        {
-            sb.AppendLine($"{indent}({item.Quantity}x {item.ProductName})");
-        }
-        else
-        {
-            // Item name and quantity - WIDE size (2x width, 1x height - bigger than normal).
-            // "+ " marks a component/add-on so it still reads as part of the line above it.
-            sb.Append(ESC_SIZE_WIDE);
-            sb.AppendLine(depth == 0
-                ? $"{item.Quantity}x {item.ProductName}"
-                : $"{indent}+ {item.Quantity}x {item.ProductName}");
-            sb.Append(ESC_SIZE_NORMAL);
-        }
-
-        // Show variation if available (normal size)
-        if (!string.IsNullOrWhiteSpace(item.VariationName))
-        {
-            sb.AppendLine($"{indent}   - {item.VariationName}");
-        }
-
-        AppendIngredientCustomizations(sb, item, indent);
-
-        // Show special instructions - TALL size for visibility. Before the nested components, not
-        // after: trailing the children makes a parent's note read as if it belonged to the last
-        // child printed.
-        if (!string.IsNullOrWhiteSpace(item.SpecialInstructions))
-        {
-            sb.Append(ESC_SIZE_TALL);
-            sb.AppendLine($"{indent}   NOTE: {item.SpecialInstructions}");
-            sb.Append(ESC_SIZE_NORMAL);
-        }
-
-        // Show side items / additionals (bundle components and add-on sides)
-        foreach (var side in item.SideItems ?? Enumerable.Empty<OrderItem>())
-        {
-            AppendKitchenItem(sb, side, depth + 1);
-        }
-    }
-
-    /// <summary>Only the ingredients the customer actually changed — removed, or asked extra of.</summary>
-    private static void AppendIngredientCustomizations(StringBuilder sb, OrderItem item, string indent)
-    {
-        var modified = item.IngredientCustomizations?
-            .Where(ing => ing.IsRemoved || ing.Quantity > 1)
-            ?? Enumerable.Empty<IngredientCustomization>();
-
-        foreach (var ing in modified)
-        {
-            // TALL size "NO" / "EXTRA" prefix so a change stands out from the item it modifies
-            sb.Append(ESC_SIZE_TALL);
-            sb.AppendLine(ing.IsRemoved
-                ? $"{indent}   - NO {ing.IngredientName}"
-                : $"{indent}   + EXTRA {ing.IngredientName}");
-            sb.Append(ESC_SIZE_NORMAL);
-        }
-    }
-
     private string FormatCashierReceipt(Order order, PrinterConfiguration config, int paperWidth)
     {
         var sb = new StringBuilder();
+        var labels = PrintLabelCatalog.For(PrintLanguagePolicy.Resolve(config.PrintLanguage, order.PreferredLanguage));
 
         // Initialize printer and set Turkish code page for character support
         // Some printers need the code page command repeated to properly switch encoding
@@ -474,7 +409,7 @@ public class OrderPrintService : IOrderPrintService
         sb.AppendLine($"{config.RestaurantName}");
         sb.Append(ESC_DOUBLE_OFF);
 
-        sb.AppendLine("ONLINE ORDER");
+        sb.AppendLine(labels.OnlineOrder);
         sb.Append(EXTRA_DARK_OFF);
         sb.AppendLine();
 
@@ -493,76 +428,100 @@ public class OrderPrintService : IOrderPrintService
         sb.Append(EXTRA_DARK_ON);
         if (order.TableNumber.HasValue && order.TableNumber.Value > 0)
         {
-            sb.AppendLine($"Type: {order.Type} - Table {order.TableNumber}");
+            sb.AppendLine($"{labels.Type}: {labels.OrderType(order.Type)} - {labels.Table} {order.TableNumber}");
         }
         else
         {
-            sb.AppendLine($"Type: {order.Type}");
+            sb.AppendLine($"{labels.Type}: {labels.OrderType(order.Type)}");
         }
         sb.Append(EXTRA_DARK_OFF);
 
-        // Customer name only (no phone/email)
+        // Customer name, plus a phone number for orders someone may need to call about
         if (!string.IsNullOrWhiteSpace(order.CustomerName))
         {
             sb.Append(EXTRA_DARK_ON);
-            sb.AppendLine($"Customer: {order.CustomerName}");
+            sb.AppendLine($"{labels.Customer}: {order.CustomerName}");
             sb.Append(EXTRA_DARK_OFF);
         }
+
+        if (order.Type == "Delivery")
+        {
+            var phone = !string.IsNullOrWhiteSpace(order.DeliveryAddress?.Phone)
+                ? order.DeliveryAddress!.Phone
+                : order.CustomerPhone;
+            if (!string.IsNullOrWhiteSpace(phone))
+            {
+                sb.AppendLine($"{labels.Tel}: {phone}");
+            }
+        }
+
+        // Order-level notes (e.g. "ring the doorbell") — printed before the items so they are not
+        // lost below a long list.
+        if (!string.IsNullOrWhiteSpace(order.Notes))
+        {
+            sb.Append(EXTRA_DARK_ON);
+            sb.AppendLine($"{labels.Notes}: {order.Notes}");
+            sb.Append(EXTRA_DARK_OFF);
+        }
+
         sb.AppendLine(new string('-', paperWidth == 80 ? 48 : 32));
 
-        // Items with prices - simplified (no customizations)
+        // Items with prices. Each top-level line carries its customizations, its special
+        // instruction and its bundle components/side items (no price on those — the parent total
+        // already covers them), so the paper matches what the guest actually ordered.
         if (order.Items != null && order.Items.Any())
         {
+            var spacing = paperWidth == 80 ? 48 : 32;
             foreach (var item in order.Items)
             {
-                var itemName = item.ProductName;
-                if (!string.IsNullOrWhiteSpace(item.VariationName))
-                {
-                    itemName += $" ({item.VariationName})";
-                }
-
-                var itemLine = $"{item.Quantity}x {itemName}";
-                var price = $"CHF {item.ItemTotal:F2}";
-                var spacing = paperWidth == 80 ? 48 : 32;
-                var dots = spacing - itemLine.Length - price.Length;
-
                 sb.Append(EXTRA_DARK_ON);
-                sb.Append(itemLine);
-                sb.Append(new string('.', Math.Max(1, dots)));
-                sb.AppendLine(price);
+                ReceiptComposer.AppendCashierItemLines(sb, item, depth: 0, spacing, labels);
                 sb.Append(EXTRA_DARK_OFF);
             }
         }
         else
         {
             _logger.LogWarning("No items found in cashier receipt for order {OrderNumber}", order.OrderNumber);
-            sb.AppendLine("(No items in order)");
+            sb.AppendLine(labels.NoItems);
         }
 
         sb.AppendLine(new string('-', paperWidth == 80 ? 48 : 32));
 
-        // Subtotal, Tax, Discount, Delivery Fee, Tip - EXTRA DARK
+        // Subtotal, Tax, Discounts, Delivery Fee, Tip - EXTRA DARK
         sb.Append(EXTRA_DARK_ON);
-        sb.AppendLine($"Subtotal: CHF {order.SubTotal:F2}");
+        sb.AppendLine($"{labels.Subtotal}: CHF {ReceiptComposer.Money(order.SubTotal)}");
 
         if (order.Tax > 0)
         {
-            sb.AppendLine($"Tax: CHF {order.Tax:F2}");
+            sb.AppendLine($"{labels.Tax}: CHF {ReceiptComposer.Money(order.Tax)}");
         }
 
         if (order.Discount > 0)
         {
-            sb.AppendLine($"Discount ({order.DiscountPercentage}%): -CHF {order.Discount:F2}");
+            sb.AppendLine($"{labels.Discount} ({order.DiscountPercentage.ToString(CultureInfo.InvariantCulture)}%): -CHF {ReceiptComposer.Money(order.Discount)}");
+        }
+
+        // Customer-specific discount money is SEPARATE from Discount (backend OrderPricingService:
+        // sale = items + fee - Discount - CustomerDiscountAmount). Without this line the printed
+        // breakdown does not reconcile against the total whenever it applied.
+        if (order.CustomerDiscountAmount > 0)
+        {
+            sb.AppendLine($"{labels.CustomerDiscount}: -CHF {ReceiptComposer.Money(order.CustomerDiscountAmount)}");
+        }
+
+        if (!string.IsNullOrWhiteSpace(order.PromoCode))
+        {
+            sb.AppendLine($"{labels.Promo}: {order.PromoCode}");
         }
 
         if (order.DeliveryFee > 0)
         {
-            sb.AppendLine($"Delivery Fee: CHF {order.DeliveryFee:F2}");
+            sb.AppendLine($"{labels.DeliveryFee}: CHF {ReceiptComposer.Money(order.DeliveryFee)}");
         }
 
         if (order.Tip > 0)
         {
-            sb.AppendLine($"Tip: CHF {order.Tip:F2}");
+            sb.AppendLine($"{labels.Tip}: CHF {ReceiptComposer.Money(order.Tip)}");
         }
 
         sb.Append(EXTRA_DARK_OFF);
@@ -571,31 +530,53 @@ public class OrderPrintService : IOrderPrintService
         // Total - EXTRA DARK, Bold and larger for maximum visibility
         sb.Append(ESC_DOUBLE_ON);
         sb.Append(EXTRA_DARK_ON);
-        sb.AppendLine($"TOTAL: CHF {order.Total:F2}");
+        sb.AppendLine($"{labels.Total}: CHF {ReceiptComposer.Money(order.Total)}");
         sb.Append(EXTRA_DARK_OFF);
         sb.Append(ESC_DOUBLE_OFF);
+        sb.AppendLine();
+
+        // What has already been paid, and what the till still has to collect.
+        if (order.TotalPaid > 0)
+        {
+            sb.AppendLine($"{labels.Paid}: CHF {ReceiptComposer.Money(order.TotalPaid)}");
+        }
+
+        if (order.RemainingAmount > 0)
+        {
+            sb.Append(EXTRA_DARK_ON);
+            sb.AppendLine($"{labels.Due}: CHF {ReceiptComposer.Money(order.RemainingAmount)}");
+            sb.Append(EXTRA_DARK_OFF);
+        }
+
         sb.AppendLine();
 
         // Payment information
         if (order.Payments != null && order.Payments.Any())
         {
             sb.Append(EXTRA_DARK_ON);
-            sb.AppendLine("PAYMENT:");
+            sb.AppendLine($"{labels.Payment}:");
             foreach (var payment in order.Payments)
             {
-                sb.AppendLine($"{payment.PaymentMethod}: CHF {payment.Amount:F2}");
+                var method = string.IsNullOrWhiteSpace(payment.CardLastFourDigits)
+                    ? payment.PaymentMethod
+                    : $"{payment.PaymentMethod} *{payment.CardLastFourDigits}";
+                sb.AppendLine($"{method}: CHF {ReceiptComposer.Money(payment.Amount)}");
             }
             sb.Append(EXTRA_DARK_OFF);
             sb.AppendLine();
         }
 
-        // Delivery address for delivery orders
+        // Delivery address, contact phone and courier instructions for delivery orders
         if (order.Type == "Delivery" && !string.IsNullOrWhiteSpace(order.DeliveryAddress?.FullAddress))
         {
             sb.AppendLine(new string('-', paperWidth == 80 ? 48 : 32));
             sb.Append(EXTRA_DARK_ON);
-            sb.AppendLine("DELIVERY TO:");
-            sb.AppendLine(order.DeliveryAddress.FullAddress);
+            sb.AppendLine(labels.DeliveryTo);
+            sb.AppendLine(order.DeliveryAddress!.FullAddress);
+            if (!string.IsNullOrWhiteSpace(order.DeliveryAddress!.DeliveryInstructions))
+            {
+                sb.AppendLine($"{labels.Instructions}: {order.DeliveryAddress!.DeliveryInstructions}");
+            }
             sb.Append(EXTRA_DARK_OFF);
             sb.AppendLine();
         }
@@ -603,7 +584,7 @@ public class OrderPrintService : IOrderPrintService
         // Footer
         sb.AppendLine(new string('=', paperWidth == 80 ? 48 : 32));
         sb.Append(ESC_ALIGN_CENTER);
-        sb.AppendLine("Thank you for your visit!");
+        sb.AppendLine(labels.ThankYou);
         sb.AppendLine();
         sb.AppendLine();
         sb.AppendLine();
