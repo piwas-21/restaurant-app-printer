@@ -50,6 +50,11 @@ public class PrinterConfiguration
     [Obsolete("Use KitchenPaperWidth instead")]
     public int PaperWidth { get; set; } = 80;
 
+    // Print language for composed tickets: a fixed label language code (en, de, fr, it, es, nl, tr)
+    // or "auto" = follow the order's PreferredLanguage with an English fallback. Item and ingredient
+    // NAMES print in the language the feed payload carries (see PrinterAPP.Services.PrintLanguagePolicy).
+    public string PrintLanguage { get; set; } = PrinterAPP.Services.PrintLanguagePolicy.English;
+
     // Restaurant Information
     public string RestaurantName { get; set; } = "Rumi Restaurant";
     public string KitchenLocation { get; set; } = "Main Kitchen";
