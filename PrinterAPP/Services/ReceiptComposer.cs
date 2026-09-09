@@ -116,6 +116,32 @@ public static class ReceiptComposer
     }
 
     /// <summary>
+    /// The "Type: Dine-in - Table 7" line, appended only with a table when one actually applies —
+    /// takeaway/delivery orders have none, and a dangling "Table" with a blank number reads broken.
+    /// One implementation because the two surfaces used to carry twin copies of it.
+    /// </summary>
+    public static void AppendTypeAndTableLine(StringBuilder sb, Order order, PrintLabels labels)
+    {
+        if (order.TableNumber.HasValue && order.TableNumber.Value > 0)
+        {
+            sb.AppendLine($"{labels.Type}: {labels.OrderType(order.Type)} - {labels.Table} {order.TableNumber}");
+        }
+        else
+        {
+            sb.AppendLine($"{labels.Type}: {labels.OrderType(order.Type)}");
+        }
+    }
+
+    /// <summary>The order-level notes block; both surfaces print it above the items, never under them.</summary>
+    public static void AppendOrderNotesLine(StringBuilder sb, Order order, PrintLabels labels)
+    {
+        if (!string.IsNullOrWhiteSpace(order.Notes))
+        {
+            sb.AppendLine($"{labels.Notes}: {order.Notes}");
+        }
+    }
+
+    /// <summary>
     /// The ingredient rows a line carries, in the catalog's language, followed by its special
     /// instruction. Rows are exactly the projection the backend freezes at checkout — selected
     /// (kept), extra (quantity above one) and removed — because "selected ingredients don't appear

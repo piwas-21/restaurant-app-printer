@@ -332,14 +332,7 @@ public class OrderPrintService : IOrderPrintService
 
         // Type + Table - TALL size (1x width, 2x height - intermediate between normal and double)
         sb.Append(ESC_SIZE_TALL);
-        if (order.TableNumber.HasValue && order.TableNumber.Value > 0)
-        {
-            sb.AppendLine($"{labels.Type}: {labels.OrderType(order.Type)} - {labels.Table} {order.TableNumber}");
-        }
-        else
-        {
-            sb.AppendLine($"{labels.Type}: {labels.OrderType(order.Type)}");
-        }
+        ReceiptComposer.AppendTypeAndTableLine(sb, order, labels);
         sb.Append(ESC_SIZE_NORMAL);
 
         // Customer name only (no phone)
@@ -351,12 +344,9 @@ public class OrderPrintService : IOrderPrintService
         }
 
         // Order-level notes — the kitchen reads them at the top, never buried under the items.
-        if (!string.IsNullOrWhiteSpace(order.Notes))
-        {
-            sb.Append(EXTRA_DARK_ON);
-            sb.AppendLine($"{labels.Notes}: {order.Notes}");
-            sb.Append(EXTRA_DARK_OFF);
-        }
+        sb.Append(EXTRA_DARK_ON);
+        ReceiptComposer.AppendOrderNotesLine(sb, order, labels);
+        sb.Append(EXTRA_DARK_OFF);
 
         sb.AppendLine(new string('-', paperWidth == 80 ? 48 : 32));
 
@@ -426,14 +416,7 @@ public class OrderPrintService : IOrderPrintService
 
         // Type + Table on one line
         sb.Append(EXTRA_DARK_ON);
-        if (order.TableNumber.HasValue && order.TableNumber.Value > 0)
-        {
-            sb.AppendLine($"{labels.Type}: {labels.OrderType(order.Type)} - {labels.Table} {order.TableNumber}");
-        }
-        else
-        {
-            sb.AppendLine($"{labels.Type}: {labels.OrderType(order.Type)}");
-        }
+        ReceiptComposer.AppendTypeAndTableLine(sb, order, labels);
         sb.Append(EXTRA_DARK_OFF);
 
         // Customer name, plus a phone number for orders someone may need to call about
@@ -457,12 +440,9 @@ public class OrderPrintService : IOrderPrintService
 
         // Order-level notes (e.g. "ring the doorbell") — printed before the items so they are not
         // lost below a long list.
-        if (!string.IsNullOrWhiteSpace(order.Notes))
-        {
-            sb.Append(EXTRA_DARK_ON);
-            sb.AppendLine($"{labels.Notes}: {order.Notes}");
-            sb.Append(EXTRA_DARK_OFF);
-        }
+        sb.Append(EXTRA_DARK_ON);
+        ReceiptComposer.AppendOrderNotesLine(sb, order, labels);
+        sb.Append(EXTRA_DARK_OFF);
 
         sb.AppendLine(new string('-', paperWidth == 80 ? 48 : 32));
 

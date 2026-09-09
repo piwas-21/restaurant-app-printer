@@ -57,9 +57,24 @@ public sealed record PrintLabels(
 /// catalog rather than .resx: the receipt composer is source-linked into the plain net10.0 test
 /// project, where resx satellite plumbing would not follow it, and ticket labels change with a
 /// recompile either way.
+/// <para>
+/// Each language is ONE pipe-delimited spec rather than seven near-identical initializer blocks —
+/// the block form was structurally duplicated text, which the Sonar new-code duplication gate
+/// measures. <see cref="Parse"/> maps positions to the record's named properties; a spec with the
+/// wrong field count fails the completeness test instead of silently shifting a label.
+/// </para>
 /// </summary>
 public static class PrintLabelCatalog
 {
+    /// <summary>Field order of every spec below — matches the <see cref="PrintLabels"/> constructor.</summary>
+    private static readonly string[] SpecOrder =
+    [
+        "OnlineOrder", "Type", "Table", "Customer", "Tel", "Notes", "Note", "NoPrefix",
+        "ExtraPrefix", "SelectedPrefix", "Subtotal", "Tax", "Discount", "CustomerDiscount",
+        "Promo", "DeliveryFee", "Tip", "Total", "Payment", "Paid", "Due", "DeliveryTo",
+        "Instructions", "ThankYou", "DineIn", "TakeAway", "Delivery", "NoItems",
+    ];
+
     /// <summary>
     /// The label set for <paramref name="languageCode"/>; anything unknown — including null — falls
     /// back to English, which is also what every existing install prints until it opts in.
@@ -75,213 +90,79 @@ public static class PrintLabelCatalog
         _ => English,
     };
 
-    public static readonly PrintLabels English = new(
-        OnlineOrder: "ONLINE ORDER",
-        Type: "Type",
-        Table: "Table",
-        Customer: "Customer",
-        Tel: "Tel",
-        Notes: "NOTES",
-        Note: "NOTE",
-        NoPrefix: "NO",
-        ExtraPrefix: "+ EXTRA",
-        SelectedPrefix: "+",
-        Subtotal: "Subtotal",
-        Tax: "Tax",
-        Discount: "Discount",
-        CustomerDiscount: "Customer discount",
-        Promo: "Promo",
-        DeliveryFee: "Delivery Fee",
-        Tip: "Tip",
-        Total: "TOTAL",
-        Payment: "PAYMENT",
-        Paid: "PAID",
-        Due: "DUE",
-        DeliveryTo: "DELIVERY TO",
-        Instructions: "Instructions",
-        ThankYou: "Thank you for your visit!",
-        DineIn: "Dine-in",
-        TakeAway: "Takeaway",
-        Delivery: "Delivery",
-        NoItems: "(No items in order)");
+    public static readonly PrintLabels English = Parse(
+        "ONLINE ORDER|Type|Table|Customer|Tel|NOTES|NOTE|NO|+ EXTRA|+|Subtotal|Tax|Discount" +
+        "|Customer discount|Promo|Delivery Fee|Tip|TOTAL|PAYMENT|PAID|DUE|DELIVERY TO" +
+        "|Instructions|Thank you for your visit!|Dine-in|Takeaway|Delivery|(No items in order)");
 
-    public static readonly PrintLabels German = new(
-        OnlineOrder: "ONLINE-BESTELLUNG",
-        Type: "Typ",
-        Table: "Tisch",
-        Customer: "Kunde",
-        Tel: "Tel",
-        Notes: "NOTIZEN",
-        Note: "NOTIZ",
-        NoPrefix: "OHNE",
-        ExtraPrefix: "+ EXTRA",
-        SelectedPrefix: "+",
-        Subtotal: "Zwischensumme",
-        Tax: "MwSt",
-        Discount: "Rabatt",
-        CustomerDiscount: "Kundenrabatt",
-        Promo: "Promo",
-        DeliveryFee: "Liefergebühr",
-        Tip: "Trinkgeld",
-        Total: "TOTAL",
-        Payment: "ZAHLUNG",
-        Paid: "BEZAHLT",
-        Due: "OFFEN",
-        DeliveryTo: "LIEFERUNG AN",
-        Instructions: "Hinweise",
-        ThankYou: "Vielen Dank für Ihren Besuch!",
-        DineIn: "Im Lokal",
-        TakeAway: "Mitnehmen",
-        Delivery: "Lieferung",
-        NoItems: "(Keine Artikel in der Bestellung)");
+    public static readonly PrintLabels German = Parse(
+        "ONLINE-BESTELLUNG|Typ|Tisch|Kunde|Tel|NOTIZEN|NOTIZ|OHNE|+ EXTRA|+|Zwischensumme|MwSt|Rabatt" +
+        "|Kundenrabatt|Promo|Liefergebühr|Trinkgeld|TOTAL|ZAHLUNG|BEZAHLT|OFFEN|LIEFERUNG AN" +
+        "|Hinweise|Vielen Dank für Ihren Besuch!|Im Lokal|Mitnehmen|Lieferung|(Keine Artikel in der Bestellung)");
 
-    public static readonly PrintLabels French = new(
-        OnlineOrder: "COMMANDE EN LIGNE",
-        Type: "Type",
-        Table: "Table",
-        Customer: "Client",
-        Tel: "Tél",
-        Notes: "REMARQUES",
-        Note: "REMARQUE",
-        NoPrefix: "SANS",
-        ExtraPrefix: "+ SUPPL",
-        SelectedPrefix: "+",
-        Subtotal: "Sous-total",
-        Tax: "TVA",
-        Discount: "Remise",
-        CustomerDiscount: "Remise client",
-        Promo: "Promo",
-        DeliveryFee: "Frais de livraison",
-        Tip: "Pourboire",
-        Total: "TOTAL",
-        Payment: "PAIEMENT",
-        Paid: "PAYÉ",
-        Due: "DÛ",
-        DeliveryTo: "LIVRAISON À",
-        Instructions: "Instructions",
-        ThankYou: "Merci de votre visite !",
-        DineIn: "Sur place",
-        TakeAway: "À emporter",
-        Delivery: "Livraison",
-        NoItems: "(Aucun article dans la commande)");
+    public static readonly PrintLabels French = Parse(
+        "COMMANDE EN LIGNE|Type|Table|Client|Tél|REMARQUES|REMARQUE|SANS|+ SUPPL|+|Sous-total|TVA|Remise" +
+        "|Remise client|Promo|Frais de livraison|Pourboire|TOTAL|PAIEMENT|PAYÉ|DÛ|LIVRAISON À" +
+        "|Instructions|Merci de votre visite !|Sur place|À emporter|Livraison|(Aucun article dans la commande)");
 
-    public static readonly PrintLabels Italian = new(
-        OnlineOrder: "ORDINE ONLINE",
-        Type: "Tipo",
-        Table: "Tavolo",
-        Customer: "Cliente",
-        Tel: "Tel",
-        Notes: "NOTE",
-        Note: "NOTA",
-        NoPrefix: "SENZA",
-        ExtraPrefix: "+ EXTRA",
-        SelectedPrefix: "+",
-        Subtotal: "Subtotale",
-        Tax: "IVA",
-        Discount: "Sconto",
-        CustomerDiscount: "Sconto cliente",
-        Promo: "Promo",
-        DeliveryFee: "Costo di consegna",
-        Tip: "Mancia",
-        Total: "TOTALE",
-        Payment: "PAGAMENTO",
-        Paid: "PAGATO",
-        Due: "DA PAGARE",
-        DeliveryTo: "CONSEGNA A",
-        Instructions: "Istruzioni",
-        ThankYou: "Grazie per la visita!",
-        DineIn: "Al tavolo",
-        TakeAway: "Da asporto",
-        Delivery: "Consegna",
-        NoItems: "(Nessun articolo nell'ordine)");
+    public static readonly PrintLabels Italian = Parse(
+        "ORDINE ONLINE|Tipo|Tavolo|Cliente|Tel|NOTE|NOTA|SENZA|+ EXTRA|+|Subtotale|IVA|Sconto" +
+        "|Sconto cliente|Promo|Costo di consegna|Mancia|TOTALE|PAGAMENTO|PAGATO|DA PAGARE|CONSEGNA A" +
+        "|Istruzioni|Grazie per la visita!|Al tavolo|Da asporto|Consegna|(Nessun articolo nell'ordine)");
 
-    public static readonly PrintLabels Spanish = new(
-        OnlineOrder: "PEDIDO ONLINE",
-        Type: "Tipo",
-        Table: "Mesa",
-        Customer: "Cliente",
-        Tel: "Tel",
-        Notes: "NOTAS",
-        Note: "NOTA",
-        NoPrefix: "SIN",
-        ExtraPrefix: "+ EXTRA",
-        SelectedPrefix: "+",
-        Subtotal: "Subtotal",
-        Tax: "IVA",
-        Discount: "Descuento",
-        CustomerDiscount: "Descuento cliente",
-        Promo: "Promo",
-        DeliveryFee: "Gastos de envío",
-        Tip: "Propina",
-        Total: "TOTAL",
-        Payment: "PAGO",
-        Paid: "PAGADO",
-        Due: "PENDIENTE",
-        DeliveryTo: "ENTREGAR EN",
-        Instructions: "Indicaciones",
-        ThankYou: "¡Gracias por su visita!",
-        DineIn: "En el local",
-        TakeAway: "Para llevar",
-        Delivery: "Entrega",
-        NoItems: "(Sin artículos en el pedido)");
+    public static readonly PrintLabels Spanish = Parse(
+        "PEDIDO ONLINE|Tipo|Mesa|Cliente|Tel|NOTAS|NOTA|SIN|+ EXTRA|+|Subtotal|IVA|Descuento" +
+        "|Descuento cliente|Promo|Gastos de envío|Propina|TOTAL|PAGO|PAGADO|PENDIENTE|ENTREGAR EN" +
+        "|Indicaciones|¡Gracias por su visita!|En el local|Para llevar|Entrega|(Sin artículos en el pedido)");
 
-    public static readonly PrintLabels Dutch = new(
-        OnlineOrder: "ONLINE BESTELLING",
-        Type: "Type",
-        Table: "Tafel",
-        Customer: "Klant",
-        Tel: "Tel",
-        Notes: "OPMERKINGEN",
-        Note: "LET OP",
-        NoPrefix: "ZONDER",
-        ExtraPrefix: "+ EXTRA",
-        SelectedPrefix: "+",
-        Subtotal: "Subtotaal",
-        Tax: "BTW",
-        Discount: "Korting",
-        CustomerDiscount: "Klantkorting",
-        Promo: "Promo",
-        DeliveryFee: "Bezorgkosten",
-        Tip: "Fooi",
-        Total: "TOTAAL",
-        Payment: "BETALING",
-        Paid: "BETAALD",
-        Due: "OPENSTAAND",
-        DeliveryTo: "BEZORGEN AAN",
-        Instructions: "Instructies",
-        ThankYou: "Bedankt voor uw bezoek!",
-        DineIn: "Ter plaatse",
-        TakeAway: "Meenemen",
-        Delivery: "Bezorging",
-        NoItems: "(Geen artikelen in de bestelling)");
+    public static readonly PrintLabels Dutch = Parse(
+        "ONLINE BESTELLING|Type|Tafel|Klant|Tel|OPMERKINGEN|LET OP|ZONDER|+ EXTRA|+|Subtotaal|BTW|Korting" +
+        "|Klantkorting|Promo|Bezorgkosten|Fooi|TOTAAL|BETALING|BETAALD|OPENSTAAND|BEZORGEN AAN" +
+        "|Instructies|Bedankt voor uw bezoek!|Ter plaatse|Meenemen|Bezorging|(Geen artikelen in de bestelling)");
 
-    public static readonly PrintLabels Turkish = new(
-        OnlineOrder: "ONLINE SİPARİŞ",
-        Type: "Tür",
-        Table: "Masa",
-        Customer: "Müşteri",
-        Tel: "Tel",
-        Notes: "NOTLAR",
-        Note: "NOT",
-        NoPrefix: "YOK",
-        ExtraPrefix: "+ EKSTRA",
-        SelectedPrefix: "+",
-        Subtotal: "Ara Toplam",
-        Tax: "KDV",
-        Discount: "İndirim",
-        CustomerDiscount: "Müşteri indirimi",
-        Promo: "Promosyon",
-        DeliveryFee: "Teslimat Ücreti",
-        Tip: "Bahşiş",
-        Total: "TOPLAM",
-        Payment: "ÖDEME",
-        Paid: "ÖDENEN",
-        Due: "KALAN",
-        DeliveryTo: "TESLİMAT ADRESİ",
-        Instructions: "Talimatlar",
-        ThankYou: "Ziyaretiniz için teşekkürler!",
-        DineIn: "Lokalda",
-        TakeAway: "Paket",
-        Delivery: "Teslimat",
-        NoItems: "(Siparişte ürün yok)");
+    public static readonly PrintLabels Turkish = Parse(
+        "ONLINE SİPARİŞ|Tür|Masa|Müşteri|Tel|NOTLAR|NOT|YOK|+ EKSTRA|+|Ara Toplam|KDV|İndirim" +
+        "|Müşteri indirimi|Promosyon|Teslimat Ücreti|Bahşiş|TOPLAM|ÖDEME|ÖDENEN|KALAN|TESLİMAT ADRESİ" +
+        "|Talimatlar|Ziyaretiniz için teşekkürler!|Lokalda|Paket|Teslimat|(Siparişte ürün yok)");
+
+    /// <summary>Maps one spec onto the record; a short or long spec fails loudly here.</summary>
+    private static PrintLabels Parse(string spec)
+    {
+        var fields = spec.Split('|');
+        if (fields.Length != SpecOrder.Length)
+        {
+            throw new InvalidOperationException(
+                $"PrintLabels spec has {fields.Length} fields, expected {SpecOrder.Length}.");
+        }
+
+        return new PrintLabels(
+            OnlineOrder: fields[0],
+            Type: fields[1],
+            Table: fields[2],
+            Customer: fields[3],
+            Tel: fields[4],
+            Notes: fields[5],
+            Note: fields[6],
+            NoPrefix: fields[7],
+            ExtraPrefix: fields[8],
+            SelectedPrefix: fields[9],
+            Subtotal: fields[10],
+            Tax: fields[11],
+            Discount: fields[12],
+            CustomerDiscount: fields[13],
+            Promo: fields[14],
+            DeliveryFee: fields[15],
+            Tip: fields[16],
+            Total: fields[17],
+            Payment: fields[18],
+            Paid: fields[19],
+            Due: fields[20],
+            DeliveryTo: fields[21],
+            Instructions: fields[22],
+            ThankYou: fields[23],
+            DineIn: fields[24],
+            TakeAway: fields[25],
+            Delivery: fields[26],
+            NoItems: fields[27]);
+    }
 }
