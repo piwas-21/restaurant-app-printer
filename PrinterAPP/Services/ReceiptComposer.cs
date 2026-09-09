@@ -153,11 +153,19 @@ public static class ReceiptComposer
     {
         foreach (var ing in item.IngredientCustomizations ?? Enumerable.Empty<IngredientCustomization>())
         {
-            var line = ing.IsRemoved
-                ? $"{indent}   - {labels.NoPrefix} {ing.IngredientName}"
-                : ing.Quantity > 1
-                    ? $"{indent}   {labels.ExtraPrefix} {ing.IngredientName} x{ing.Quantity}"
-                    : $"{indent}   {labels.SelectedPrefix} {ing.IngredientName}";
+            string line;
+            if (ing.IsRemoved)
+            {
+                line = $"{indent}   - {labels.NoPrefix} {ing.IngredientName}";
+            }
+            else if (ing.Quantity > 1)
+            {
+                line = $"{indent}   {labels.ExtraPrefix} {ing.IngredientName} x{ing.Quantity}";
+            }
+            else
+            {
+                line = $"{indent}   {labels.SelectedPrefix} {ing.IngredientName}";
+            }
 
             if (tallEmphasis)
             {

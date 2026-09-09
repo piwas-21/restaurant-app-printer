@@ -429,9 +429,11 @@ public class OrderPrintService : IOrderPrintService
 
         if (order.Type == "Delivery")
         {
-            var phone = !string.IsNullOrWhiteSpace(order.DeliveryAddress?.Phone)
-                ? order.DeliveryAddress!.Phone
-                : order.CustomerPhone;
+            var phone = order.DeliveryAddress?.Phone;
+            if (string.IsNullOrWhiteSpace(phone))
+            {
+                phone = order.CustomerPhone;
+            }
             if (!string.IsNullOrWhiteSpace(phone))
             {
                 sb.AppendLine($"{labels.Tel}: {phone}");
@@ -547,15 +549,16 @@ public class OrderPrintService : IOrderPrintService
         }
 
         // Delivery address, contact phone and courier instructions for delivery orders
-        if (order.Type == "Delivery" && !string.IsNullOrWhiteSpace(order.DeliveryAddress?.FullAddress))
+        var address = order.DeliveryAddress;
+        if (order.Type == "Delivery" && address is not null && !string.IsNullOrWhiteSpace(address.FullAddress))
         {
             sb.AppendLine(new string('-', paperWidth == 80 ? 48 : 32));
             sb.Append(EXTRA_DARK_ON);
             sb.AppendLine(labels.DeliveryTo);
-            sb.AppendLine(order.DeliveryAddress!.FullAddress);
-            if (!string.IsNullOrWhiteSpace(order.DeliveryAddress!.DeliveryInstructions))
+            sb.AppendLine(address.FullAddress);
+            if (!string.IsNullOrWhiteSpace(address.DeliveryInstructions))
             {
-                sb.AppendLine($"{labels.Instructions}: {order.DeliveryAddress!.DeliveryInstructions}");
+                sb.AppendLine($"{labels.Instructions}: {address.DeliveryInstructions}");
             }
             sb.Append(EXTRA_DARK_OFF);
             sb.AppendLine();
