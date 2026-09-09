@@ -30,6 +30,9 @@
     <Compile Include="..\PrinterAPP\Models\Order.cs" Link="Linked\Order.cs" />
     <Compile Include="..\PrinterAPP\Models\DeliveryAddress.cs" Link="Linked\DeliveryAddress.cs" />
     <Compile Include="..\PrinterAPP\Models\PrinterConfiguration.cs" Link="Linked\PrinterConfiguration.cs" />
+    <!-- PrinterConfiguration.PrintLanguage references PrintLanguagePolicy.English; the policy is
+         MAUI-free, so the link keeps this compile-only guard green. -->
+    <Compile Include="..\PrinterAPP\Services\PrintLanguagePolicy.cs" Link="Linked\PrintLanguagePolicy.cs" />
     <Compile Include="..\PrinterAPP\Models\HeartbeatRequest.cs" Link="Linked\HeartbeatRequest.cs" />
     <Compile Include="..\PrinterAPP\Models\PrintAck.cs" Link="Linked\PrintAck.cs" />
     <Compile Include="..\PrinterAPP\Models\DevicePrintTarget.cs" Link="Linked\DevicePrintTarget.cs" />

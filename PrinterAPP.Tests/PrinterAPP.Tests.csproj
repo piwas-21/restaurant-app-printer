@@ -82,6 +82,12 @@
          silently gets no ticket. -->
     <Compile Include="..\PrinterAPP\Services\KitchenTicketFilter.cs" Link="Linked\KitchenTicketFilter.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderPrintService.cs" Link="Linked\OrderPrintService.cs" />
+    <!-- Receipt label localization + language resolution + the shared per-item composer (all pure,
+         MAUI-free): print-language selection is resolved by PrintLanguagePolicy, labels come from
+         PrintLabelCatalog, and both surfaces compose their item blocks through ReceiptComposer. -->
+    <Compile Include="..\PrinterAPP\Services\PrintLabels.cs" Link="Linked\PrintLabels.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrintLanguagePolicy.cs" Link="Linked\PrintLanguagePolicy.cs" />
+    <Compile Include="..\PrinterAPP\Services\ReceiptComposer.cs" Link="Linked\ReceiptComposer.cs" />
     <Compile Include="..\PrinterAPP\Services\PrintStyleSettingsService.cs" Link="Linked\PrintStyleSettingsService.cs" />
     <Compile Include="..\PrinterAPP\Models\PrintStyleSettings.cs" Link="Linked\PrintStyleSettings.cs" />
     <Compile Include="..\PrinterAPP\Services\PrinterType.cs" Link="Linked\PrinterType.cs" />

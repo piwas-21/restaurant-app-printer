@@ -57,6 +57,8 @@ PrinterAPP/
 │   ├── IFeedWatchdog.cs / FeedWatchdog.cs / FeedWatchdogDecision.cs  # Restarts a dead or stalled feed
 │   ├── IPrinterService.cs / WindowsPrinterService.cs           # Windows Printer API (P/Invoke)
 │   ├── IOrderPrintService.cs / OrderPrintService.cs            # ESC/POS formatting, receipt composition
+│   ├── ReceiptComposer.cs                                      # Shared per-item block (ingredients, components, notes) both surfaces compose through
+│   ├── PrintLabels.cs / PrintLanguagePolicy.cs                 # Receipt label catalog (en/de/fr/it/es/nl/tr) + how the venue's print-language setting resolves
 │   ├── IOrderHistoryService.cs / OrderHistoryService.cs        # In-memory order history (last 100) + dedup window
 │   ├── PrinterType.cs                                          # Kitchen / Cashier discriminator
 │   ├── PrintStyleSettingsService.cs                            # Style settings persistence

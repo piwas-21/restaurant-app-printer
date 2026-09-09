@@ -88,6 +88,15 @@ public partial class MainPage : ContentPage
             RestrictStartTimePicker.Time = _config.RestrictStartTime;
             RestrictEndTimePicker.Time = _config.RestrictEndTime;
 
+            // Print language: display names in picker order = PrintLanguagePolicy.Supported order,
+            // with "follow the order" first.
+            var languageChoices = new List<string> { "Order language (auto)" };
+            languageChoices.AddRange(PrintLanguagePolicy.Supported.Select(code => PrintLanguagePolicy.DisplayNames[code]));
+            PrintLanguagePicker.ItemsSource = languageChoices;
+            PrintLanguagePicker.SelectedIndex = _config.PrintLanguage == PrintLanguagePolicy.Auto
+                ? 0
+                : PrintLanguagePolicy.SupportedIndexOf(PrintLanguagePolicy.Resolve(_config.PrintLanguage, null)) + 1;
+
             // Load available printers
             await LoadPrintersAsync();
 
@@ -530,6 +539,14 @@ public partial class MainPage : ContentPage
             _config.ApiKey = ApiKeyEntry.Text?.Trim() ?? string.Empty;
             _config.RestaurantName = RestaurantNameEntry.Text;
             _config.KitchenLocation = KitchenLocationEntry.Text;
+
+            // Print language (index 0 = follow the order, otherwise Supported order)
+            _config.PrintLanguage = PrintLanguagePicker.SelectedIndex switch
+            {
+                0 => PrintLanguagePolicy.Auto,
+                > 0 and var i when i <= PrintLanguagePolicy.Supported.Count => PrintLanguagePolicy.Supported[i - 1],
+                _ => PrintLanguagePolicy.English,
+            };
 
             // Kitchen printer settings
             _config.KitchenAutoPrint = KitchenAutoPrintSwitch.IsToggled;

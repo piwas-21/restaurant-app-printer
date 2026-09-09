@@ -57,6 +57,51 @@ public class OrderDeserializationTests
         Assert.Null(order.DeliveryAddress.UserAddressId);
     }
 
+    /// <summary>
+    /// The fields the receipt reads beyond the classic order columns: the guest's language (drives
+    /// the "order language" print option), a voucher code (explains a printed discount) and the
+    /// customer-discount money that is separate from Discount (without it the printed breakdown
+    /// cannot reconcile against the total). Each mirrors its backend OrderDto field exactly.
+    /// </summary>
+    [Fact]
+    public void Deserialize_binds_language_promo_and_customer_discount_fields()
+    {
+        const string json = """
+        {
+          "orderNumber": "202609040003",
+          "type": "TakeAway",
+          "preferredLanguage": "fr",
+          "promoCode": "WELCOME10",
+          "discount": 2.00,
+          "discountPercentage": 10,
+          "customerDiscountAmount": 1.50,
+          "totalPaid": 5.00,
+          "remainingAmount": 8.50,
+          "isFullyPaid": false,
+          "items": [
+            {
+              "productName": "Pizza",
+              "quantity": 1,
+              "sideItems": [ { "productName": "Cola", "quantity": 2, "kind": "SideItem" } ]
+            }
+          ]
+        }
+        """;
+
+        var order = JsonSerializer.Deserialize<Order>(json, Options);
+
+        Assert.NotNull(order);
+        Assert.Equal("fr", order!.PreferredLanguage);
+        Assert.Equal("SideItem", order.Items[0].SideItems![0].Kind);
+        Assert.Equal("WELCOME10", order.PromoCode);
+        Assert.Equal(2.00m, order.Discount);
+        Assert.Equal(10m, order.DiscountPercentage);
+        Assert.Equal(1.50m, order.CustomerDiscountAmount);
+        Assert.Equal(5.00m, order.TotalPaid);
+        Assert.Equal(8.50m, order.RemainingAmount);
+        Assert.False(order.IsFullyPaid);
+    }
+
     [Fact]
     public void Deserialize_non_delivery_order_leaves_address_null()
     {

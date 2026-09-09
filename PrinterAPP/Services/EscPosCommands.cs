@@ -19,6 +19,15 @@ public static class EscPosCommands
     /// <summary>ESC a 0 — left alignment.</summary>
     public const string AlignLeft = "\x1B\x61\x00";
 
+    /// <summary>GS ! 0 — normal size (1x width, 1x height).</summary>
+    public const string SizeNormal = "\x1D\x21\x00";
+
+    /// <summary>GS ! 1 — tall only (1x width, 2x height). Same code OrderPrintService uses.</summary>
+    public const string SizeTall = "\x1D\x21\x01";
+
+    /// <summary>GS ! 16 — wide only (2x width, 1x height). Same code OrderPrintService uses.</summary>
+    public const string SizeWide = "\x1D\x21\x10";
+
     /// <summary>ESC d 3 — feed 3 lines.</summary>
     public const string Feed3Lines = "\x1B\x64\x03";
 
