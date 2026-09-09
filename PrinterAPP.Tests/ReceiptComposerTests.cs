@@ -126,6 +126,52 @@ public class ReceiptComposerTests
         Assert.Contains("+ Mushrooms", ticket);
     }
 
+    /// <summary>
+    /// #318 semantics, printer side: a true SideItem is stored PER UNIT of its parent and must
+    /// scale; a bundle child is already line-absolute and must not; an unclassifiable row (Kind
+    /// null) prints exactly as stored. The backend measured a stored 6 rendering as 18 when this
+    /// distinction was lost.
+    /// </summary>
+    [Fact]
+    public void Child_quantities_follow_the_kind_semantics()
+    {
+        var item = new OrderItem
+        {
+            ProductName = "Order",
+            Quantity = 3,
+            SideItems =
+            [
+                new OrderItem { ProductName = "Cola", Quantity = 2, Kind = "SideItem" },
+                new OrderItem { ProductName = "Fries", Quantity = 2, Kind = "BundleChild" },
+                new OrderItem { ProductName = "Mystery", Quantity = 2, Kind = null },
+            ],
+        };
+
+        var ticket = ComposeCashier(item);
+
+        Assert.Contains("+ 6x Cola", ticket);     // SideItem: 2 per unit x 3 units
+        Assert.Contains("+ 2x Fries", ticket);    // BundleChild: already line-absolute
+        Assert.Contains("+ 2x Mystery", ticket);  // unknown: never invent a multiplier
+        Assert.DoesNotContain("+ 4x Fries", ticket);
+    }
+
+    [Fact]
+    public void Kitchen_scales_side_items_the_same_way()
+    {
+        var item = new OrderItem
+        {
+            ProductName = "Combo",
+            Quantity = 2,
+            SideItems = [new OrderItem { ProductName = "Ayran", Quantity = 1, Kind = "SideItem" }],
+        };
+
+        var kitchen = ComposeKitchen(item);
+        Assert.Contains("+ 2x Ayran", kitchen);
+
+        var cashier = ComposeCashier(item);
+        Assert.Contains("+ 2x Ayran", cashier);
+    }
+
     [Fact]
     public void Special_instruction_prints_with_a_label_on_both_surfaces()
     {

@@ -87,6 +87,16 @@ public class OrderItem
     public string? SpecialInstructions { get; set; }
     public string? KitchenType { get; set; } // e.g., "FrontKitchen", "BackKitchen", etc.
 
+    /// <summary>
+    /// Backend OrderItemDto.Kind, on the wire as the enum NAME ("SideItem"/"BundleChild"), null on
+    /// top-level and historic rows. Decides what a child's Quantity means: a true side item is
+    /// stored PER UNIT of its parent, everything else is already line-absolute (backend
+    /// OrderChildRendering.LineQuantity, #318/#305). The printer scales only on this explicit
+    /// signal — it has no Product navigation to re-derive the kind from, so an unclassifiable row
+    /// prints as stored rather than inventing a multiplier.
+    /// </summary>
+    public string? Kind { get; set; }
+
     // Ingredient customizations (added/removed ingredients)
     [JsonPropertyName("ingredientCustomizations")]
     public List<IngredientCustomization>? IngredientCustomizations { get; set; }

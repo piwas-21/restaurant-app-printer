@@ -78,7 +78,13 @@ public class OrderDeserializationTests
           "totalPaid": 5.00,
           "remainingAmount": 8.50,
           "isFullyPaid": false,
-          "items": []
+          "items": [
+            {
+              "productName": "Pizza",
+              "quantity": 1,
+              "sideItems": [ { "productName": "Cola", "quantity": 2, "kind": "SideItem" } ]
+            }
+          ]
         }
         """;
 
@@ -86,6 +92,7 @@ public class OrderDeserializationTests
 
         Assert.NotNull(order);
         Assert.Equal("fr", order!.PreferredLanguage);
+        Assert.Equal("SideItem", order.Items[0].SideItems![0].Kind);
         Assert.Equal("WELCOME10", order.PromoCode);
         Assert.Equal(2.00m, order.Discount);
         Assert.Equal(10m, order.DiscountPercentage);
