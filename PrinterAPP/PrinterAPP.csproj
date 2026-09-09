@@ -28,10 +28,10 @@
          Kept as-is here to avoid changing the live Windows app identity in a code-only PR;
          the rename is a deploy/Play-Console-registration step (needs the Play account). -->
     <ApplicationId>com.companyname.printerapp</ApplicationId>
-    <ApplicationDisplayVersion>1.0.26</ApplicationDisplayVersion>
+    <ApplicationDisplayVersion>1.0.27</ApplicationDisplayVersion>
     <!-- Android versionCode (integer) — must strictly increase each release so updates install. -->
     <ApplicationVersion>26</ApplicationVersion>
-    <Version>1.0.26</Version>
+    <Version>1.0.27</Version>
 
     <WindowsPackageType>None</WindowsPackageType>
 
