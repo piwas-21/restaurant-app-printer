@@ -848,7 +848,15 @@ public class EventStreamingService : IEventStreamingService
                     pollWindowStart = _lastPollTime;
                 }
 
-                var pollUrl = $"{baseUrl}/api/orders/printer-feed?modifiedSince={pollWindowStart:o}";
+                // The venue's print language rides on the poll (2026-09-10 partner feedback): the
+                // backend translates the order DETAILS — product, variation and ingredient names —
+                // into this language, falling back to the frozen checkout names where a translation
+                // is missing. "auto" resolves per order from the guest's own preferred language.
+                // Without the parameter the backend keeps serving the frozen single-language names,
+                // which is exactly the old behaviour the language switch never seemed to affect.
+                var configForLanguage = await _printerService.LoadConfigurationAsync();
+                var pollUrl = $"{baseUrl}/api/orders/printer-feed?modifiedSince={pollWindowStart:o}" +
+                    $"&language={Uri.EscapeDataString(configForLanguage.PrintLanguage)}";
 
                 _logger.LogInformation("🔄 Poll #{Count} - Fetching orders since {Since}", pollCount, pollWindowStart);
                 System.Diagnostics.Debug.WriteLine($"[POLLING] #{pollCount} - URL: {pollUrl}");

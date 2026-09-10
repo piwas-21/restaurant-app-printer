@@ -11,7 +11,6 @@ public class OrderPrintService : IOrderPrintService
     private readonly IRequestLogService _requestLogService;
     private readonly ILogger<OrderPrintService> _logger;
     private readonly PrintStyleSettingsService _styleService;
-    private readonly PrintStyleSettings _styleSettings;
 
     // ESC/POS Commands for MAXIMUM darkness printing
     private const string ESC_INIT = "\x1B\x40"; // Initialize printer
@@ -53,8 +52,16 @@ public class OrderPrintService : IOrderPrintService
         // Path provider injected (was `new PrintStyleSettingsService()` with a MAUI default) so this
         // service is source-linkable into the headless print-to-sink test.
         _styleService = new PrintStyleSettingsService(pathProvider);
-        _styleSettings = _styleService.LoadSettings();
     }
+
+    /// <summary>
+    /// Styles are loaded PER PRINT, never cached in a field. This service is a singleton, and a
+    /// settings object captured at construction meant every ticket after a settings save still
+    /// printed the styles the app started with — the partner report of "changed the text format
+    /// settings, saved, no change in prints at all". LoadSettings caches internally, so a print
+    /// reads at most one file stat, and a save is visible to the very next ticket.
+    /// </summary>
+    private PrintStyleSettings CurrentStyles() => _styleService.LoadSettings();
 
     /// <summary>
     /// Applies a section style and returns the ESC/POS commands
@@ -306,47 +313,46 @@ public class OrderPrintService : IOrderPrintService
     {
         var sb = new StringBuilder();
         var labels = PrintLabelCatalog.For(PrintLanguagePolicy.Resolve(config.PrintLanguage, order.PreferredLanguage));
+        var styles = CurrentStyles();
 
         // Initialize printer and set Turkish code page for character support
         sb.Append(ESC_INIT);
         sb.Append(ESC_CODEPAGE_TURKISH);
 
-        // KITCHEN NAME HEADER - Normal size with bold (smaller than before)
+        // KITCHEN NAME HEADER — styled by the settings page (Kitchen Header section)
         if (!string.IsNullOrEmpty(kitchenName))
         {
-            sb.Append(ESC_ALIGN_CENTER);
-            sb.Append(EXTRA_DARK_ON);
+            sb.Append(ApplyStyle(styles.KitchenHeader));
             sb.AppendLine($"*** {kitchenName} ***");
-            sb.Append(EXTRA_DARK_OFF);
+            sb.Append(ResetStyle(styles.KitchenHeader));
             sb.AppendLine();
         }
 
-        // Order number + Date/Time - Normal size with bold (same as kitchen title)
-        sb.Append(ESC_ALIGN_LEFT);
-        sb.Append(EXTRA_DARK_ON);
+        // Order number + Date/Time (Kitchen Order Info section)
+        sb.Append(ApplyStyle(styles.KitchenOrderInfo));
         var localTime = order.OrderDate.Kind == DateTimeKind.Utc
             ? order.OrderDate.ToLocalTime()
             : order.OrderDate;
         sb.AppendLine($"{order.OrderNumber} - {localTime:dd/MM/yyyy HH:mm}");
-        sb.Append(EXTRA_DARK_OFF);
+        sb.Append(ResetStyle(styles.KitchenOrderInfo));
 
-        // Type + Table - TALL size (1x width, 2x height - intermediate between normal and double)
-        sb.Append(ESC_SIZE_TALL);
+        // Type + Table (Kitchen Order Type section; defaults to Tall)
+        sb.Append(ApplyStyle(styles.KitchenOrderType));
         ReceiptComposer.AppendTypeAndTableLine(sb, order, labels);
-        sb.Append(ESC_SIZE_NORMAL);
+        sb.Append(ResetStyle(styles.KitchenOrderType));
 
-        // Customer name only (no phone)
+        // Customer name only (no phone) — styled as part of the order info block
         if (!string.IsNullOrWhiteSpace(order.CustomerName))
         {
-            sb.Append(EXTRA_DARK_ON);
+            sb.Append(ApplyStyle(styles.KitchenOrderInfo));
             sb.AppendLine($"{labels.Customer}: {order.CustomerName}");
-            sb.Append(EXTRA_DARK_OFF);
+            sb.Append(ResetStyle(styles.KitchenOrderInfo));
         }
 
         // Order-level notes — the kitchen reads them at the top, never buried under the items.
-        sb.Append(EXTRA_DARK_ON);
+        sb.Append(ApplyStyle(styles.KitchenIngredients));
         ReceiptComposer.AppendOrderNotesLine(sb, order, labels);
-        sb.Append(EXTRA_DARK_OFF);
+        sb.Append(ResetStyle(styles.KitchenIngredients));
 
         sb.AppendLine(new string('-', paperWidth == 80 ? 48 : 32));
 
@@ -357,7 +363,7 @@ public class OrderPrintService : IOrderPrintService
         {
             foreach (var item in order.Items)
             {
-                ReceiptComposer.AppendKitchenItemLines(sb, item, depth: 0, labels);
+                ReceiptComposer.AppendKitchenItemLines(sb, item, depth: 0, labels, styles: styles);
                 sb.AppendLine();
             }
         }
@@ -385,6 +391,7 @@ public class OrderPrintService : IOrderPrintService
     {
         var sb = new StringBuilder();
         var labels = PrintLabelCatalog.For(PrintLanguagePolicy.Resolve(config.PrintLanguage, order.PreferredLanguage));
+        var styles = CurrentStyles();
 
         // Initialize printer and set Turkish code page for character support
         // Some printers need the code page command repeated to properly switch encoding
@@ -392,15 +399,11 @@ public class OrderPrintService : IOrderPrintService
         sb.Append(ESC_CODEPAGE_TURKISH);
         sb.Append(ESC_CODEPAGE_TURKISH); // Send twice for stubborn printers
 
-        // Header - EXTRA DARK, Bold, and Double Size
-        sb.Append(ESC_ALIGN_CENTER);
-        sb.Append(ESC_DOUBLE_ON);
-        sb.Append(EXTRA_DARK_ON);
+        // Header (Cashier Header section — defaults: double size, bold, emphasized, centered)
+        sb.Append(ApplyStyle(styles.CashierHeader));
         sb.AppendLine($"{config.RestaurantName}");
-        sb.Append(ESC_DOUBLE_OFF);
-
         sb.AppendLine(labels.OnlineOrder);
-        sb.Append(EXTRA_DARK_OFF);
+        sb.Append(ResetStyle(styles.CashierHeader));
         sb.AppendLine();
 
         // Convert to local time if needed
@@ -408,23 +411,22 @@ public class OrderPrintService : IOrderPrintService
             ? order.OrderDate.ToLocalTime()
             : order.OrderDate;
 
-        // Order number + Date/Time on one line - EXTRA DARK for visibility
-        sb.Append(ESC_ALIGN_LEFT);
-        sb.Append(EXTRA_DARK_ON);
+        // Order number + Date/Time on one line (Cashier Order Info section)
+        sb.Append(ApplyStyle(styles.CashierOrderInfo));
         sb.AppendLine($"{order.OrderNumber} - {localTime:dd/MM/yyyy HH:mm}");
-        sb.Append(EXTRA_DARK_OFF);
+        sb.Append(ResetStyle(styles.CashierOrderInfo));
 
         // Type + Table on one line
-        sb.Append(EXTRA_DARK_ON);
+        sb.Append(ApplyStyle(styles.CashierOrderInfo));
         ReceiptComposer.AppendTypeAndTableLine(sb, order, labels);
-        sb.Append(EXTRA_DARK_OFF);
+        sb.Append(ResetStyle(styles.CashierOrderInfo));
 
         // Customer name, plus a phone number for orders someone may need to call about
         if (!string.IsNullOrWhiteSpace(order.CustomerName))
         {
-            sb.Append(EXTRA_DARK_ON);
+            sb.Append(ApplyStyle(styles.CashierOrderInfo));
             sb.AppendLine($"{labels.Customer}: {order.CustomerName}");
-            sb.Append(EXTRA_DARK_OFF);
+            sb.Append(ResetStyle(styles.CashierOrderInfo));
         }
 
         if (order.Type == "Delivery")
@@ -456,9 +458,9 @@ public class OrderPrintService : IOrderPrintService
             var spacing = paperWidth == 80 ? 48 : 32;
             foreach (var item in order.Items)
             {
-                sb.Append(EXTRA_DARK_ON);
+                sb.Append(ApplyStyle(styles.CashierItemLine));
                 ReceiptComposer.AppendCashierItemLines(sb, item, depth: 0, spacing, labels);
-                sb.Append(EXTRA_DARK_OFF);
+                sb.Append(ResetStyle(styles.CashierItemLine));
             }
         }
         else
@@ -469,8 +471,8 @@ public class OrderPrintService : IOrderPrintService
 
         sb.AppendLine(new string('-', paperWidth == 80 ? 48 : 32));
 
-        // Subtotal, Tax, Discounts, Delivery Fee, Tip - EXTRA DARK
-        sb.Append(EXTRA_DARK_ON);
+        // Subtotal, Tax, Discounts, Delivery Fee, Tip (Cashier Totals section)
+        sb.Append(ApplyStyle(styles.CashierTotals));
         sb.AppendLine($"{labels.Subtotal}: CHF {ReceiptComposer.Money(order.SubTotal)}");
 
         if (order.Tax > 0)
@@ -506,15 +508,13 @@ public class OrderPrintService : IOrderPrintService
             sb.AppendLine($"{labels.Tip}: CHF {ReceiptComposer.Money(order.Tip)}");
         }
 
-        sb.Append(EXTRA_DARK_OFF);
+        sb.Append(ResetStyle(styles.CashierTotals));
         sb.AppendLine(new string('-', paperWidth == 80 ? 48 : 32));
 
-        // Total - EXTRA DARK, Bold and larger for maximum visibility
-        sb.Append(ESC_DOUBLE_ON);
-        sb.Append(EXTRA_DARK_ON);
+        // Total (Cashier Grand Total section — defaults: double size, bold, emphasized)
+        sb.Append(ApplyStyle(styles.CashierGrandTotal));
         sb.AppendLine($"{labels.Total}: CHF {ReceiptComposer.Money(order.Total)}");
-        sb.Append(EXTRA_DARK_OFF);
-        sb.Append(ESC_DOUBLE_OFF);
+        sb.Append(ResetStyle(styles.CashierGrandTotal));
         sb.AppendLine();
 
         // What has already been paid, and what the till still has to collect.

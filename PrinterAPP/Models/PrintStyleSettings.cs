@@ -58,12 +58,18 @@ public class PrintStyleSettings
         Alignment = PrintAlignment.Left
     };
 
+    /// <summary>
+    /// Defaults REPRODUCE what the hardcoded composer printed before styles were wired: the type
+    /// line was Tall with no bold/emphasis, and item names printed Wide with none either. A
+    /// default that did not match today's paper would silently restyle every existing install the
+    /// first time this file loads — the exact "saved settings do nothing" bug in reverse.
+    /// </summary>
     public SectionStyle KitchenOrderType { get; set; } = new()
     {
         SectionName = "Order Type",
         Size = FontSize.Tall,
-        IsBold = true,
-        IsEmphasized = true,
+        IsBold = false,
+        IsEmphasized = false,
         Alignment = PrintAlignment.Left
     };
 
@@ -71,7 +77,7 @@ public class PrintStyleSettings
     {
         SectionName = "Item Names",
         Size = FontSize.Wide,
-        IsBold = true,
+        IsBold = false,
         IsEmphasized = false,
         Alignment = PrintAlignment.Left
     };
@@ -80,8 +86,8 @@ public class PrintStyleSettings
     {
         SectionName = "Item Quantities",
         Size = FontSize.Wide,
-        IsBold = true,
-        IsEmphasized = true,
+        IsBold = false,
+        IsEmphasized = false,
         Alignment = PrintAlignment.Left
     };
 
