@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text;
 using PrinterAPP.Models;
+// Disambiguate from Microsoft.Maui.FontSize under the MAUI TFMs (same alias PrintStyleSettingsService carries).
+using FontSize = PrinterAPP.Models.FontSize;
 
 namespace PrinterAPP.Services;
 
