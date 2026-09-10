@@ -33,6 +33,7 @@
     <!-- PrinterConfiguration.PrintLanguage references PrintLanguagePolicy.English; the policy is
          MAUI-free, so the link keeps this compile-only guard green. -->
     <Compile Include="..\PrinterAPP\Services\PrintLanguagePolicy.cs" Link="Linked\PrintLanguagePolicy.cs" />
+    <Compile Include="..\PrinterAPP\Services\KitchenRoutingPolicy.cs" Link="Linked\KitchenRoutingPolicy.cs" />
     <Compile Include="..\PrinterAPP\Models\HeartbeatRequest.cs" Link="Linked\HeartbeatRequest.cs" />
     <Compile Include="..\PrinterAPP\Models\PrintAck.cs" Link="Linked\PrintAck.cs" />
     <Compile Include="..\PrinterAPP\Models\DevicePrintTarget.cs" Link="Linked\DevicePrintTarget.cs" />

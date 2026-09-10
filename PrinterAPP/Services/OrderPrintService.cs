@@ -81,19 +81,25 @@ public class OrderPrintService : IOrderPrintService
     }
 
     /// <summary>
-    /// Prints order to all appropriate printers: Cashier + FrontKitchen + BackKitchen (filtered by item KitchenType)
+    /// Prints order to every destination it owes work: always Cashier (full receipt with prices),
+    /// then the kitchen tickets the routing policy asks for. Stations keeps the legacy Front/Back
+    /// split byte-for-byte and routes unassigned work to a Default ticket; SingleKitchen composes
+    /// ONE General ticket instead and owes the stations nothing.
     /// </summary>
-    public async Task<(bool Cashier, bool FrontKitchen, bool BackKitchen)> PrintOrderToAllPrintersAsync(
-        Order order,
-        bool isManualPrint = false,
-        CancellationToken cancellationToken = default)
+    public async Task<(bool Cashier, KitchenPrintOutcome FrontKitchen, KitchenPrintOutcome BackKitchen, KitchenPrintOutcome GeneralDefault)>
+        PrintOrderToAllPrintersAsync(
+            Order order,
+            bool isManualPrint = false,
+            CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("🖨️ Printing order {OrderNumber} to all printers", order.OrderNumber);
 
         var config = await _printerService.LoadConfigurationAsync();
+        var policy = new KitchenRoutingPolicy(config.KitchenRoutingMode);
         bool cashierSuccess = false;
-        bool frontKitchenSuccess = false;
-        bool backKitchenSuccess = false;
+        var frontKitchenSuccess = KitchenPrintOutcome.Failed;
+        var backKitchenSuccess = KitchenPrintOutcome.Failed;
+        var generalDefaultSuccess = KitchenPrintOutcome.Failed;
 
         // 1. ALWAYS print to Cashier (full receipt with prices)
         try
@@ -106,20 +112,63 @@ public class OrderPrintService : IOrderPrintService
             _logger.LogError(ex, "Error printing to cashier");
         }
 
-        // 2. Route the item tree to each kitchen.
-        //
-        // Both tickets are built up front so that "does this kitchen get a ticket at all" is
-        // answered by the very thing that will be printed — the two used to be decided separately,
-        // and separately is how they drifted apart. Since backend PR #237 (issue #234) made
-        // OrderDto.Items root-only, a top-level scan misses every bundle component: a FrontKitchen
-        // combo containing BackKitchen fries produced no back-kitchen ticket, and printed the fries
-        // on the front kitchen's. KitchenTicketFilter walks the whole tree instead.
+        // 2. Route the item tree under the tenant's policy (issue #113). Both station tickets are
+        // built up front so that "does this kitchen get a ticket at all" is answered by the very
+        // thing that will be printed — the two used to be decided separately, and separately is how
+        // they drifted apart. Since backend PR #237 (issue #234) made OrderDto.Items root-only, a
+        // top-level scan misses every bundle component: a FrontKitchen combo containing BackKitchen
+        // fries produced no back-kitchen ticket, and printed the fries on the front kitchen's.
+        // KitchenTicketFilter walks the whole tree instead.
+        if (policy.Mode == KitchenRoutingMode.SingleKitchen)
+        {
+            // Every printable line belongs on ONE General ticket at the resolved destination; the
+            // stations are owed nothing, which reports the same trivially-true the empty-kitchen
+            // path has always reported.
+            generalDefaultSuccess = await PrintGeneralOrDefaultTicketAsync(
+                order.WithItems(KitchenTicketFilter.ItemsForDestination(
+                    order.Items, policy, KitchenTicketDestination.General)),
+                config, isManualPrint, "General Kitchen");
+            frontKitchenSuccess = KitchenPrintOutcome.Sent;
+            backKitchenSuccess = KitchenPrintOutcome.Sent;
+        }
+        else
+        {
+            (frontKitchenSuccess, backKitchenSuccess) =
+                await PrintStationTicketsAsync(order, config, isManualPrint);
+
+            // Unassigned roots and their riders are Default work (the routing matrix in
+            // CASHIER-POS-REDESIGN-PLAN §9 — "unassigned" must never mean "silently omitted"):
+            // they used to drop out of both station tickets and print nothing at all.
+            generalDefaultSuccess = await PrintGeneralOrDefaultTicketAsync(
+                order.WithItems(KitchenTicketFilter.ItemsForDestination(
+                    order.Items, policy, KitchenTicketDestination.Default)),
+                config, isManualPrint, "Default Kitchen");
+        }
+
+        _logger.LogInformation("🖨️ Print complete for order {OrderNumber}: Cashier={C}, Front={F}, Back={B}, General/Default={G}",
+            order.OrderNumber, cashierSuccess, frontKitchenSuccess, backKitchenSuccess, generalDefaultSuccess);
+
+        return (cashierSuccess, frontKitchenSuccess, backKitchenSuccess, generalDefaultSuccess);
+    }
+
+    /// <summary>
+    /// The legacy station path, byte-for-byte: the Front ticket and the Back ticket exactly as they
+    /// printed before the routing policy existed. Only the Stations policy calls this.
+    /// </summary>
+    private async Task<(KitchenPrintOutcome Front, KitchenPrintOutcome Back)> PrintStationTicketsAsync(
+        Order order,
+        PrinterConfiguration config,
+        bool isManualPrint)
+    {
         var frontKitchenOrder = CreateFilteredOrder(order, FRONT_KITCHEN);
         var backKitchenOrder = CreateFilteredOrder(order, BACK_KITCHEN);
         var hasFrontKitchenItems = frontKitchenOrder.Items.Count > 0;
         var hasBackKitchenItems = backKitchenOrder.Items.Count > 0;
 
-        // 3. Print to FrontKitchen if there are FrontKitchen items
+        var frontKitchenSuccess = KitchenPrintOutcome.Failed;
+        var backKitchenSuccess = KitchenPrintOutcome.Failed;
+
+        // Print to FrontKitchen if there are FrontKitchen items
         if (hasFrontKitchenItems)
         {
             try
@@ -153,7 +202,7 @@ public class OrderPrintService : IOrderPrintService
             frontKitchenSuccess = true; // No items to print
         }
 
-        // 4. Print to BackKitchen if there are BackKitchen items
+        // Print to BackKitchen if there are BackKitchen items
         if (hasBackKitchenItems)
         {
             try
@@ -185,10 +234,58 @@ public class OrderPrintService : IOrderPrintService
             backKitchenSuccess = true; // No items to print
         }
 
-        _logger.LogInformation("🖨️ Print complete for order {OrderNumber}: Cashier={C}, Front={F}, Back={B}",
-            order.OrderNumber, cashierSuccess, frontKitchenSuccess, backKitchenSuccess);
+        return (frontKitchenSuccess, backKitchenSuccess);
+    }
 
-        return (cashierSuccess, frontKitchenSuccess, backKitchenSuccess);
+    /// <summary>
+    /// Composes and sends the ONE General (SingleKitchen) or Default (Stations) kitchen ticket
+    /// through the shared transport path, to the destination
+    /// <see cref="KitchenDestinationResolver"/> picks over the saved configuration. An empty
+    /// selection owes nothing and is trivially satisfied; work with no resolvable destination is
+    /// <see cref="KitchenPrintStatus.NotConfigured"/> — the kitchen never sees a ticket, so it is
+    /// neither printed nor success (issue #113 C02: this used to collapse into a silent true).
+    /// </summary>
+    private async Task<KitchenPrintOutcome> PrintGeneralOrDefaultTicketAsync(
+        Order filtered,
+        PrinterConfiguration config,
+        bool isManualPrint,
+        string header)
+    {
+        if (filtered.Items.Count == 0)
+        {
+            return KitchenPrintOutcome.Sent; // No work owed to this destination
+        }
+
+        // Manual reprints bypass the auto-print toggle (consistent with the Front/Back path).
+        // An intentionally-skipped print (auto-print off) is a success, not a failure — checked
+        // before resolution, exactly how Front/Back skip.
+        if (!isManualPrint && !config.KitchenAutoPrint)
+        {
+            _logger.LogInformation("Auto-print disabled for {Header}", header);
+            return KitchenPrintOutcome.Sent;
+        }
+
+        var resolution = KitchenDestinationResolver.Resolve(new KitchenDestinationSettings(
+            config.DefaultKitchenPrinterName,
+            config.KitchenPrinterName,
+            config.FrontKitchenPrinterName,
+            config.BackKitchenPrinterName));
+
+        if (!resolution.IsConfigured)
+        {
+            _logger.LogWarning(
+                "No resolvable {Header} destination for order {OrderNumber}: {ItemCount} items stay pending configuration",
+                header, filtered.OrderNumber, filtered.Items.Count);
+            _requestLogService.LogPrintResponse(
+                header, filtered.OrderNumber, false, "No kitchen destination configured");
+            return KitchenPrintOutcome.NotConfigured;
+        }
+
+        var content = FormatKitchenReceipt(filtered, config, config.KitchenPaperWidth, header);
+        var sent = await PrintRawContentAsync(resolution.PrinterName!, content);
+        _logger.LogInformation("{Header} print ({ItemCount} items) to {Printer}: {Result}",
+            header, filtered.Items.Count, resolution.PrinterName, sent ? "✓" : "✗");
+        return sent ? KitchenPrintOutcome.Sent : KitchenPrintOutcome.Failed;
     }
 
     /// <summary>

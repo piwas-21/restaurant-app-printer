@@ -351,8 +351,8 @@ public class OrderPrintToSinkTests
             SideItems = children,
         };
 
-    private static async Task<(bool Cashier, bool FrontKitchen, bool BackKitchen)> PrintToSinksAsync(
-        Order order, Sink cashier, Sink front, Sink back, CancellationToken ct)
+    private static async Task<(bool Cashier, KitchenPrintOutcome FrontKitchen, KitchenPrintOutcome BackKitchen, KitchenPrintOutcome GeneralDefault)>
+        PrintToSinksAsync(Order order, Sink cashier, Sink front, Sink back, CancellationToken ct)
     {
         using var paths = new TempPathProvider();
         var service = new OrderPrintService(

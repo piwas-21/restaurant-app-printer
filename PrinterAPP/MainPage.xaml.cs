@@ -344,6 +344,9 @@ public partial class MainPage : ContentPage
                 if (!e.Cashier) failed.Add("cashier");
                 if (!e.FrontKitchen) failed.Add("front kitchen");
                 if (!e.BackKitchen) failed.Add("back kitchen");
+                // NotConfigured General/Default work fails AllPrinted without touching the bool
+                // flags above — name it, or the status label would say nothing failed (issue #113).
+                if (!e.GeneralDefault) failed.Add("general/default kitchen");
 
                 StatusLabel.Text = $"Order #{e.Order.OrderNumber} — {string.Join(" + ", failed)} did NOT print";
                 StatusLabel.TextColor = CraftColors.WarningText;

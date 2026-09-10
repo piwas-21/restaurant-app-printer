@@ -29,6 +29,13 @@ public class PrinterConfiguration
     public int KitchenPrintCopies { get; set; } = 1;
     public int KitchenPaperWidth { get; set; } = 80;
 
+    // Kitchen routing policy (issue #113): Stations (default) = the shipped Front/Back split,
+    // byte-for-byte, plus unassigned work on a resolved Default ticket; SingleKitchen = ONE
+    // General ticket. Logic: KitchenRoutingPolicy/KitchenTicketFilter/KitchenDestinationResolver.
+    public PrinterAPP.Services.KitchenRoutingMode KitchenRoutingMode { get; set; } = PrinterAPP.Services.KitchenRoutingMode.Stations;
+    // Explicit General/Default kitchen printer (KitchenDestinationResolver resolves it first).
+    public string DefaultKitchenPrinterName { get; set; } = "";
+
     // Cashier Printer Settings
     public string CashierPrinterName { get; set; } = "";
     public bool CashierAutoPrint { get; set; } = true;

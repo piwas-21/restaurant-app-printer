@@ -188,7 +188,8 @@ public class OrderPipeline : IOrderPipeline
             return;
         }
 
-        bool cashier, frontKitchen, backKitchen;
+        bool cashier;
+        KitchenPrintOutcome frontKitchen, backKitchen, generalDefault;
 
         // Phase 1 — everything up to and including the physical print. Only a failure in here means
         // the order did not print.
@@ -199,7 +200,7 @@ public class OrderPipeline : IOrderPipeline
 
             _orderHistoryService.AddOrder(orderEvent);
 
-            (cashier, frontKitchen, backKitchen) =
+            (cashier, frontKitchen, backKitchen, generalDefault) =
                 await _orderPrintService.PrintOrderToAllPrintersAsync(order);
 
             // The order has been through the printers, so its dedup entry may now be persisted.
@@ -222,6 +223,7 @@ public class OrderPipeline : IOrderPipeline
                 Cashier = false,
                 FrontKitchen = false,
                 BackKitchen = false,
+                GeneralDefault = KitchenPrintOutcome.Failed,
                 Error = ex,
             });
             return;
@@ -233,9 +235,12 @@ public class OrderPipeline : IOrderPipeline
         // time for the same order with fabricated all-false flags.
         try
         {
-            // History carries a single kitchen flag, so both kitchens must have printed to call it
-            // printed (matches the behaviour this replaced).
-            _orderHistoryService.UpdatePrintStatus(order.Id, frontKitchen && backKitchen, cashier);
+            // One kitchen flag: every destination must have printed or owed nothing. NotConfigured
+            // (unassigned work, nowhere to go) is NOT printed (issue #113).
+            _orderHistoryService.UpdatePrintStatus(
+                order.Id,
+                frontKitchen.IsSuccess && backKitchen.IsSuccess && generalDefault.IsSuccess,
+                cashier);
 
             // Queue per-target print acks for the fleet backend (durable outbox → served-vs-acked
             // missed-order reconciliation). Config is re-read rather than cached so a Save made
@@ -261,6 +266,7 @@ public class OrderPipeline : IOrderPipeline
             Cashier = cashier,
             FrontKitchen = frontKitchen,
             BackKitchen = backKitchen,
+            GeneralDefault = generalDefault,
         });
     }
 
