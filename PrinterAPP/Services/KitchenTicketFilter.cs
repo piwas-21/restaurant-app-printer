@@ -79,6 +79,87 @@ public static class KitchenTicketFilter
         return routed;
     }
 
+    /// <summary>
+    /// Routes an order tree under an explicit tenant policy. This additive API is intentionally not
+    /// wired into automatic printing yet: it establishes what a General/Default ticket contains
+    /// without changing the legacy Front/Back print path.
+    /// </summary>
+    public static List<OrderItem> ItemsForDestination(
+        IEnumerable<OrderItem>? items,
+        KitchenRoutingPolicy policy,
+        KitchenTicketDestination destination)
+    {
+        ArgumentNullException.ThrowIfNull(policy);
+
+        if (items is null || !policy.Includes(destination))
+        {
+            return new List<OrderItem>();
+        }
+
+        if (policy.Mode == KitchenRoutingMode.SingleKitchen)
+        {
+            return items.Select(CloneForGeneralTicket).ToList();
+        }
+
+        // Roots inherit nothing: an unassigned root is Default work (see the routing matrix in
+        // CASHIER-POS-REDESIGN-PLAN §9 — "unassigned" must never mean "silently omitted").
+        return items
+            .Select(item => FilterItemForStation(item, destination, inherited: KitchenTicketDestination.Default))
+            .OfType<OrderItem>()
+            .ToList();
+    }
+
+    private static OrderItem CloneForGeneralTicket(OrderItem item)
+    {
+        var children = item.SideItems?.Select(CloneForGeneralTicket).ToList();
+        var routed = item.WithSideItems(children);
+        routed.IsContextOnly = false;
+        return routed;
+    }
+
+    /// <param name="inherited">
+    /// The nearest ANCESTOR's effective destination. An unassigned line is its ancestor's work
+    /// wherever that ancestor goes — an unassigned sauce on a Front combo is Front work, never
+    /// independent Default work. Roots start at Default.
+    /// </param>
+    private static OrderItem? FilterItemForStation(
+        OrderItem item,
+        KitchenTicketDestination destination,
+        KitchenTicketDestination inherited)
+    {
+        var assignment = KitchenRoutingPolicy.Classify(item.KitchenType);
+
+        // An explicit station wins; unassigned inherits; an unknown value stays transparent for
+        // inheritance but never prints as work — corrupted values surface as a routing error at
+        // the pipeline layer instead of being silently reinterpreted as a station.
+        var effective = assignment switch
+        {
+            KitchenAssignment.FrontKitchen => KitchenTicketDestination.FrontKitchen,
+            KitchenAssignment.BackKitchen => KitchenTicketDestination.BackKitchen,
+            _ => inherited,
+        };
+        var madeHere = assignment != KitchenAssignment.Unknown && effective == destination;
+
+        var children = new List<OrderItem>();
+        foreach (var child in item.SideItems ?? Enumerable.Empty<OrderItem>())
+        {
+            var filteredChild = FilterItemForStation(child, destination, effective);
+            if (filteredChild is not null)
+            {
+                children.Add(filteredChild);
+            }
+        }
+
+        if (!madeHere && children.Count == 0)
+        {
+            return null;
+        }
+
+        var routed = item.WithSideItems(children);
+        routed.IsContextOnly = !madeHere;
+        return routed;
+    }
+
     /// <summary>True when the item names a kitchen of its own, rather than inheriting its parent's.</summary>
     private static bool DeclaresKitchen(OrderItem item) =>
         !string.IsNullOrWhiteSpace(item.KitchenType)
