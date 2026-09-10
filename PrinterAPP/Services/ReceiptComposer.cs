@@ -102,38 +102,9 @@ public static class ReceiptComposer
         {
             sb.AppendLine($"{indent}({qty}x {item.ProductName})");
         }
-        else if (SameRender(styles?.KitchenItemQuantity, styles?.KitchenItemName))
-        {
-            // The two sections agree (or styles are unwired): one styled line, exactly the bytes
-            // the hardcoded composer emitted, so "2x Fries" stays one contiguous run of text.
-            if (styles?.KitchenItemName is { } shared)
-            {
-                sb.Append(ApplyStyleCommands(shared));
-                sb.AppendLine(depth == 0
-                    ? $"{qty}x {item.ProductName}"
-                    : $"{indent}+ {qty}x {item.ProductName}");
-                sb.Append(ResetStyleCommands(shared));
-            }
-            else
-            {
-                sb.Append(EscPosCommands.SizeWide);
-                sb.AppendLine(depth == 0
-                    ? $"{qty}x {item.ProductName}"
-                    : $"{indent}+ {qty}x {item.ProductName}");
-                sb.Append(EscPosCommands.SizeNormal);
-            }
-        }
         else
         {
-            // The venue styled quantity and name differently — two runs, which is the point.
-            var qtyStyle = styles!.KitchenItemQuantity;
-            var nameStyle = styles.KitchenItemName;
-            sb.Append(ApplyStyleCommands(qtyStyle));
-            sb.Append($"{qty}x ");
-            sb.Append(ResetStyleCommands(qtyStyle));
-            sb.Append(ApplyStyleCommands(nameStyle));
-            sb.AppendLine(depth == 0 ? item.ProductName : $"{indent}+ {item.ProductName}");
-            sb.Append(ResetStyleCommands(nameStyle));
+            AppendKitchenNameLine(sb, item, qty, depth, indent, styles);
         }
 
         if (!string.IsNullOrWhiteSpace(item.VariationName))
@@ -147,6 +118,42 @@ public static class ReceiptComposer
         {
             AppendKitchenItemLines(sb, side, depth + 1, labels, parentQuantity: item.Quantity, styles: styles);
         }
+    }
+
+    /// <summary>
+    /// The item's quantity-and-name line. When the venue styled quantity and name identically (or
+    /// styles are unwired) it is ONE styled run — "2x Fries" stays a contiguous run of text; when
+    /// the two sections differ it becomes two runs, which is the point of styling them separately.
+    /// </summary>
+    private static void AppendKitchenNameLine(
+        StringBuilder sb, OrderItem item, int qty, int depth, string indent, PrintStyleSettings? styles)
+    {
+        var nameStyle = styles?.KitchenItemName;
+        var qtyStyle = styles?.KitchenItemQuantity;
+        var body = depth == 0 ? $"{qty}x {item.ProductName}" : $"{indent}+ {qty}x {item.ProductName}";
+
+        if (nameStyle is null)
+        {
+            sb.Append(EscPosCommands.SizeWide);
+            sb.AppendLine(body);
+            sb.Append(EscPosCommands.SizeNormal);
+            return;
+        }
+
+        if (SameRender(qtyStyle, nameStyle) || qtyStyle is null)
+        {
+            sb.Append(ApplyStyleCommands(nameStyle));
+            sb.AppendLine(body);
+            sb.Append(ResetStyleCommands(nameStyle));
+            return;
+        }
+
+        sb.Append(ApplyStyleCommands(qtyStyle));
+        sb.Append($"{qty}x ");
+        sb.Append(ResetStyleCommands(qtyStyle));
+        sb.Append(ApplyStyleCommands(nameStyle));
+        sb.AppendLine(depth == 0 ? item.ProductName : $"{indent}+ {item.ProductName}");
+        sb.Append(ResetStyleCommands(nameStyle));
     }
 
     /// <summary>True when two section styles render identically (or both are unwired) — the qty
