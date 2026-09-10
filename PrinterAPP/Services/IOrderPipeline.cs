@@ -80,15 +80,25 @@ public class OrderProcessedEventArgs : EventArgs
     public required bool FrontKitchen { get; init; }
     public required bool BackKitchen { get; init; }
 
+    /// <summary>
+    /// The General/Default kitchen destination's typed outcome (issue #113 S2). Unlike the bool
+    /// flags above this can report <see cref="KitchenPrintStatus.NotConfigured"/>: work exists for
+    /// the destination but no printer resolves for it. That is NOT a print and NOT a success —
+    /// it used to collapse into a silent true while nothing came out of any kitchen printer.
+    /// </summary>
+    public required KitchenPrintOutcome GeneralDefault { get; init; }
+
     /// <summary>Set when the order failed to print; null when it reached the printers.</summary>
     public Exception? Error { get; init; }
 
     /// <summary>
-    /// True only when every target reported success. A false flag is a genuine print failure:
-    /// <c>OrderPrintService</c> already returns true for the benign cases (no printer configured for
-    /// that target, auto-print off, no items routed to that kitchen, outside the print window).
+    /// True only when every target reported success, including
+    /// <see cref="GeneralDefault"/> actually being sent — <see cref="KitchenPrintStatus.NotConfigured"/>
+    /// fails this, by design. A false flag is a genuine print failure:
+    /// <c>OrderPrintService</c> already returns true for the benign cases (no items routed to that
+    /// kitchen, auto-print off, outside the print window).
     /// Worth surfacing separately from <see cref="Error"/> — a partial print means a kitchen ticket
     /// never came out while the cashier receipt did, which is silent unless someone is told.
     /// </summary>
-    public bool AllPrinted => Cashier && FrontKitchen && BackKitchen;
+    public bool AllPrinted => Cashier && FrontKitchen && BackKitchen && GeneralDefault.IsSuccess;
 }

@@ -84,6 +84,17 @@
     <Compile Include="..\PrinterAPP\Services\KitchenDestinationResolver.cs" Link="Linked\KitchenDestinationResolver.cs" />
     <Compile Include="..\PrinterAPP\Services\KitchenTicketFilter.cs" Link="Linked\KitchenTicketFilter.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderPrintService.cs" Link="Linked\OrderPrintService.cs" />
+    <Compile Include="..\PrinterAPP\Services\KitchenPrintOutcome.cs" Link="Linked\KitchenPrintOutcome.cs" />
+    <!-- The headless order pipeline (MAUI-free since the path-provider seams): pipeline-level print
+         outcomes are tested through the REAL OrderPipeline driving the REAL OrderPrintService into
+         loopback sinks. SentrySdk is inert without a DSN; the core Sentry package (already the base
+         of the app head's Sentry.Maui) satisfies the CaptureException calls. -->
+    <Compile Include="..\PrinterAPP\Services\IOrderPipeline.cs" Link="Linked\IOrderPipeline.cs" />
+    <Compile Include="..\PrinterAPP\Services\OrderPipeline.cs" Link="Linked\OrderPipeline.cs" />
+    <Compile Include="..\PrinterAPP\Services\IOrderHistoryService.cs" Link="Linked\IOrderHistoryService.cs" />
+    <Compile Include="..\PrinterAPP\Services\OrderHistoryItem.cs" Link="Linked\OrderHistoryItem.cs" />
+    <Compile Include="..\PrinterAPP\Services\ITelemetryScheduler.cs" Link="Linked\ITelemetryScheduler.cs" />
+    <Compile Include="..\PrinterAPP\Services\IDeviceIdentityService.cs" Link="Linked\IDeviceIdentityService.cs" />
     <!-- Receipt label localization + language resolution + the shared per-item composer (all pure,
          MAUI-free): print-language selection is resolved by PrintLanguagePolicy, labels come from
          PrintLabelCatalog, and both surfaces compose their item blocks through ReceiptComposer. -->
@@ -116,6 +127,9 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+    <!-- Core of the app head's Sentry.Maui, same minor: OrderPipeline links here and its
+         CaptureException calls must compile. Inert in tests — no DSN is ever initialized. -->
+    <PackageReference Include="Sentry" Version="6.6.0" />
     <!-- Only so the DI-construction guard below can use the same container MauiProgram does:
          EventStreamingService's poll interval is an OPTIONAL constructor parameter, and the app head
          (which no PR job compiles) registers the type by interface. See
