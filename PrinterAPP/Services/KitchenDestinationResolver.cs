@@ -59,7 +59,6 @@ public static class KitchenDestinationResolver
             NonBlank(settings.BackKitchenPrinterName),
         }
         .Where(name => name is not null)
-        .Cast<string>()
         .Distinct(StringComparer.OrdinalIgnoreCase)
         .ToList();
 
