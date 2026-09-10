@@ -52,7 +52,9 @@ public class PrinterConfiguration
 
     // Print language for composed tickets: a fixed label language code (en, de, fr, it, es, nl, tr)
     // or "auto" = follow the order's PreferredLanguage with an English fallback. Item and ingredient
-    // NAMES print in the language the feed payload carries (see PrinterAPP.Services.PrintLanguagePolicy).
+    // NAMES print in the language this setting asks the feed for (the poll sends it; the backend
+    // translates from the catalog's descriptions and falls back to the frozen checkout names —
+    // see PrinterAPP.Services.PrintLanguagePolicy).
     public string PrintLanguage { get; set; } = PrinterAPP.Services.PrintLanguagePolicy.English;
 
     // Restaurant Information

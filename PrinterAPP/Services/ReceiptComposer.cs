@@ -1,6 +1,8 @@
 using System.Globalization;
 using System.Text;
 using PrinterAPP.Models;
+// Disambiguate from Microsoft.Maui.FontSize under the MAUI TFMs (same alias PrintStyleSettingsService carries).
+using FontSize = PrinterAPP.Models.FontSize;
 
 namespace PrinterAPP.Services;
 
@@ -83,8 +85,15 @@ public static class ReceiptComposer
     /// parenthesised at normal size so it does not read as a dish to prepare; a real line prints
     /// wide, its customizations and note tall so they stand out.
     /// </summary>
+    /// <summary>
+    /// Optional <paramref name="styles"/> wires the settings page to the paper: when given, the item
+    /// name, its quantity prefix and the ingredient/detail lines each take their configured section
+    /// (Kitchen Item Names / Item Quantities / Ingredients). When null — every existing unit-test
+    /// caller — the bytes are exactly what the hardcoded composer emitted before styles existed.
+    /// </summary>
     public static void AppendKitchenItemLines(
-        StringBuilder sb, OrderItem item, int depth, PrintLabels labels, int parentQuantity = 1)
+        StringBuilder sb, OrderItem item, int depth, PrintLabels labels, int parentQuantity = 1,
+        PrintStyleSettings? styles = null)
     {
         var indent = new string(' ', depth * 3);
         var qty = depth == 0 ? item.Quantity : ChildQuantity(item, parentQuantity);
@@ -95,11 +104,7 @@ public static class ReceiptComposer
         }
         else
         {
-            sb.Append(EscPosCommands.SizeWide);
-            sb.AppendLine(depth == 0
-                ? $"{qty}x {item.ProductName}"
-                : $"{indent}+ {qty}x {item.ProductName}");
-            sb.Append(EscPosCommands.SizeNormal);
+            AppendKitchenNameLine(sb, item, qty, depth, indent, styles);
         }
 
         if (!string.IsNullOrWhiteSpace(item.VariationName))
@@ -107,12 +112,103 @@ public static class ReceiptComposer
             sb.AppendLine($"{indent}   - {item.VariationName}");
         }
 
-        AppendDetailLines(sb, item, indent, tallEmphasis: true, labels);
+        AppendDetailLines(sb, item, indent, tallEmphasis: true, labels, styles);
 
         foreach (var side in item.SideItems ?? Enumerable.Empty<OrderItem>())
         {
-            AppendKitchenItemLines(sb, side, depth + 1, labels, parentQuantity: item.Quantity);
+            AppendKitchenItemLines(sb, side, depth + 1, labels, parentQuantity: item.Quantity, styles: styles);
         }
+    }
+
+    /// <summary>
+    /// The item's quantity-and-name line. When the venue styled quantity and name identically (or
+    /// styles are unwired) it is ONE styled run — "2x Fries" stays a contiguous run of text; when
+    /// the two sections differ it becomes two runs, which is the point of styling them separately.
+    /// </summary>
+    private static void AppendKitchenNameLine(
+        StringBuilder sb, OrderItem item, int qty, int depth, string indent, PrintStyleSettings? styles)
+    {
+        var nameStyle = styles?.KitchenItemName;
+        var qtyStyle = styles?.KitchenItemQuantity;
+        var body = depth == 0 ? $"{qty}x {item.ProductName}" : $"{indent}+ {qty}x {item.ProductName}";
+
+        if (nameStyle is null)
+        {
+            sb.Append(EscPosCommands.SizeWide);
+            sb.AppendLine(body);
+            sb.Append(EscPosCommands.SizeNormal);
+            return;
+        }
+
+        if (SameRender(qtyStyle, nameStyle) || qtyStyle is null)
+        {
+            sb.Append(ApplyStyleCommands(nameStyle));
+            sb.AppendLine(body);
+            sb.Append(ResetStyleCommands(nameStyle));
+            return;
+        }
+
+        sb.Append(ApplyStyleCommands(qtyStyle));
+        sb.Append($"{qty}x ");
+        sb.Append(ResetStyleCommands(qtyStyle));
+        sb.Append(ApplyStyleCommands(nameStyle));
+        sb.AppendLine(depth == 0 ? item.ProductName : $"{indent}+ {item.ProductName}");
+        sb.Append(ResetStyleCommands(nameStyle));
+    }
+
+    /// <summary>True when two section styles render identically (or both are unwired) — the qty
+    /// prefix and the name can then share one styled run instead of two.</summary>
+    private static bool SameRender(SectionStyle? a, SectionStyle? b) =>
+        a is null && b is null
+        || (a is not null && b is not null
+            && a.Size == b.Size && a.IsBold == b.IsBold && a.IsEmphasized == b.IsEmphasized
+            && a.Alignment == b.Alignment);
+
+    /// <summary>
+    /// The on/off command pair for one configured section, inline because the composer is static
+    /// and receives resolved styles rather than a settings service. Alignment first, then size,
+    /// then weight — the same order the settings page's own preview prints them.
+    /// </summary>
+    private static string ApplyStyleCommands(SectionStyle style)
+    {
+        var commands = style.Alignment switch
+        {
+            PrintAlignment.Center => EscPosCommands.AlignCenter,
+            PrintAlignment.Right => EscPosCommands.AlignRight,
+            _ => EscPosCommands.AlignLeft,
+        };
+        commands += style.Size switch
+        {
+            FontSize.Tall => EscPosCommands.SizeTall,
+            FontSize.Wide => EscPosCommands.SizeWide,
+            FontSize.Double => EscPosCommands.SizeDouble,
+            FontSize.Large => EscPosCommands.SizeLarge,
+            _ => EscPosCommands.SizeNormal,
+        };
+        if (style.IsBold)
+        {
+            commands += EscPosCommands.BoldOn;
+        }
+        if (style.IsEmphasized)
+        {
+            commands += EscPosCommands.EmphasizedOn;
+        }
+        return commands;
+    }
+
+    /// <summary>The closing half of <see cref="ApplyStyleCommands"/>: everything it turned on, off again.</summary>
+    private static string ResetStyleCommands(SectionStyle style)
+    {
+        var commands = EscPosCommands.SizeNormal;
+        if (style.IsBold)
+        {
+            commands += EscPosCommands.BoldOff;
+        }
+        if (style.IsEmphasized)
+        {
+            commands += EscPosCommands.EmphasizedOff;
+        }
+        return commands;
     }
 
     /// <summary>
@@ -149,8 +245,19 @@ public static class ReceiptComposer
     /// is precisely what an explicitly chosen sauce or topping is. A line with no customization
     /// rows prints nothing extra, so untouched recipes stay clean.
     /// </summary>
-    private static void AppendDetailLines(StringBuilder sb, OrderItem item, string indent, bool tallEmphasis, PrintLabels labels)
+    private static void AppendDetailLines(StringBuilder sb, OrderItem item, string indent, bool tallEmphasis, PrintLabels labels, PrintStyleSettings? styles = null)
     {
+        // With styles wired (live app) the configured Ingredients section drives each line — its
+        // default is Tall with no weight, byte-for-byte what the pinned tall toggle printed. With
+        // styles null (existing unit-test callers) the legacy tall toggle behaves exactly as before.
+        var ingredientStyle = styles?.KitchenIngredients;
+        Action openStyle = ingredientStyle is not null
+            ? () => sb.Append(ApplyStyleCommands(ingredientStyle))
+            : () => { if (tallEmphasis) sb.Append(EscPosCommands.SizeTall); };
+        Action closeStyle = ingredientStyle is not null
+            ? () => sb.Append(ResetStyleCommands(ingredientStyle))
+            : () => { if (tallEmphasis) sb.Append(EscPosCommands.SizeNormal); };
+
         foreach (var ing in item.IngredientCustomizations ?? Enumerable.Empty<IngredientCustomization>())
         {
             string line;
@@ -167,34 +274,18 @@ public static class ReceiptComposer
                 line = $"{indent}   {labels.SelectedPrefix} {ing.IngredientName}";
             }
 
-            if (tallEmphasis)
-            {
-                sb.Append(EscPosCommands.SizeTall);
-            }
-
+            openStyle();
             sb.AppendLine(line);
-
-            if (tallEmphasis)
-            {
-                sb.Append(EscPosCommands.SizeNormal);
-            }
+            closeStyle();
         }
 
         if (!string.IsNullOrWhiteSpace(item.SpecialInstructions))
         {
             // Detail lines land BEFORE the recursive walk into SideItems (both callers), so a
             // parent's note never reads as if it belonged to the last child printed.
-            if (tallEmphasis)
-            {
-                sb.Append(EscPosCommands.SizeTall);
-            }
-
+            openStyle();
             sb.AppendLine($"{indent}   {labels.Note}: {item.SpecialInstructions}");
-
-            if (tallEmphasis)
-            {
-                sb.Append(EscPosCommands.SizeNormal);
-            }
+            closeStyle();
         }
     }
 }
