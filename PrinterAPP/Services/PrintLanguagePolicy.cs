@@ -14,8 +14,10 @@ namespace PrinterAPP.Services;
 /// are offered — Latin-script European languages. The backend's ten locales include ar/ru/zh, which
 /// PC857 cannot encode (and which would need codepage switching plus RTL/CJK shaping the print path
 /// does not have); resolving to one of them would print garbage, so <see cref="Resolve"/> falls back
-/// to English instead. Item and ingredient NAMES are not translated by this app at all — they print
-/// in the single language the feed payload freezes at checkout.
+/// to English instead. Order DETAILS (product, variation and ingredient names) are translated on
+/// the BACKEND: the poll sends this venue's PrintLanguage as the feed's language parameter, and the
+/// feed resolves names into it from the catalog's per-language descriptions, falling back to the
+/// frozen checkout name when no translation exists (backend PrinterFeedQuery.Language).
 /// </para>
 /// </summary>
 public static class PrintLanguagePolicy

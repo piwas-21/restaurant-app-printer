@@ -13,7 +13,6 @@ public class PrintStyleSettingsService
     private const string SettingsFileName = "print_style_settings.json";
     private const string LegacySettingsFolderName = "PrinterAPP";
     private readonly string _settingsFilePath;
-    private PrintStyleSettings? _cachedSettings;
 
     // No parameterless (MAUI-defaulting) ctor: callers pass the IAppDataPathProvider explicitly (from DI
     // on-device, a temp dir in tests). Keeps this class MAUI-free so OrderPrintService can be source-linked
@@ -30,21 +29,22 @@ public class PrintStyleSettingsService
     }
 
     /// <summary>
-    /// Loads settings from disk, returns defaults if file doesn't exist
+    /// Loads settings from DISK — never from a cached instance. The settings page saves through its
+    /// own instance of this class, and the print service is a singleton that reads through another:
+    /// an instance cache meant a saved file no one re-read, which printed every ticket with the
+    /// styles the app started with (the partner report of "saved the settings, no change in prints").
+    /// The file is tiny and reads happen once per print — correctness wins.
     /// </summary>
     public PrintStyleSettings LoadSettings()
     {
-        if (_cachedSettings != null)
-            return _cachedSettings;
-
         try
         {
             if (File.Exists(_settingsFilePath))
             {
                 var json = File.ReadAllText(_settingsFilePath);
-                _cachedSettings = JsonSerializer.Deserialize<PrintStyleSettings>(json);
-                if (_cachedSettings != null)
-                    return _cachedSettings;
+                var loaded = JsonSerializer.Deserialize<PrintStyleSettings>(json);
+                if (loaded != null)
+                    return loaded;
             }
         }
         catch (Exception ex)
@@ -53,8 +53,7 @@ public class PrintStyleSettingsService
         }
 
         // Return defaults if loading failed
-        _cachedSettings = PrintStyleSettings.GetDefaults();
-        return _cachedSettings;
+        return PrintStyleSettings.GetDefaults();
     }
 
     /// <summary>
@@ -70,7 +69,6 @@ public class PrintStyleSettingsService
             };
             var json = JsonSerializer.Serialize(settings, options);
             File.WriteAllText(_settingsFilePath, json);
-            _cachedSettings = settings;
         }
         catch (Exception ex)
         {
