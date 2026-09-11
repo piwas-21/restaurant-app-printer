@@ -241,6 +241,29 @@ public sealed class PrinterConfigurationStoreTests : IDisposable
         Assert.Equal(saved.RestrictStartTime, loaded.RestrictStartTime);
     }
 
+    [Fact]
+    public async Task Save_then_load_round_trips_kitchen_routing_fields()
+    {
+        var store = CreateStore();
+        var saved = new PrinterConfiguration
+        {
+            KitchenRoutingMode = KitchenRoutingMode.SingleKitchen,
+            DefaultKitchenPrinterName = "192.168.1.50:9100",
+            FrontKitchenPrinterName = "Front Queue",
+            BackKitchenPrinterName = "file:/tmp/back-captures",
+            KitchenPrinterName = "legacy-general",
+        };
+
+        await store.SaveAsync(saved);
+        var loaded = await store.LoadAsync();
+
+        Assert.Equal(KitchenRoutingMode.SingleKitchen, loaded.KitchenRoutingMode);
+        Assert.Equal(saved.DefaultKitchenPrinterName, loaded.DefaultKitchenPrinterName);
+        Assert.Equal(saved.FrontKitchenPrinterName, loaded.FrontKitchenPrinterName);
+        Assert.Equal(saved.BackKitchenPrinterName, loaded.BackKitchenPrinterName);
+        Assert.Equal(saved.KitchenPrinterName, loaded.KitchenPrinterName);
+    }
+
     // --- Existing behaviour preserved ---
 
     [Fact]

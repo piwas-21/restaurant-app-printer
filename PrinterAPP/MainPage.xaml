@@ -71,19 +71,40 @@
                            FontSize="18"
                            FontAttributes="Bold"/>
 
-                    <Label Text="Select Kitchen Printer" FontSize="14" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
+                    <Label Text="Kitchen routing mode" FontSize="14" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
+                    <Picker x:Name="KitchenRoutingModePicker"
+                            Title="Choose routing mode"/>
+                    <Label Text="Single kitchen sends all work to General. Stations keeps Front and Back tickets and sends unassigned work to Default."
+                           FontSize="12"
+                           TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
+
+                    <Label Text="General / Default kitchen target" FontSize="14" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}" Margin="0,6,0,0"/>
                     <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
                         <Picker x:Name="KitchenPrinterPicker"
-                                Title="Choose kitchen printer"/>
+                                Title="Choose General / Default printer"/>
                         <Button Text="Refresh"
                                 Grid.Column="1"
                                 WidthRequest="80"
                                 Clicked="OnRefreshPrintersClicked"/>
                     </Grid>
-
                     <Label Text="Or network printer IP (for Android / network printers)" FontSize="12" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
                     <Entry x:Name="KitchenPrinterIpEntry"
                            Placeholder="e.g. 192.168.1.50 or 192.168.1.50:9100"/>
+                    <Label Text="An existing legacy Kitchen printer remains the fallback when this explicit General / Default target is blank."
+                           FontSize="11"
+                           TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
+
+                    <Label Text="Front kitchen target" FontSize="14" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}" Margin="0,6,0,0"/>
+                    <Picker x:Name="FrontKitchenPrinterPicker"
+                            Title="Choose Front kitchen printer"/>
+                    <Entry x:Name="FrontKitchenPrinterIpEntry"
+                           Placeholder="Front IP[:port] or file: capture target"/>
+
+                    <Label Text="Back kitchen target" FontSize="14" TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}" Margin="0,6,0,0"/>
+                    <Picker x:Name="BackKitchenPrinterPicker"
+                            Title="Choose Back kitchen printer"/>
+                    <Entry x:Name="BackKitchenPrinterIpEntry"
+                           Placeholder="Back IP[:port] or file: capture target"/>
 
                     <Grid ColumnDefinitions="*,*" ColumnSpacing="10">
                         <VerticalStackLayout>
