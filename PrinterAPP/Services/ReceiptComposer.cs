@@ -27,6 +27,14 @@ public static class ReceiptComposer
     public static string Money(decimal amount) => amount.ToString("F2", CultureInfo.InvariantCulture);
 
     /// <summary>
+    /// Money with its currency label (POS C18): "EUR 31.90" when the order declares a currency,
+    /// a bare "31.90" when it does not — an unknown currency must never be invented into CHF,
+    /// which is exactly how a EUR tenant's paper used to get CHF receipts.
+    /// </summary>
+    public static string Money(decimal amount, string? currency) =>
+        string.IsNullOrWhiteSpace(currency) ? Money(amount) : $"{currency} {Money(amount)}";
+
+    /// <summary>
     /// A child's quantity for the WHOLE line, mirroring backend OrderChildRendering.LineQuantity
     /// with the one signal the feed payload carries: an explicit <c>Kind == "SideItem"</c> is
     /// stored PER UNIT of its parent, so it scales by the parent line; a bundle child is already
@@ -47,7 +55,8 @@ public static class ReceiptComposer
     /// invite double-counting by hand.
     /// </summary>
     public static void AppendCashierItemLines(
-        StringBuilder sb, OrderItem item, int depth, int spacing, PrintLabels labels, int parentQuantity = 1)
+        StringBuilder sb, OrderItem item, int depth, int spacing, PrintLabels labels, int parentQuantity = 1,
+        string? currency = null)
     {
         var indent = new string(' ', depth * 3);
         var name = string.IsNullOrWhiteSpace(item.VariationName)
@@ -57,7 +66,7 @@ public static class ReceiptComposer
         if (depth == 0)
         {
             var itemLine = $"{item.Quantity}x {name}";
-            var price = $"CHF {Money(item.ItemTotal)}";
+            var price = Money(item.ItemTotal, currency);
             var dots = spacing - itemLine.Length - price.Length;
             sb.Append(itemLine);
             sb.Append(new string('.', Math.Max(1, dots)));

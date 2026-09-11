@@ -32,6 +32,9 @@ public class Order
     /// </summary>
     public decimal CustomerDiscountAmount { get; set; }
     public decimal Tip { get; set; }
+
+    /// <summary>ISO code the order displays money in (backend OrderDto.Currency). Null = unknown: render bare amounts, never an invented label (POS C18).</summary>
+    public string? Currency { get; set; }
     public decimal Total { get; set; }
     public decimal TotalPaid { get; set; }
     public decimal RemainingAmount { get; set; }
@@ -146,6 +149,8 @@ public class Payment
     public string OrderId { get; set; } = string.Empty;
     public string PaymentMethod { get; set; } = string.Empty; // Cash, Card, etc.
     public decimal Amount { get; set; }
+    /// <summary>ISO code the tender moved money in (backend OrderPaymentDto.Currency); null on cash and historical rows.</summary>
+    public string? Currency { get; set; }
     public string Status { get; set; } = string.Empty;
     public string? TransactionId { get; set; }
     public string? ReferenceNumber { get; set; }

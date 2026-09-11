@@ -556,7 +556,7 @@ public class OrderPrintService : IOrderPrintService
             foreach (var item in order.Items)
             {
                 sb.Append(ApplyStyle(styles.CashierItemLine));
-                ReceiptComposer.AppendCashierItemLines(sb, item, depth: 0, spacing, labels);
+                ReceiptComposer.AppendCashierItemLines(sb, item, depth: 0, spacing, labels, currency: order.Currency);
                 sb.Append(ResetStyle(styles.CashierItemLine));
             }
         }
@@ -570,16 +570,16 @@ public class OrderPrintService : IOrderPrintService
 
         // Subtotal, Tax, Discounts, Delivery Fee, Tip (Cashier Totals section)
         sb.Append(ApplyStyle(styles.CashierTotals));
-        sb.AppendLine($"{labels.Subtotal}: CHF {ReceiptComposer.Money(order.SubTotal)}");
+        sb.AppendLine($"{labels.Subtotal}: {ReceiptComposer.Money(order.SubTotal, order.Currency)}");
 
         if (order.Tax > 0)
         {
-            sb.AppendLine($"{labels.Tax}: CHF {ReceiptComposer.Money(order.Tax)}");
+            sb.AppendLine($"{labels.Tax}: {ReceiptComposer.Money(order.Tax, order.Currency)}");
         }
 
         if (order.Discount > 0)
         {
-            sb.AppendLine($"{labels.Discount} ({order.DiscountPercentage.ToString(CultureInfo.InvariantCulture)}%): -CHF {ReceiptComposer.Money(order.Discount)}");
+            sb.AppendLine($"{labels.Discount} ({order.DiscountPercentage.ToString(CultureInfo.InvariantCulture)}%): -{ReceiptComposer.Money(order.Discount, order.Currency)}");
         }
 
         // Customer-specific discount money is SEPARATE from Discount (backend OrderPricingService:
@@ -587,7 +587,7 @@ public class OrderPrintService : IOrderPrintService
         // breakdown does not reconcile against the total whenever it applied.
         if (order.CustomerDiscountAmount > 0)
         {
-            sb.AppendLine($"{labels.CustomerDiscount}: -CHF {ReceiptComposer.Money(order.CustomerDiscountAmount)}");
+            sb.AppendLine($"{labels.CustomerDiscount}: -{ReceiptComposer.Money(order.CustomerDiscountAmount, order.Currency)}");
         }
 
         if (!string.IsNullOrWhiteSpace(order.PromoCode))
@@ -597,12 +597,12 @@ public class OrderPrintService : IOrderPrintService
 
         if (order.DeliveryFee > 0)
         {
-            sb.AppendLine($"{labels.DeliveryFee}: CHF {ReceiptComposer.Money(order.DeliveryFee)}");
+            sb.AppendLine($"{labels.DeliveryFee}: {ReceiptComposer.Money(order.DeliveryFee, order.Currency)}");
         }
 
         if (order.Tip > 0)
         {
-            sb.AppendLine($"{labels.Tip}: CHF {ReceiptComposer.Money(order.Tip)}");
+            sb.AppendLine($"{labels.Tip}: {ReceiptComposer.Money(order.Tip, order.Currency)}");
         }
 
         sb.Append(ResetStyle(styles.CashierTotals));
@@ -610,20 +610,20 @@ public class OrderPrintService : IOrderPrintService
 
         // Total (Cashier Grand Total section — defaults: double size, bold, emphasized)
         sb.Append(ApplyStyle(styles.CashierGrandTotal));
-        sb.AppendLine($"{labels.Total}: CHF {ReceiptComposer.Money(order.Total)}");
+        sb.AppendLine($"{labels.Total}: {ReceiptComposer.Money(order.Total, order.Currency)}");
         sb.Append(ResetStyle(styles.CashierGrandTotal));
         sb.AppendLine();
 
         // What has already been paid, and what the till still has to collect.
         if (order.TotalPaid > 0)
         {
-            sb.AppendLine($"{labels.Paid}: CHF {ReceiptComposer.Money(order.TotalPaid)}");
+            sb.AppendLine($"{labels.Paid}: {ReceiptComposer.Money(order.TotalPaid, order.Currency)}");
         }
 
         if (order.RemainingAmount > 0)
         {
             sb.Append(EXTRA_DARK_ON);
-            sb.AppendLine($"{labels.Due}: CHF {ReceiptComposer.Money(order.RemainingAmount)}");
+            sb.AppendLine($"{labels.Due}: {ReceiptComposer.Money(order.RemainingAmount, order.Currency)}");
             sb.Append(EXTRA_DARK_OFF);
         }
 
@@ -639,7 +639,7 @@ public class OrderPrintService : IOrderPrintService
                 var method = string.IsNullOrWhiteSpace(payment.CardLastFourDigits)
                     ? payment.PaymentMethod
                     : $"{payment.PaymentMethod} *{payment.CardLastFourDigits}";
-                sb.AppendLine($"{method}: CHF {ReceiptComposer.Money(payment.Amount)}");
+                sb.AppendLine($"{method}: {ReceiptComposer.Money(payment.Amount, order.Currency ?? payment.Currency)}");
             }
             sb.Append(EXTRA_DARK_OFF);
             sb.AppendLine();
