@@ -83,6 +83,8 @@
     <Compile Include="..\PrinterAPP\Services\KitchenRoutingPolicy.cs" Link="Linked\KitchenRoutingPolicy.cs" />
     <Compile Include="..\PrinterAPP\Services\KitchenDestinationResolver.cs" Link="Linked\KitchenDestinationResolver.cs" />
     <Compile Include="..\PrinterAPP\Services\KitchenTicketFilter.cs" Link="Linked\KitchenTicketFilter.cs" />
+    <!-- Routing settings mapper is MAUI-free so load/save/reset/validation stay unit-testable. -->
+    <Compile Include="..\PrinterAPP\Services\KitchenRoutingSettingsMapper.cs" Link="Linked\KitchenRoutingSettingsMapper.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderPrintService.cs" Link="Linked\OrderPrintService.cs" />
     <Compile Include="..\PrinterAPP\Services\KitchenPrintOutcome.cs" Link="Linked\KitchenPrintOutcome.cs" />
     <!-- The headless order pipeline (MAUI-free since the path-provider seams): pipeline-level print
