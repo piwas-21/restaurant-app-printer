@@ -1,9 +1,9 @@
 namespace PrinterAPP.Models;
 
 /// <summary>
-/// One order/target print outcome, sent in the body of <c>POST /api/devices/print-acks</c>. Mirrors
-/// the backend <c>PrintAckDto</c> (the device id travels in the <c>X-Device-Id</c> header, not here).
-/// Non-PII: order id + target + outcome + timestamps only — never customer data or receipt content.
+/// One order or additive update outcome, sent to <c>POST /api/devices/print-acks</c>. The device id
+/// travels in the <c>X-Device-Id</c> header. Job fields stay nullable for legacy order acks, but an
+/// update ack always carries all three identity fields.
 /// </summary>
 public class PrintAck
 {
@@ -14,4 +14,7 @@ public class PrintAck
     public DateTime? PrintedAt { get; set; }
     public string? FailureReason { get; set; }
     public int Copies { get; set; }
+    public Guid? JobId { get; set; }
+    public int? Revision { get; set; }
+    public DevicePrintJobType? JobType { get; set; }
 }

@@ -124,10 +124,11 @@ public class OrderPrintService : IOrderPrintService
             // Every printable line belongs on ONE General ticket at the resolved destination; the
             // stations are owed nothing, which reports the same trivially-true the empty-kitchen
             // path has always reported.
+            var generalSelection = KitchenTicketFilter.SelectionForDestination(
+                order.Items, policy, KitchenTicketDestination.General);
             generalDefaultSuccess = await PrintGeneralOrDefaultTicketAsync(
-                order.WithItems(KitchenTicketFilter.ItemsForDestination(
-                    order.Items, policy, KitchenTicketDestination.General)),
-                config, isManualPrint, "General Kitchen");
+                order.WithItems(generalSelection.Items.ToList()),
+                config, isManualPrint, "General Kitchen", generalSelection.HasUnknown);
             frontKitchenSuccess = KitchenPrintOutcome.Sent;
             backKitchenSuccess = KitchenPrintOutcome.Sent;
         }
@@ -139,16 +140,63 @@ public class OrderPrintService : IOrderPrintService
             // Unassigned roots and their riders are Default work (the routing matrix in
             // CASHIER-POS-REDESIGN-PLAN §9 — "unassigned" must never mean "silently omitted"):
             // they used to drop out of both station tickets and print nothing at all.
+            var defaultSelection = KitchenTicketFilter.SelectionForDestination(
+                order.Items, policy, KitchenTicketDestination.Default);
             generalDefaultSuccess = await PrintGeneralOrDefaultTicketAsync(
-                order.WithItems(KitchenTicketFilter.ItemsForDestination(
-                    order.Items, policy, KitchenTicketDestination.Default)),
-                config, isManualPrint, "Default Kitchen");
+                order.WithItems(defaultSelection.Items.ToList()),
+                config, isManualPrint, "Default Kitchen", defaultSelection.HasUnknown);
         }
 
         _logger.LogInformation("🖨️ Print complete for order {OrderNumber}: Cashier={C}, Front={F}, Back={B}, General/Default={G}",
             order.OrderNumber, cashierSuccess, frontKitchenSuccess, backKitchenSuccess, generalDefaultSuccess);
 
         return (cashierSuccess, frontKitchenSuccess, backKitchenSuccess, generalDefaultSuccess);
+    }
+
+    /// <summary>
+    /// Prints one additive UPDATE job. Unlike a legacy order receipt this is exactly one copy on the
+    /// resolved General/Default kitchen destination. Failed, unknown and unconfigured outcomes are
+    /// typed so the pipeline can retain the job instead of acknowledging a missing note as sent.
+    /// </summary>
+    public async Task<KitchenPrintOutcome> PrintUpdateAsync(
+        PrinterFeedUpdate update,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        if (update.JobId == Guid.Empty
+            || update.Revision <= 0
+            || update.JobType != DevicePrintJobType.Update
+            || !UpdateJobRouting.IsUpdateTarget(update.Target)
+            || update.OrderId == Guid.Empty
+            || string.IsNullOrWhiteSpace(update.OrderNumber)
+            || string.IsNullOrWhiteSpace(update.Text)
+            || update.CreatedAt == default
+            || !string.Equals(update.Audience, "Kitchen", StringComparison.OrdinalIgnoreCase))
+        {
+            return KitchenPrintOutcome.Unknown;
+        }
+
+        var config = await _printerService.LoadConfigurationAsync();
+        if (!config.KitchenAutoPrint)
+        {
+            _logger.LogInformation("Automatic update printing is disabled for job {JobId}", update.JobId);
+            return KitchenPrintOutcome.Skipped;
+        }
+
+        var destination = UpdateJobRouting.Resolve(update.Target, config);
+        if (!destination.IsConfigured || destination.PrinterName is not { Length: > 0 } printerName)
+        {
+            _logger.LogWarning("No destination configured for update job {JobId}", update.JobId);
+            _requestLogService.LogPrintResponse(
+                "Update", update.OrderNumber, false, "No kitchen destination configured");
+            return KitchenPrintOutcome.NotConfigured;
+        }
+
+        var content = UpdateReceiptComposer.Compose(update);
+        var sent = await PrintRawContentAsync(printerName, content);
+        _logger.LogInformation("Update job {JobId} to {Printer}: {Result}",
+            update.JobId, destination.PrinterName, sent ? "✓" : "✗");
+        return sent ? KitchenPrintOutcome.Sent : KitchenPrintOutcome.Failed;
     }
 
     /// <summary>
@@ -160,8 +208,13 @@ public class OrderPrintService : IOrderPrintService
         PrinterConfiguration config,
         bool isManualPrint)
     {
-        var frontKitchenOrder = CreateFilteredOrder(order, FRONT_KITCHEN);
-        var backKitchenOrder = CreateFilteredOrder(order, BACK_KITCHEN);
+        var policy = KitchenRoutingPolicy.Stations;
+        var frontSelection = KitchenTicketFilter.SelectionForDestination(
+            order.Items, policy, KitchenTicketDestination.FrontKitchen);
+        var backSelection = KitchenTicketFilter.SelectionForDestination(
+            order.Items, policy, KitchenTicketDestination.BackKitchen);
+        var frontKitchenOrder = order.WithItems(frontSelection.Items.ToList());
+        var backKitchenOrder = order.WithItems(backSelection.Items.ToList());
         var hasFrontKitchenItems = frontKitchenOrder.Items.Count > 0;
         var hasBackKitchenItems = backKitchenOrder.Items.Count > 0;
 
@@ -199,8 +252,15 @@ public class OrderPrintService : IOrderPrintService
         }
         else
         {
-            frontKitchenSuccess = true; // No items to print
+            frontKitchenSuccess = frontSelection.HasUnknown
+                ? KitchenPrintOutcome.Unknown
+                : KitchenPrintOutcome.Sent; // No known items to print
         }
+
+        // Keep any known leaf work that can be routed, but surface an unknown sibling instead of
+        // silently claiming the whole station succeeded.
+        if (frontSelection.HasUnknown)
+            frontKitchenSuccess = KitchenPrintOutcome.Unknown;
 
         // Print to BackKitchen if there are BackKitchen items
         if (hasBackKitchenItems)
@@ -231,8 +291,13 @@ public class OrderPrintService : IOrderPrintService
         }
         else
         {
-            backKitchenSuccess = true; // No items to print
+            backKitchenSuccess = backSelection.HasUnknown
+                ? KitchenPrintOutcome.Unknown
+                : KitchenPrintOutcome.Sent; // No known items to print
         }
+
+        if (backSelection.HasUnknown)
+            backKitchenSuccess = KitchenPrintOutcome.Unknown;
 
         return (frontKitchenSuccess, backKitchenSuccess);
     }
@@ -249,11 +314,12 @@ public class OrderPrintService : IOrderPrintService
         Order filtered,
         PrinterConfiguration config,
         bool isManualPrint,
-        string header)
+        string header,
+        bool hasUnknown = false)
     {
         if (filtered.Items.Count == 0)
         {
-            return KitchenPrintOutcome.Sent; // No work owed to this destination
+            return hasUnknown ? KitchenPrintOutcome.Unknown : KitchenPrintOutcome.Sent;
         }
 
         // Manual reprints bypass the auto-print toggle (consistent with the Front/Back path).
@@ -262,7 +328,7 @@ public class OrderPrintService : IOrderPrintService
         if (!isManualPrint && !config.KitchenAutoPrint)
         {
             _logger.LogInformation("Auto-print disabled for {Header}", header);
-            return KitchenPrintOutcome.Sent;
+            return hasUnknown ? KitchenPrintOutcome.Unknown : KitchenPrintOutcome.Skipped;
         }
 
         var resolution = KitchenDestinationResolver.Resolve(new KitchenDestinationSettings(
@@ -271,20 +337,22 @@ public class OrderPrintService : IOrderPrintService
             config.FrontKitchenPrinterName,
             config.BackKitchenPrinterName));
 
-        if (!resolution.IsConfigured)
+        if (!resolution.IsConfigured || resolution.PrinterName is not { Length: > 0 } printerName)
         {
             _logger.LogWarning(
                 "No resolvable {Header} destination for order {OrderNumber}: {ItemCount} items stay pending configuration",
                 header, filtered.OrderNumber, filtered.Items.Count);
             _requestLogService.LogPrintResponse(
                 header, filtered.OrderNumber, false, "No kitchen destination configured");
-            return KitchenPrintOutcome.NotConfigured;
+            return hasUnknown ? KitchenPrintOutcome.Unknown : KitchenPrintOutcome.NotConfigured;
         }
 
         var content = FormatKitchenReceipt(filtered, config, config.KitchenPaperWidth, header);
-        var sent = await PrintRawContentAsync(resolution.PrinterName!, content);
+        var sent = await PrintRawContentAsync(printerName, content);
         _logger.LogInformation("{Header} print ({ItemCount} items) to {Printer}: {Result}",
             header, filtered.Items.Count, resolution.PrinterName, sent ? "✓" : "✗");
+        if (hasUnknown)
+            return KitchenPrintOutcome.Unknown;
         return sent ? KitchenPrintOutcome.Sent : KitchenPrintOutcome.Failed;
     }
 

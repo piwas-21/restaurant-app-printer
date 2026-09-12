@@ -1,15 +1,11 @@
-﻿using System;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Linq;
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace PrinterAPP.Models;
 
 public class PrinterConfiguration
 {
+    public const int DefaultUpdateRetryIntervalSeconds = 5;
+    public const int MinimumUpdateRetryIntervalSeconds = 1;
+
     public string ApiBaseUrl { get; set; } = "https://www.rumirestaurant.ch";
     public string ApiKey { get; set; } = "";  // X-Api-Key header value for printer-feed authentication
 
@@ -28,6 +24,9 @@ public class PrinterConfiguration
     public bool KitchenAutoPrint { get; set; } = true;
     public int KitchenPrintCopies { get; set; } = 1;
     public int KitchenPaperWidth { get; set; } = 80;
+
+    // Retry cadence for durable update jobs that remain Failed, NotConfigured or Unknown.
+    public int UpdateRetryIntervalSeconds { get; set; } = DefaultUpdateRetryIntervalSeconds;
 
     // Kitchen routing policy (issue #113): Stations (default) = the shipped Front/Back split,
     // byte-for-byte, plus unassigned work on a resolved Default ticket; SingleKitchen = ONE

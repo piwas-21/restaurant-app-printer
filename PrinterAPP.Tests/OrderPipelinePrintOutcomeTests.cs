@@ -383,6 +383,7 @@ public sealed class OrderPipelinePrintOutcomeTests : IDisposable
         public bool IsListening { get; private set; }
         public DateTime? LastSuccessfulPollAt => null;
         public event EventHandler<OrderEvent>? OrderReceived;
+        public event EventHandler<PrinterFeedUpdate>? UpdateReceived { add { } remove { } }
         public event EventHandler<string>? ConnectionStatusChanged { add { } remove { } }
 
         public Task StartListeningAsync(CancellationToken cancellationToken = default)

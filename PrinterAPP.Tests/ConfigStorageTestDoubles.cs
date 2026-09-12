@@ -54,6 +54,7 @@ public sealed class InMemoryFeedCursorStore : IFeedCursorStore
     {
         LastPollTime = _cursor.LastPollTime,
         ProcessedOrders = new Dictionary<string, DateTime>(_cursor.ProcessedOrders),
+        LastUpdateCursor = _cursor.LastUpdateCursor,
     };
 
     public void Save(PrinterAPP.Models.FeedCursor cursor)
@@ -63,6 +64,7 @@ public sealed class InMemoryFeedCursorStore : IFeedCursorStore
         {
             LastPollTime = cursor.LastPollTime,
             ProcessedOrders = new Dictionary<string, DateTime>(cursor.ProcessedOrders),
+            LastUpdateCursor = cursor.LastUpdateCursor,
         };
     }
 }

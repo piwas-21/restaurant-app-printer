@@ -73,6 +73,115 @@ public static class TelemetryPayloads
         };
     }
 
+    /// <summary>
+    /// Adds the typed General/Default acknowledgement to the legacy order acknowledgements. This
+    /// overload is opt-in so old callers retain their exact three-ack wire shape.
+    /// </summary>
+    public static List<PrintAck> PrintAcks(
+        Order order,
+        bool cashier,
+        bool frontKitchen,
+        bool backKitchen,
+        KitchenPrintOutcome generalDefault,
+        PrinterConfiguration config,
+        DateTime receivedAt)
+    {
+        var acks = PrintAcks(order, cashier, frontKitchen, backKitchen, config, receivedAt);
+        if (!Guid.TryParse(order.Id, out var orderId))
+            return acks;
+
+        var target = config.KitchenRoutingMode == KitchenRoutingMode.SingleKitchen
+            ? DevicePrintTarget.General
+            : DevicePrintTarget.Default;
+        acks.Add(BuildOutcomeAck(orderId, target, generalDefault, receivedAt));
+        return acks;
+    }
+
+    /// <summary>
+    /// Maps a typed additive UPDATE outcome into a job-aware acknowledgement. Only <see
+    /// cref="KitchenPrintStatus.Sent"/> becomes <see cref="DevicePrintStatus.Sent"/>; failures and
+    /// unknown/unconfigured routes retain their explicit status and are never upgraded to success.
+    /// </summary>
+    public static PrintAck UpdateAck(
+        PrinterFeedUpdate update,
+        KitchenPrintOutcome outcome,
+        DateTime receivedAt)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        var status = outcome.Status switch
+        {
+            KitchenPrintStatus.Sent => DevicePrintStatus.Sent,
+            KitchenPrintStatus.Skipped => DevicePrintStatus.Skipped,
+            KitchenPrintStatus.Failed => DevicePrintStatus.Failed,
+            KitchenPrintStatus.NotConfigured => DevicePrintStatus.NotConfigured,
+            KitchenPrintStatus.Unknown => DevicePrintStatus.Unknown,
+            _ => DevicePrintStatus.Unknown,
+        };
+
+        return new PrintAck
+        {
+            OrderId = update.OrderId,
+            Target = update.Target,
+            Status = status,
+            ReceivedAt = receivedAt,
+            PrintedAt = status == DevicePrintStatus.Sent ? DateTime.UtcNow : null,
+            FailureReason = status is DevicePrintStatus.Failed
+                or DevicePrintStatus.NotConfigured
+                or DevicePrintStatus.Unknown
+                ? status.ToString()
+                : null,
+            Copies = status == DevicePrintStatus.Sent ? 1 : 0,
+            JobId = update.JobId,
+            Revision = update.Revision,
+            JobType = update.JobType,
+        };
+    }
+
+    /// <summary>Queues a durable lifecycle acknowledgement for an update job.</summary>
+    public static PrintAck UpdateQueuedAck(PrinterFeedUpdate update, DateTime receivedAt) =>
+        new()
+        {
+            OrderId = update.OrderId,
+            Target = update.Target,
+            Status = DevicePrintStatus.Queued,
+            ReceivedAt = receivedAt,
+            Copies = 0,
+            JobId = update.JobId,
+            Revision = update.Revision,
+            JobType = update.JobType,
+        };
+
+    private static PrintAck BuildOutcomeAck(
+        Guid orderId,
+        DevicePrintTarget target,
+        KitchenPrintOutcome outcome,
+        DateTime receivedAt)
+    {
+        var status = outcome.Status switch
+        {
+            KitchenPrintStatus.Sent => DevicePrintStatus.Printed,
+            KitchenPrintStatus.Skipped => DevicePrintStatus.Skipped,
+            KitchenPrintStatus.Failed => DevicePrintStatus.Failed,
+            KitchenPrintStatus.NotConfigured => DevicePrintStatus.NotConfigured,
+            KitchenPrintStatus.Unknown => DevicePrintStatus.Unknown,
+            _ => DevicePrintStatus.Unknown,
+        };
+        return new PrintAck
+        {
+            OrderId = orderId,
+            Target = target,
+            Status = status,
+            ReceivedAt = receivedAt,
+            PrintedAt = status == DevicePrintStatus.Printed ? DateTime.UtcNow : null,
+            FailureReason = status is DevicePrintStatus.Failed
+                or DevicePrintStatus.NotConfigured
+                or DevicePrintStatus.Unknown
+                ? status.ToString()
+                : null,
+            Copies = status == DevicePrintStatus.Printed ? 1 : 0,
+        };
+    }
+
     private static PrintAck BuildAck(
         Guid orderId, DevicePrintTarget target, bool success,
         string? printerName, bool autoPrint, int copies, DateTime receivedAt)
