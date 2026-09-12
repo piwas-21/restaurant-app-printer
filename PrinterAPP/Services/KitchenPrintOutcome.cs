@@ -15,6 +15,12 @@ public enum KitchenPrintStatus
     /// must configure a destination (issue #113: omitted work used to collapse into "success").
     /// </summary>
     NotConfigured,
+
+    /// <summary>The input names a destination the client cannot safely interpret.</summary>
+    Unknown,
+
+    /// <summary>The operator deliberately disabled automatic printing.</summary>
+    Skipped,
 }
 
 /// <summary>
@@ -31,9 +37,11 @@ public readonly record struct KitchenPrintOutcome(KitchenPrintStatus Status)
     public static KitchenPrintOutcome Sent { get; } = new(KitchenPrintStatus.Sent);
     public static KitchenPrintOutcome Failed { get; } = new(KitchenPrintStatus.Failed);
     public static KitchenPrintOutcome NotConfigured { get; } = new(KitchenPrintStatus.NotConfigured);
+    public static KitchenPrintOutcome Unknown { get; } = new(KitchenPrintStatus.Unknown);
+    public static KitchenPrintOutcome Skipped { get; } = new(KitchenPrintStatus.Skipped);
 
-    /// <summary>True only when the ticket actually went out. NotConfigured and Failed are both false.</summary>
-    public bool IsSuccess => Status == KitchenPrintStatus.Sent;
+    /// <summary>True only when the ticket actually went out. Non-printing outcomes are false.</summary>
+    public bool IsSuccess => Status is KitchenPrintStatus.Sent or KitchenPrintStatus.Skipped;
 
     /// <summary>Source compatibility with the bool tuple elements this replaces.</summary>
     public static implicit operator bool(KitchenPrintOutcome outcome) => outcome.IsSuccess;

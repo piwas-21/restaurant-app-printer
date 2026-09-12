@@ -75,7 +75,14 @@ public class FeedCursorStore : IFeedCursorStore
         }
     }
 
-    public void Save(FeedCursor cursor)
+    public void Save(FeedCursor cursor) => TrySave(cursor);
+
+    /// <summary>
+    /// Writes the cursor and reports the outcome so callers can keep their in-memory position behind
+    /// the durable one when the filesystem is unavailable. The legacy <see cref="Save"/> method stays
+    /// best-effort for existing callers.
+    /// </summary>
+    public bool TrySave(FeedCursor cursor)
     {
         try
         {
@@ -92,12 +99,14 @@ public class FeedCursorStore : IFeedCursorStore
                 var temp = _cursorPath + ".tmp";
                 File.WriteAllText(temp, JsonSerializer.Serialize(cursor, WriteOptions));
                 File.Move(temp, _cursorPath, overwrite: true);
+                return true;
             }
         }
         catch (Exception)
         {
             // Best-effort: a cursor we could not persist costs a re-fetch on the next restart, which
             // the dedup set absorbs. It must never interrupt polling or printing.
+            return false;
         }
     }
 

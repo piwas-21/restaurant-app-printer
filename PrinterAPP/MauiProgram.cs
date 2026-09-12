@@ -63,6 +63,7 @@ namespace PrinterAPP
             // Persisted poll cursor + dedup window — without it every process restart re-fetches and
             // re-prints the last 30 minutes of orders (cross-platform plan, Phase 9d).
             builder.Services.AddSingleton<IFeedCursorStore, FeedCursorStore>();
+            builder.Services.AddSingleton<IPrintUpdateJobStore, PrintUpdateJobStore>();
             builder.Services.AddSingleton<IPrinterService, WindowsPrinterService>();
             builder.Services.AddSingleton<IRequestLogService, RequestLogService>();
             builder.Services.AddSingleton<IEventStreamingService, EventStreamingService>();

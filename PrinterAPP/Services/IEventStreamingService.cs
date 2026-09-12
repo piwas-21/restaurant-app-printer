@@ -5,6 +5,8 @@ namespace PrinterAPP.Services;
 public interface IEventStreamingService
 {
     event EventHandler<OrderEvent>? OrderReceived;
+    /// <summary>Raised after an update has been durably staged (or in-memory when no store is supplied).</summary>
+    event EventHandler<PrinterFeedUpdate>? UpdateReceived;
     event EventHandler<string>? ConnectionStatusChanged;
     Task StartListeningAsync(CancellationToken cancellationToken = default);
     Task StopListeningAsync();

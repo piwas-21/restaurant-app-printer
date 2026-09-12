@@ -43,7 +43,17 @@ public class PrintAckOutbox : IPrintAckOutbox
         try
         {
             var pending = Load();
-            pending.AddRange(toAdd);
+            foreach (var ack in toAdd)
+            {
+                // Update lifecycle acks are snapshots of one stable job, not independent work. Replace
+                // a queued/failed snapshot with the newest state so an offline retry cannot send a
+                // contradictory sequence or grow the file on every duplicate feed page.
+                var existingIndex = pending.FindIndex(existing => SameUpdate(existing, ack));
+                if (existingIndex >= 0)
+                    pending[existingIndex] = ack;
+                else
+                    pending.Add(ack);
+            }
             // Keep the newest MaxStored if a long offline window overflowed the queue.
             if (pending.Count > MaxStored)
                 pending = pending.Skip(pending.Count - MaxStored).ToList();
@@ -105,6 +115,15 @@ public class PrintAckOutbox : IPrintAckOutbox
     }
 
     private string FilePath => Path.Combine(_paths.AppDataDirectory, FileName);
+
+    private static bool SameUpdate(PrintAck left, PrintAck right) =>
+        left.JobId.HasValue && left.Revision.HasValue && left.JobType.HasValue
+        && right.JobId.HasValue && right.Revision.HasValue && right.JobType.HasValue
+        && left.JobId == right.JobId
+        && left.Revision == right.Revision
+        && left.JobType == right.JobType
+        && left.OrderId == right.OrderId
+        && left.Target == right.Target;
 
     private List<PrintAck> Load()
     {

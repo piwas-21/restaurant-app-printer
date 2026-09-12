@@ -84,6 +84,16 @@ public static class KitchenTicketFilter
     /// wired into automatic printing yet: it establishes what a General/Default ticket contains
     /// without changing the legacy Front/Back print path.
     /// </summary>
+    /// <summary>
+    /// Returns the ticket and unresolved kitchen assignments together. Use this when a caller needs
+    /// to distinguish "nothing owed" from an unknown leaf that must remain pending.
+    /// </summary>
+    public static KitchenRoutingSelection SelectionForDestination(
+        IEnumerable<OrderItem>? items,
+        KitchenRoutingPolicy policy,
+        KitchenTicketDestination destination) =>
+        KitchenRoutingAnalysis.ForDestination(items, policy, destination);
+
     public static List<OrderItem> ItemsForDestination(
         IEnumerable<OrderItem>? items,
         KitchenRoutingPolicy policy,

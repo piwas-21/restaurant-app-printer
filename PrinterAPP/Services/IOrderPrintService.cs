@@ -26,4 +26,9 @@ public interface IOrderPrintService
         PrinterType printerType,
         bool isManualPrint = false,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Prints one additive UPDATE job to its resolved General/Default destination.</summary>
+    Task<KitchenPrintOutcome> PrintUpdateAsync(
+        PrinterFeedUpdate update,
+        CancellationToken cancellationToken = default);
 }
