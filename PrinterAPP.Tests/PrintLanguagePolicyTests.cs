@@ -55,7 +55,7 @@ public class PrintLanguagePolicyTests
                          labels.Notes, labels.Note, labels.NoPrefix, labels.ExtraPrefix,
                          labels.SelectedPrefix, labels.Subtotal, labels.Tax, labels.Discount,
                          labels.CustomerDiscount, labels.Promo, labels.DeliveryFee, labels.Tip,
-                         labels.Total, labels.Payment, labels.Paid, labels.Due, labels.DeliveryTo,
+                         labels.Total, labels.Payment, labels.CardAtRestaurant, labels.Paid, labels.Due, labels.DeliveryTo,
                          labels.Instructions, labels.ThankYou, labels.DineIn, labels.TakeAway,
                          labels.Delivery, labels.NoItems,
                      })
