@@ -49,6 +49,9 @@ public sealed record PrintLabels(
         _ => rawType,
     };
 
+    // Backend PaymentMethod.CreditCard numeric value is 2; legacy feed payloads still send it as "2".
+    private const string BackendCreditCardPaymentMethodValue = "2";
+
     /// <summary>
     /// Maps the on-site card intent without leaking a backend enum to paper. The feed normally
     /// sends <c>CreditCard</c>, but old installations may send the generic <c>Card</c> alias or
@@ -63,7 +66,7 @@ public sealed record PrintLabels(
             .Replace("_", string.Empty, StringComparison.Ordinal)
             .ToLowerInvariant();
 
-        return normalized is "creditcard" or "card" or "2"
+        return normalized is "creditcard" or "card" or BackendCreditCardPaymentMethodValue
             ? CardAtRestaurant
             : rawMethod ?? string.Empty;
     }
