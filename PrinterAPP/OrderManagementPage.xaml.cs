@@ -161,10 +161,13 @@ public partial class OrderManagementPage : ContentPage
 
                     // Route through PrintOrderToAllPrintersAsync so Front/Back-kitchen items go to the
                     // right printers (the old two-call path bypassed multi-kitchen routing). A kitchen
-                    // result is true when that kitchen's ticket printed OR there were no items for it.
-                    var (cashierSuccess, frontKitchenSuccess, backKitchenSuccess) =
+                    // result is true when that kitchen's ticket printed OR there were no items for it;
+                    // GeneralDefault carries the General/Default destination, where NotConfigured
+                    // (work with no resolvable printer) is a failure, not a silent skip (issue #113).
+                    var (cashierSuccess, frontKitchenSuccess, backKitchenSuccess, generalDefaultSuccess) =
                         await _orderPrintService.PrintOrderToAllPrintersAsync(orderItem.Order, isManualPrint: true);
-                    var kitchenSuccess = frontKitchenSuccess && backKitchenSuccess;
+                    var kitchenSuccess =
+                        frontKitchenSuccess.IsSuccess && backKitchenSuccess.IsSuccess && generalDefaultSuccess.IsSuccess;
 
                     if (kitchenSuccess && cashierSuccess)
                     {

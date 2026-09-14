@@ -33,17 +33,27 @@
     <!-- PrinterConfiguration.PrintLanguage references PrintLanguagePolicy.English; the policy is
          MAUI-free, so the link keeps this compile-only guard green. -->
     <Compile Include="..\PrinterAPP\Services\PrintLanguagePolicy.cs" Link="Linked\PrintLanguagePolicy.cs" />
+    <Compile Include="..\PrinterAPP\Services\KitchenRoutingPolicy.cs" Link="Linked\KitchenRoutingPolicy.cs" />
+    <Compile Include="..\PrinterAPP\Services\KitchenDestinationResolver.cs" Link="Linked\KitchenDestinationResolver.cs" />
+    <Compile Include="..\PrinterAPP\Services\EscPosCommands.cs" Link="Linked\EscPosCommands.cs" />
     <Compile Include="..\PrinterAPP\Models\HeartbeatRequest.cs" Link="Linked\HeartbeatRequest.cs" />
     <Compile Include="..\PrinterAPP\Models\PrintAck.cs" Link="Linked\PrintAck.cs" />
     <Compile Include="..\PrinterAPP\Models\DevicePrintTarget.cs" Link="Linked\DevicePrintTarget.cs" />
     <Compile Include="..\PrinterAPP\Models\DevicePrintStatus.cs" Link="Linked\DevicePrintStatus.cs" />
+    <Compile Include="..\PrinterAPP\Models\DevicePrintJobType.cs" Link="Linked\DevicePrintJobType.cs" />
+    <Compile Include="..\PrinterAPP\Models\PrinterFeedUpdate.cs" Link="Linked\PrinterFeedUpdate.cs" />
+    <Compile Include="..\PrinterAPP\Models\PrintUpdateJobState.cs" Link="Linked\PrintUpdateJobState.cs" />
+    <Compile Include="..\PrinterAPP\Models\PrintUpdateJobRecord.cs" Link="Linked\PrintUpdateJobRecord.cs" />
     <!-- Fleet telemetry client (the real shipping services under test) -->
     <Compile Include="..\PrinterAPP\Services\ITelemetryClient.cs" Link="Linked\ITelemetryClient.cs" />
     <Compile Include="..\PrinterAPP\Services\TelemetryClient.cs" Link="Linked\TelemetryClient.cs" />
     <Compile Include="..\PrinterAPP\Services\TelemetrySendResult.cs" Link="Linked\TelemetrySendResult.cs" />
     <Compile Include="..\PrinterAPP\Services\TelemetryPayloads.cs" Link="Linked\TelemetryPayloads.cs" />
+    <Compile Include="..\PrinterAPP\Services\KitchenPrintOutcome.cs" Link="Linked\KitchenPrintOutcome.cs" />
     <Compile Include="..\PrinterAPP\Services\IPrintAckOutbox.cs" Link="Linked\IPrintAckOutbox.cs" />
     <Compile Include="..\PrinterAPP\Services\PrintAckOutbox.cs" Link="Linked\PrintAckOutbox.cs" />
+    <Compile Include="..\PrinterAPP\Services\IPrintUpdateJobStore.cs" Link="Linked\IPrintUpdateJobStore.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrintUpdateJobStore.cs" Link="Linked\PrintUpdateJobStore.cs" />
     <Compile Include="..\PrinterAPP\Services\IAppDataPathProvider.cs" Link="Linked\IAppDataPathProvider.cs" />
     <!-- Request-log boundary, now MAUI-free (A0): the LogType→Color map moved to a UI converter, so the
          interface + LogEntry source-link into net10.0. This unblocks source-linking EventStreamingService
@@ -60,6 +70,8 @@
     <Compile Include="..\PrinterAPP\Models\FeedCursor.cs" Link="Linked\FeedCursor.cs" />
     <Compile Include="..\PrinterAPP\Services\IFeedCursorStore.cs" Link="Linked\IFeedCursorStore.cs" />
     <Compile Include="..\PrinterAPP\Services\FeedCursorStore.cs" Link="Linked\FeedCursorStore.cs" />
+    <Compile Include="..\PrinterAPP\Services\UpdateJobRouting.cs" Link="Linked\UpdateJobRouting.cs" />
+    <Compile Include="..\PrinterAPP\Services\UpdateReceiptComposer.cs" Link="Linked\UpdateReceiptComposer.cs" />
     <Compile Include="..\PrinterAPP\Services\UnconfirmedOrderExpiry.cs" Link="Linked\UnconfirmedOrderExpiry.cs" />
     <Compile Include="..\PrinterAPP\Services\EventStreamingService.cs" Link="Linked\EventStreamingService.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderFeedParser.cs" Link="Linked\OrderFeedParser.cs" />

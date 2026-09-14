@@ -266,6 +266,31 @@ public class OrderPrintToSinkTests
         Assert.DoesNotContain("Subtotal", ticket);
     }
 
+    /// <summary>On-site card intents print a clear payment label rather than the backend enum name.</summary>
+    [Fact]
+    public async Task PrintOrderAsync_Cashier_LocalizesCreditCardAsCardAtRestaurant()
+    {
+        using var sink = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        var order = MinimalOrder();
+        order.Payments =
+        [
+            new Payment
+            {
+                PaymentMethod = "CreditCard",
+                Amount = order.Total,
+                Status = "Pending",
+            },
+        ];
+
+        var (ok, ticket) = await PrintToSinkAsync(order, sink, cts.Token);
+
+        Assert.True(ok, "PrintOrderAsync reported failure");
+        Assert.Contains("CARD AT RESTAURANT", ticket);
+        Assert.DoesNotContain("CreditCard", ticket);
+    }
+
     /// <summary>
     /// The "order language" option: no fixed choice, the guest's PreferredLanguage picks the labels,
     /// with English where the order carries none.
@@ -351,8 +376,8 @@ public class OrderPrintToSinkTests
             SideItems = children,
         };
 
-    private static async Task<(bool Cashier, bool FrontKitchen, bool BackKitchen)> PrintToSinksAsync(
-        Order order, Sink cashier, Sink front, Sink back, CancellationToken ct)
+    private static async Task<(bool Cashier, KitchenPrintOutcome FrontKitchen, KitchenPrintOutcome BackKitchen, KitchenPrintOutcome GeneralDefault)>
+        PrintToSinksAsync(Order order, Sink cashier, Sink front, Sink back, CancellationToken ct)
     {
         using var paths = new TempPathProvider();
         var service = new OrderPrintService(

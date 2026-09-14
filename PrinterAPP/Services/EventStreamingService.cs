@@ -10,6 +10,7 @@ public class EventStreamingService : IEventStreamingService
     private readonly IPrinterService _printerService;
     private readonly IRequestLogService _requestLogService;
     private readonly IFeedCursorStore _cursorStore;
+    private readonly IPrintUpdateJobStore? _updateJobStore;
     private readonly ILogger<EventStreamingService> _logger;
     private CancellationTokenSource? _cancellationTokenSource;
     private Task? _kitchenListeningTask;
@@ -63,6 +64,7 @@ public class EventStreamingService : IEventStreamingService
     public static readonly TimeSpan UnconfirmedRetention =
         FeedCursorStore.MaxLookBack - TimeSpan.FromMinutes(5);
     private DateTime _lastPollTime;
+    private string? _lastUpdateCursor;
     private Task? _pollingTask;  // Primary polling mechanism
 
     /// <summary>How long the feed waits between polls. Injectable so tests can drive the loop at a
@@ -75,8 +77,10 @@ public class EventStreamingService : IEventStreamingService
     // causes a duplicate ticket.
     private static readonly TimeSpan CursorSaveInterval = TimeSpan.FromSeconds(60);
     private DateTime _lastCursorSaveAt = DateTime.MinValue;
+    private bool _cursorSavePending;
 
     public event EventHandler<OrderEvent>? OrderReceived;
+    public event EventHandler<PrinterFeedUpdate>? UpdateReceived;
     public event EventHandler<string>? ConnectionStatusChanged;
 
     public bool IsListening => _isListening;
@@ -95,11 +99,13 @@ public class EventStreamingService : IEventStreamingService
         IRequestLogService requestLogService,
         IFeedCursorStore cursorStore,
         ILogger<EventStreamingService> logger,
-        TimeSpan? pollInterval = null)
+        TimeSpan? pollInterval = null,
+        IPrintUpdateJobStore? updateJobStore = null)
     {
         _printerService = printerService;
         _requestLogService = requestLogService;
         _cursorStore = cursorStore;
+        _updateJobStore = updateJobStore;
         _logger = logger;
         _pollInterval = pollInterval is { } supplied && supplied > TimeSpan.Zero
             ? supplied
@@ -110,6 +116,9 @@ public class EventStreamingService : IEventStreamingService
         // yields the default look-back.
         var cursor = _cursorStore.Load();
         _lastPollTime = cursor.LastPollTime;
+        // The update store is the sole owner of updateCursor. FeedCursor.LastUpdateCursor remains a
+        // migration fallback for instances created without the update store (legacy tests/hosts).
+        _lastUpdateCursor = _updateJobStore?.LoadUpdateCursor() ?? cursor.LastUpdateCursor;
         _processedOrders = cursor.ProcessedOrders;
         // Everything that was persisted had already been confirmed, so it stays persistable.
         _persistableOrders = new HashSet<string>(cursor.ProcessedOrders.Keys);
@@ -169,6 +178,11 @@ public class EventStreamingService : IEventStreamingService
             {
                 await _kitchenListeningTask;
             }
+
+            if (_pollingTask != null)
+            {
+                await _pollingTask;
+            }
         }
         catch (OperationCanceledException)
         {
@@ -183,6 +197,7 @@ public class EventStreamingService : IEventStreamingService
             _cancellationTokenSource?.Dispose();
             _cancellationTokenSource = null;
             _kitchenListeningTask = null;
+            _pollingTask = null;
 
             OnConnectionStatusChanged("Disconnected");
         }
@@ -612,39 +627,71 @@ public class EventStreamingService : IEventStreamingService
     /// loss causes a duplicate ticket. The routine per-poll cursor advance is debounced because it
     /// happens every 5 seconds and losing a little of it is harmless.
     /// </param>
-    private void PersistCursor(bool force)
+    private void PersistCursor(
+        bool force,
+        DateTime? proposedLastPollTime = null,
+        string? proposedUpdateCursor = null,
+        bool hasProposedUpdateCursor = false)
     {
         // Snapshot AND write under one lock. Holding it only for the snapshot let a slower thread's
-        // older copy win the file race and drop a dedup entry a newer copy had already captured —
-        // which would reprint that order after the next restart, the exact thing this exists to stop.
+        // older copy win the file race and drop a dedup entry a newer copy had already captured.
         lock (_cursorPersistLock)
         {
-            if (!force && DateTime.UtcNow - _lastCursorSaveAt < CursorSaveInterval)
+            if (!force && !_cursorSavePending && DateTime.UtcNow - _lastCursorSaveAt < CursorSaveInterval)
             {
+                // The in-memory cursor may move during the debounce; only the durable snapshot is
+                // delayed. Update cursors that changed are always forced by the caller.
+                lock (_processedOrdersLock)
+                {
+                    if (proposedLastPollTime is not null)
+                        _lastPollTime = proposedLastPollTime.Value;
+                    if (hasProposedUpdateCursor && _updateJobStore is null)
+                        _lastUpdateCursor = proposedUpdateCursor;
+                }
                 return;
             }
 
-            _lastCursorSaveAt = DateTime.UtcNow;
-
+            DateTime liveLastPoll;
+            string? liveUpdateCursor;
             FeedCursor snapshot;
             lock (_processedOrdersLock)
             {
+                liveLastPoll = _lastPollTime;
+                liveUpdateCursor = _lastUpdateCursor;
+                var targetLastPoll = proposedLastPollTime ?? liveLastPoll;
+                var targetUpdateCursor = hasProposedUpdateCursor
+                    ? proposedUpdateCursor
+                    : liveUpdateCursor;
                 // Never persist a cursor past the earliest still-unconfirmed order's poll window.
-                // Min over those windows AND the live cursor, so with nothing unconfirmed it is just
-                // the cursor.
-                var persistedLastPoll = _unconfirmedPollWindows.Values.Append(_lastPollTime).Min();
+                var persistedLastPoll = _unconfirmedPollWindows.Values.Append(targetLastPoll).Min();
 
                 snapshot = new FeedCursor
                 {
                     LastPollTime = persistedLastPoll,
-                    // Confirmed entries only — see _persistableOrders.
                     ProcessedOrders = _processedOrders
                         .Where(kvp => _persistableOrders.Contains(kvp.Key))
                         .ToDictionary(kvp => kvp.Key, kvp => kvp.Value),
+                    LastUpdateCursor = targetUpdateCursor,
                 };
             }
 
-            _cursorStore.Save(snapshot);
+            if (!_cursorStore.TrySave(snapshot))
+            {
+                _cursorSavePending = true;
+                _logger.LogWarning("Could not persist feed cursor; retaining the prior in-memory position");
+                return;
+            }
+
+            _cursorSavePending = false;
+            _lastCursorSaveAt = DateTime.UtcNow;
+            lock (_processedOrdersLock)
+            {
+                if (proposedLastPollTime is not null)
+                    _lastPollTime = proposedLastPollTime.Value;
+                if (hasProposedUpdateCursor && _updateJobStore is null)
+                    _lastUpdateCursor = proposedUpdateCursor;
+            }
+            return;
         }
     }
 
@@ -809,134 +856,60 @@ public class EventStreamingService : IEventStreamingService
         _logger.LogInformation("   API Base URL: {Url}", baseUrl);
         _logger.LogInformation("   Interval: {Interval} seconds", _pollInterval.TotalSeconds);
         _logger.LogInformation("========================================");
-
-        // Also log to debug output for WPF apps
         System.Diagnostics.Debug.WriteLine(
             $"[POLLING] Started - URL: {baseUrl}, Interval: {_pollInterval.TotalSeconds}s");
 
-        int pollCount = 0;
-
+        var pollCount = 0;
         while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
-                // The wait is skipped on the FIRST iteration only, so a feed that has just started
-                // polls immediately instead of leaving the pass blind for 5 s. That window is not
-                // hypothetical: the Android foreground service restarts itself (START_STICKY,
-                // BOOT_COMPLETED), and every one of those restarts used to begin with 5 s of
-                // deliberate silence before the first request.
-                //
-                // Guarding the delay is not the same as moving it below the poll body: the
-                // non-2xx branch below ends its iteration with `continue`, which would jump PAST a
-                // trailing delay and turn a backend outage into an unthrottled request loop against
-                // that backend. Keeping the delay at the top, skipped once, preserves the throttle on
-                // every path.
                 if (pollCount > 0)
-                {
                     await Task.Delay(_pollInterval, cancellationToken);
-                }
 
                 pollCount++;
-                // Dedicated printer-feed endpoint. Auth is the X-Api-Key header added below —
-                // required in production (per-tenant key set in Settings); a missing/incorrect key
-                // returns 401, surfaced as "Poll failed: Unauthorized" and logged to the Errors page.
-                // The exact value this request filters on — recorded against any order it yields so
-                // the persisted cursor can be floored to it until that order is confirmed.
                 DateTime pollWindowStart;
+                string? updateCursor;
                 lock (_processedOrdersLock)
                 {
                     pollWindowStart = _lastPollTime;
+                    updateCursor = _lastUpdateCursor;
                 }
 
-                // The venue's print language rides on the poll (2026-09-10 partner feedback): the
-                // backend translates the order DETAILS — product, variation and ingredient names —
-                // into this language, falling back to the frozen checkout names where a translation
-                // is missing. "auto" resolves per order from the guest's own preferred language.
-                // Without the parameter the backend keeps serving the frozen single-language names,
-                // which is exactly the old behaviour the language switch never seemed to affect.
-                var configForLanguage = await _printerService.LoadConfigurationAsync();
-                var pollUrl = $"{baseUrl}/api/orders/printer-feed?modifiedSince={pollWindowStart:o}" +
-                    $"&language={Uri.EscapeDataString(configForLanguage.PrintLanguage)}";
-
-                _logger.LogInformation("🔄 Poll #{Count} - Fetching orders since {Since}", pollCount, pollWindowStart);
-                System.Diagnostics.Debug.WriteLine($"[POLLING] #{pollCount} - URL: {pollUrl}");
-
-                // Update connection status so UI shows activity
+                var config = await _printerService.LoadConfigurationAsync();
+                var language = config.PrintLanguage;
+                _logger.LogInformation(
+                    "🔄 Poll #{Count} - Fetching orders since {Since}", pollCount, pollWindowStart);
                 OnConnectionStatusChanged($"Polling... (#{pollCount})");
 
                 using var httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(30) };
-
-                // Add X-Api-Key header if configured
-                var config = await _printerService.LoadConfigurationAsync();
                 if (!string.IsNullOrWhiteSpace(config.ApiKey))
-                {
                     httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.ApiKey);
-                    _logger.LogInformation("   Using API key for authentication");
-                }
                 else
-                {
                     _logger.LogWarning("   ⚠️ No API key configured - request may fail if auth required");
-                }
 
-                var response = await httpClient.GetAsync(pollUrl, cancellationToken);
-
-                _logger.LogInformation("   Response: {StatusCode}", response.StatusCode);
-                System.Diagnostics.Debug.WriteLine($"[POLLING] Response: {response.StatusCode}");
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
-                    var bodyPreview = errorBody.Substring(0, Math.Min(200, errorBody.Length));
-                    _logger.LogWarning("❌ Polling failed: {StatusCode} - {Body}", response.StatusCode, bodyPreview);
-
-                    // Also surface poll failures on the Errors page. Previously these went only to the
-                    // ILogger, so the Errors tab stayed empty while the feed silently 401'd — leaving
-                    // the field with no diagnostic trail. A 401 is almost always a missing/incorrect
-                    // API key, so spell that out to make it actionable.
-                    var detail = response.StatusCode == System.Net.HttpStatusCode.Unauthorized
-                        ? "The API key is missing or incorrect. Enter the printer API key in Settings, then Save."
-                        : bodyPreview;
-                    _requestLogService.LogError(PollingLogOperation, $"Poll failed: {response.StatusCode}", detail);
-
-                    OnConnectionStatusChanged($"Poll failed: {response.StatusCode}");
+                var page = await FetchFeedPageAsync(
+                    httpClient, baseUrl, pollWindowStart, language, updateCursor, cancellationToken);
+                if (page is null)
                     continue;
-                }
 
-                var json = await response.Content.ReadAsStringAsync(cancellationToken);
-                _logger.LogInformation("   Response length: {Length} bytes", json.Length);
-
-                // Deserialise each order independently. Before PR #61 the whole batch was deserialised in
-                // one call, so a single un-readable order (e.g. deliveryAddress typed string vs object)
-                // threw for the entire batch; _lastPollTime never advanced, so every 5s poll re-threw on
-                // the same order forever and nothing printed until restart. Now one bad order is logged +
-                // skipped (surfaced on the Errors/Diagnostics page) and the rest of the batch still prints.
-                var parseResult = OrderFeedParser.Parse(json);
-
-                // Set only where an entry is genuinely ADDED to the persistable set — an already-known
-                // failure hits `continue` below and changes nothing, so inferring this from
-                // parseResult.Errors would force a full write on every poll for as long as the
-                // backend keeps re-emitting the same bad order, defeating the debounce entirely.
+                var staged = true;
                 var dedupChanged = false;
+                if (!StageUpdates(page.Updates, ref dedupChanged))
+                    staged = false;
 
-                foreach (var failure in parseResult.Errors)
+                if (!staged)
+                    continue;
+
+                foreach (var failure in page.Errors)
                 {
-                    // If the bad order has an extractable number, dedupe the error log through the same
-                    // window as good orders so a re-emitted bad order doesn't re-log the identical error
-                    // every 5s and flood the Errors/Diagnostics page. The key is prefixed "error:" so it
-                    // stays isolated from the print-dedup pool: if the backend later fixes the order and
-                    // re-emits it, it must still print rather than be skipped as an already-processed
-                    // duplicate. Unidentifiable failures can't be deduped, so they log each poll (rare — a
-                    // whole-body/envelope failure, not a routine per-order drift).
+                    // Update errors make IsSuccess false and return above. The remaining errors are
+                    // legacy per-order diagnostics, which are safe to dedupe and persist as before.
                     if (!string.IsNullOrEmpty(failure.OrderNumber))
                     {
                         var errorKey = "error:" + failure.OrderNumber;
                         if (IsOrderAlreadyProcessed(errorKey))
-                        {
                             continue;
-                        }
-                        // "Logged" completes at the moment of marking, so unlike a print this is safe
-                        // to persist straight away — it stops a re-emitted bad order re-logging the
-                        // identical error after every restart.
                         MarkOrderAsProcessed(errorKey, persistable: true);
                         dedupChanged = true;
                     }
@@ -951,56 +924,110 @@ public class EventStreamingService : IEventStreamingService
                         failure.Message);
                 }
 
-                var itemCount = parseResult.Orders.Count;
-                _logger.LogInformation("   Orders found: {Count}", itemCount);
-
-                if (parseResult.Orders.Count > 0)
+                _logger.LogInformation("   Orders found: {Count}", page.Orders.Count);
+                foreach (var order in page.Orders)
                 {
-                    _logger.LogInformation("📦 Found {Count} confirmed orders!", parseResult.Orders.Count);
+                    _logger.LogInformation(
+                        "   Processing order: {OrderNumber} (Status: {Status})",
+                        order.OrderNumber, order.Status);
 
-                    foreach (var order in parseResult.Orders)
+                    if (IsOrderAlreadyProcessed(order.OrderNumber))
                     {
-                        _logger.LogInformation("   Processing order: {OrderNumber} (Status: {Status})",
-                            order.OrderNumber, order.Status);
+                        _logger.LogInformation("   ⏭️ Skipping duplicate: {OrderNumber}", order.OrderNumber);
+                        continue;
+                    }
 
-                        if (IsOrderAlreadyProcessed(order.OrderNumber))
-                        {
-                            _logger.LogInformation("   ⏭️ Skipping duplicate: {OrderNumber}", order.OrderNumber);
-                            continue;
-                        }
+                    // Orders are still confirmed only by the order pipeline after their print path;
+                    // updates are durably staged before their cursor can advance.
+                    MarkOrderAsProcessed(order.OrderNumber, unconfirmedPollWindow: pollWindowStart);
+                    var orderEvent = new OrderEvent
+                    {
+                        EventType = "order-polled",
+                        Order = order,
+                        Timestamp = DateTime.UtcNow,
+                    };
+                    _logger.LogInformation("🖨️ Sending order to printer: {OrderNumber}", order.OrderNumber);
+                    OnOrderReceived(orderEvent);
+                }
 
-                        // Deliberately NOT dedupChanged: this order is not persistable until the
-                        // print path confirms it (ConfirmOrderHandled), which forces its own write.
-                        MarkOrderAsProcessed(order.OrderNumber, unconfirmedPollWindow: pollWindowStart);
+                // Drain every update page now. The backend uses a composite cursor so equal-time
+                // notes cannot disappear behind a timestamp-only boundary.
+                var nextUpdateCursor = page.NextUpdateCursor ?? updateCursor;
+                var hasMoreUpdates = page.HasMoreUpdates;
+                if (!TryAdvanceUpdateCursor(nextUpdateCursor))
+                    staged = false;
 
-                        var orderEvent = new OrderEvent
-                        {
-                            EventType = "order-polled",
-                            Order = order,
-                            Timestamp = DateTime.UtcNow
-                        };
+                var seenCursors = new HashSet<string>(StringComparer.Ordinal);
+                if (!string.IsNullOrWhiteSpace(updateCursor))
+                    seenCursors.Add(updateCursor);
 
-                        _logger.LogInformation("�️ Sending order to printer: {OrderNumber}", order.OrderNumber);
-                        OnOrderReceived(orderEvent);
+                while (staged && hasMoreUpdates)
+                {
+                    if (string.IsNullOrWhiteSpace(nextUpdateCursor)
+                        || !seenCursors.Add(nextUpdateCursor))
+                    {
+                        LogUpdateFeedFailure(
+                            "The update feed returned hasMoreUpdates without a progressing cursor.");
+                        staged = false;
+                        break;
+                    }
+
+                    var nextPage = await FetchFeedPageAsync(
+                        httpClient,
+                        baseUrl,
+                        pollWindowStart,
+                        language,
+                        nextUpdateCursor,
+                        cancellationToken);
+                    if (nextPage is null)
+                    {
+                        staged = false;
+                        break;
+                    }
+
+                    if (!StageUpdates(nextPage.Updates, ref dedupChanged))
+                    {
+                        staged = false;
+                        break;
+                    }
+
+                    var pageCursor = nextPage.NextUpdateCursor ?? nextUpdateCursor;
+                    if (!TryAdvanceUpdateCursor(pageCursor))
+                    {
+                        staged = false;
+                        break;
+                    }
+
+                    nextUpdateCursor = pageCursor;
+                    hasMoreUpdates = nextPage.HasMoreUpdates;
+                }
+
+                // Any failed page leaves the order cursor untouched. Update pages already accepted by
+                // the update store remain safely durable and are idempotent on the next poll.
+                if (!staged)
+                    continue;
+
+                var completedAt = DateTime.UtcNow;
+                _lastSuccessfulPollAt = completedAt;
+
+                // A changed order cursor is important state too; force it to disk rather than relying
+                // on the one-minute debounce. The update cursor was already committed by its store.
+                var cursorChanged = !string.Equals(updateCursor, nextUpdateCursor, StringComparison.Ordinal);
+                if (_updateJobStore is not null)
+                {
+                    // The update store is authoritative. Its durable write succeeded page by page;
+                    // this in-memory mirror may move ahead even if the legacy cursor mirror fails.
+                    lock (_processedOrdersLock)
+                    {
+                        _lastUpdateCursor = nextUpdateCursor;
                     }
                 }
-                else
-                {
-                    _logger.LogInformation("   No new orders");
-                }
 
-                lock (_processedOrdersLock)
-                {
-                    _lastPollTime = DateTime.UtcNow;
-                }
-
-                _lastSuccessfulPollAt = DateTime.UtcNow;
-
-                // Written before the next poll can advance the cursor again. Forced when this batch
-                // marked something processed: losing that entry to a crash is what makes an order
-                // print twice, whereas losing a few seconds of cursor only costs a re-fetch that the
-                // dedup set then absorbs.
-                PersistCursor(force: dedupChanged);
+                PersistCursor(
+                    force: dedupChanged || cursorChanged,
+                    proposedLastPollTime: completedAt,
+                    proposedUpdateCursor: nextUpdateCursor,
+                    hasProposedUpdateCursor: true);
 
                 OnConnectionStatusChanged($"Connected - last poll: {DateTime.Now:HH:mm:ss}");
             }
@@ -1012,16 +1039,132 @@ public class EventStreamingService : IEventStreamingService
             catch (HttpRequestException httpEx)
             {
                 _logger.LogError(httpEx, "❌ Network error during polling");
-                _requestLogService.LogError(PollingLogOperation, "Network error while polling for orders", httpEx.Message);
+                _requestLogService.LogError(
+                    PollingLogOperation, "Network error while polling for orders", httpEx.Message);
                 OnConnectionStatusChanged($"Network error: {httpEx.Message}");
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "❌ Error during polling");
+                _requestLogService.LogError(PollingLogOperation, "Error during polling", ex.Message);
                 OnConnectionStatusChanged($"Error: {ex.Message}");
             }
         }
 
         _logger.LogInformation("🛑 Polling service stopped");
+    }
+
+    /// <summary>Fetches one successful page. A body-level success=false is a feed failure, not empty work.</summary>
+    private async Task<OrderFeedParseResult?> FetchFeedPageAsync(
+        HttpClient httpClient,
+        string baseUrl,
+        DateTime modifiedSince,
+        string? language,
+        string? updateCursor,
+        CancellationToken cancellationToken)
+    {
+        var pollUrl = BuildFeedUrl(baseUrl, modifiedSince, language, updateCursor);
+        _logger.LogInformation("Fetching printer feed page {Url}", pollUrl);
+        using var response = await httpClient.GetAsync(pollUrl, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync(cancellationToken);
+            var bodyPreview = errorBody[..Math.Min(200, errorBody.Length)];
+            _logger.LogWarning("❌ Polling failed: {StatusCode} - {Body}", response.StatusCode, bodyPreview);
+            var detail = response.StatusCode == System.Net.HttpStatusCode.Unauthorized
+                ? "The API key is missing or incorrect. Enter the printer API key in Settings, then Save."
+                : bodyPreview;
+            _requestLogService.LogError(
+                PollingLogOperation, $"Poll failed: {response.StatusCode}", detail);
+            OnConnectionStatusChanged($"Poll failed: {response.StatusCode}");
+            return null;
+        }
+
+        var json = await response.Content.ReadAsStringAsync(cancellationToken);
+        var result = OrderFeedParser.Parse(json);
+        if (!result.IsSuccess || !result.HasDataEnvelope)
+        {
+            var detail = result.FailureMessage ?? "The backend rejected the printer feed response.";
+            LogUpdateFeedFailure(detail);
+            return null;
+        }
+
+        return result;
+    }
+
+    /// <summary>Builds the additive feed URL without losing the opaque update cursor.</summary>
+    public static string BuildFeedUrl(
+        string apiBaseUrl,
+        DateTime modifiedSince,
+        string? language,
+        string? updateCursor = null)
+    {
+        var url = $"{apiBaseUrl.TrimEnd('/')}/api/orders/printer-feed?modifiedSince={modifiedSince:o}";
+        if (!string.IsNullOrWhiteSpace(language))
+            url += $"&language={Uri.EscapeDataString(language)}";
+        if (!string.IsNullOrWhiteSpace(updateCursor))
+            url += $"&updateCursor={Uri.EscapeDataString(updateCursor)}";
+        return url;
+    }
+
+    /// <summary>
+    /// Commits one update page position only after its jobs have been accepted by the update store.
+    /// The legacy cursor store is used only by hosts that do not provide an update store.
+    /// </summary>
+    private bool TryAdvanceUpdateCursor(string? cursor)
+    {
+        if (_updateJobStore is not null)
+        {
+            if (!_updateJobStore.TryAdvanceUpdateCursor(cursor))
+            {
+                LogUpdateFeedFailure("Could not persist the update-feed cursor; the page will be retried.");
+                return false;
+            }
+
+            // The store has accepted this cursor durably, so keeping the in-memory value ahead is
+            // safe even if the legacy order-cursor mirror later fails.
+            lock (_processedOrdersLock)
+            {
+                _lastUpdateCursor = cursor;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>Durably stages updates before notifying the asynchronous print pipeline.</summary>
+    private bool StageUpdates(IEnumerable<PrinterFeedUpdate> updates, ref bool dedupChanged)
+    {
+        foreach (var update in updates)
+        {
+            if (_updateJobStore is null)
+            {
+                OnUpdateReceived(update);
+                continue;
+            }
+
+            if (!_updateJobStore.AddOrGet(update, out _, out var shouldDispatch))
+            {
+                LogUpdateFeedFailure($"Could not durably stage update job {update.JobId}.");
+                return false;
+            }
+
+            dedupChanged = true;
+            if (shouldDispatch)
+                OnUpdateReceived(update);
+        }
+
+        return true;
+    }
+
+    private void LogUpdateFeedFailure(string message)
+    {
+        _logger.LogError("Update feed failed: {Message}", message);
+        _requestLogService.LogError(PollingLogOperation, "Update feed failed", message);
+    }
+
+    protected virtual void OnUpdateReceived(PrinterFeedUpdate update)
+    {
+        UpdateReceived?.Invoke(this, update);
     }
 }

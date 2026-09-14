@@ -45,6 +45,7 @@
     <!-- Order models (MAUI-free; plain System.Text.Json records). Pinned here to guard the
          backend-DTO mirror after a string-vs-object drift on deliveryAddress wedged the prod poll. -->
     <Compile Include="..\PrinterAPP\Models\Order.cs" Link="Linked\Order.cs" />
+    <Compile Include="..\PrinterAPP\Models\PaymentMethodCode.cs" Link="Linked\PaymentMethodCode.cs" />
     <Compile Include="..\PrinterAPP\Models\DeliveryAddress.cs" Link="Linked\DeliveryAddress.cs" />
     <!-- Resilient per-order feed parser (MAUI-free): one bad order must not wedge the whole poll batch. -->
     <Compile Include="..\PrinterAPP\Services\OrderFeedParser.cs" Link="Linked\OrderFeedParser.cs" />
@@ -67,12 +68,18 @@
     <Compile Include="..\PrinterAPP\Models\PrintAck.cs" Link="Linked\PrintAck.cs" />
     <Compile Include="..\PrinterAPP\Models\DevicePrintTarget.cs" Link="Linked\DevicePrintTarget.cs" />
     <Compile Include="..\PrinterAPP\Models\DevicePrintStatus.cs" Link="Linked\DevicePrintStatus.cs" />
+    <Compile Include="..\PrinterAPP\Models\DevicePrintJobType.cs" Link="Linked\DevicePrintJobType.cs" />
+    <Compile Include="..\PrinterAPP\Models\PrinterFeedUpdate.cs" Link="Linked\PrinterFeedUpdate.cs" />
+    <Compile Include="..\PrinterAPP\Models\PrintUpdateJobState.cs" Link="Linked\PrintUpdateJobState.cs" />
+    <Compile Include="..\PrinterAPP\Models\PrintUpdateJobRecord.cs" Link="Linked\PrintUpdateJobRecord.cs" />
     <Compile Include="..\PrinterAPP\Services\ITelemetryClient.cs" Link="Linked\ITelemetryClient.cs" />
     <Compile Include="..\PrinterAPP\Services\TelemetryClient.cs" Link="Linked\TelemetryClient.cs" />
     <Compile Include="..\PrinterAPP\Services\TelemetrySendResult.cs" Link="Linked\TelemetrySendResult.cs" />
     <Compile Include="..\PrinterAPP\Services\TelemetryPayloads.cs" Link="Linked\TelemetryPayloads.cs" />
     <Compile Include="..\PrinterAPP\Services\IPrintAckOutbox.cs" Link="Linked\IPrintAckOutbox.cs" />
     <Compile Include="..\PrinterAPP\Services\PrintAckOutbox.cs" Link="Linked\PrintAckOutbox.cs" />
+    <Compile Include="..\PrinterAPP\Services\IPrintUpdateJobStore.cs" Link="Linked\IPrintUpdateJobStore.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrintUpdateJobStore.cs" Link="Linked\PrintUpdateJobStore.cs" />
     <!-- Order-print composition (MAUI-free after the PrintStyleSettingsService path-provider seam): the
          real ESC/POS receipt builder, driven to a loopback TcpListener for the print-to-sink test. Pulls
          in the request-log boundary (MAUI-free since the LogEntry extraction). -->
@@ -80,8 +87,27 @@
     <!-- Kitchen routing, extracted pure so the tree walk is testable without a printer: since the
          backend made OrderDto.Items root-only, mis-routing a bundle component means a kitchen
          silently gets no ticket. -->
+    <Compile Include="..\PrinterAPP\Services\KitchenRoutingPolicy.cs" Link="Linked\KitchenRoutingPolicy.cs" />
+    <Compile Include="..\PrinterAPP\Services\KitchenDestinationResolver.cs" Link="Linked\KitchenDestinationResolver.cs" />
     <Compile Include="..\PrinterAPP\Services\KitchenTicketFilter.cs" Link="Linked\KitchenTicketFilter.cs" />
+    <Compile Include="..\PrinterAPP\Services\KitchenRoutingAnalysis.cs" Link="Linked\KitchenRoutingAnalysis.cs" />
+    <Compile Include="..\PrinterAPP\Services\UpdateJobRouting.cs" Link="Linked\UpdateJobRouting.cs" />
+    <Compile Include="..\PrinterAPP\Services\UpdateReceiptComposer.cs" Link="Linked\UpdateReceiptComposer.cs" />
+    <!-- Routing settings mapper is MAUI-free so load/save/reset/validation stay unit-testable. -->
+    <Compile Include="..\PrinterAPP\Services\KitchenRoutingSettingsMapper.cs" Link="Linked\KitchenRoutingSettingsMapper.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderPrintService.cs" Link="Linked\OrderPrintService.cs" />
+    <Compile Include="..\PrinterAPP\Services\KitchenPrintOutcome.cs" Link="Linked\KitchenPrintOutcome.cs" />
+    <!-- The headless order pipeline (MAUI-free since the path-provider seams): pipeline-level print
+         outcomes are tested through the REAL OrderPipeline driving the REAL OrderPrintService into
+         loopback sinks. SentrySdk is inert without a DSN; the core Sentry package (already the base
+         of the app head's Sentry.Maui) satisfies the CaptureException calls. -->
+    <Compile Include="..\PrinterAPP\Services\IOrderPipeline.cs" Link="Linked\IOrderPipeline.cs" />
+    <Compile Include="..\PrinterAPP\Services\OrderPipeline.cs" Link="Linked\OrderPipeline.cs" />
+    <Compile Include="..\PrinterAPP\Services\OrderPipeline.Processing.cs" Link="Linked\OrderPipeline.Processing.cs" />
+    <Compile Include="..\PrinterAPP\Services\IOrderHistoryService.cs" Link="Linked\IOrderHistoryService.cs" />
+    <Compile Include="..\PrinterAPP\Services\OrderHistoryItem.cs" Link="Linked\OrderHistoryItem.cs" />
+    <Compile Include="..\PrinterAPP\Services\ITelemetryScheduler.cs" Link="Linked\ITelemetryScheduler.cs" />
+    <Compile Include="..\PrinterAPP\Services\IDeviceIdentityService.cs" Link="Linked\IDeviceIdentityService.cs" />
     <!-- Receipt label localization + language resolution + the shared per-item composer (all pure,
          MAUI-free): print-language selection is resolved by PrintLanguagePolicy, labels come from
          PrintLabelCatalog, and both surfaces compose their item blocks through ReceiptComposer. -->
@@ -114,6 +140,9 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.Logging.Abstractions" Version="9.0.0" />
+    <!-- Core of the app head's Sentry.Maui, same minor: OrderPipeline links here and its
+         CaptureException calls must compile. Inert in tests — no DSN is ever initialized. -->
+    <PackageReference Include="Sentry" Version="6.6.0" />
     <!-- Only so the DI-construction guard below can use the same container MauiProgram does:
          EventStreamingService's poll interval is an OPTIONAL constructor parameter, and the app head
          (which no PR job compiles) registers the type by interface. See

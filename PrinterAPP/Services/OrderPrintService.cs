@@ -81,19 +81,25 @@ public class OrderPrintService : IOrderPrintService
     }
 
     /// <summary>
-    /// Prints order to all appropriate printers: Cashier + FrontKitchen + BackKitchen (filtered by item KitchenType)
+    /// Prints order to every destination it owes work: always Cashier (full receipt with prices),
+    /// then the kitchen tickets the routing policy asks for. Stations keeps the legacy Front/Back
+    /// split byte-for-byte and routes unassigned work to a Default ticket; SingleKitchen composes
+    /// ONE General ticket instead and owes the stations nothing.
     /// </summary>
-    public async Task<(bool Cashier, bool FrontKitchen, bool BackKitchen)> PrintOrderToAllPrintersAsync(
-        Order order,
-        bool isManualPrint = false,
-        CancellationToken cancellationToken = default)
+    public async Task<(bool Cashier, KitchenPrintOutcome FrontKitchen, KitchenPrintOutcome BackKitchen, KitchenPrintOutcome GeneralDefault)>
+        PrintOrderToAllPrintersAsync(
+            Order order,
+            bool isManualPrint = false,
+            CancellationToken cancellationToken = default)
     {
         _logger.LogInformation("🖨️ Printing order {OrderNumber} to all printers", order.OrderNumber);
 
         var config = await _printerService.LoadConfigurationAsync();
+        var policy = new KitchenRoutingPolicy(config.KitchenRoutingMode);
         bool cashierSuccess = false;
-        bool frontKitchenSuccess = false;
-        bool backKitchenSuccess = false;
+        var frontKitchenSuccess = KitchenPrintOutcome.Failed;
+        var backKitchenSuccess = KitchenPrintOutcome.Failed;
+        var generalDefaultSuccess = KitchenPrintOutcome.Failed;
 
         // 1. ALWAYS print to Cashier (full receipt with prices)
         try
@@ -106,20 +112,116 @@ public class OrderPrintService : IOrderPrintService
             _logger.LogError(ex, "Error printing to cashier");
         }
 
-        // 2. Route the item tree to each kitchen.
-        //
-        // Both tickets are built up front so that "does this kitchen get a ticket at all" is
-        // answered by the very thing that will be printed — the two used to be decided separately,
-        // and separately is how they drifted apart. Since backend PR #237 (issue #234) made
-        // OrderDto.Items root-only, a top-level scan misses every bundle component: a FrontKitchen
-        // combo containing BackKitchen fries produced no back-kitchen ticket, and printed the fries
-        // on the front kitchen's. KitchenTicketFilter walks the whole tree instead.
-        var frontKitchenOrder = CreateFilteredOrder(order, FRONT_KITCHEN);
-        var backKitchenOrder = CreateFilteredOrder(order, BACK_KITCHEN);
+        // 2. Route the item tree under the tenant's policy (issue #113). Both station tickets are
+        // built up front so that "does this kitchen get a ticket at all" is answered by the very
+        // thing that will be printed — the two used to be decided separately, and separately is how
+        // they drifted apart. Since backend PR #237 (issue #234) made OrderDto.Items root-only, a
+        // top-level scan misses every bundle component: a FrontKitchen combo containing BackKitchen
+        // fries produced no back-kitchen ticket, and printed the fries on the front kitchen's.
+        // KitchenTicketFilter walks the whole tree instead.
+        if (policy.Mode == KitchenRoutingMode.SingleKitchen)
+        {
+            // Every printable line belongs on ONE General ticket at the resolved destination; the
+            // stations are owed nothing, which reports the same trivially-true the empty-kitchen
+            // path has always reported.
+            var generalSelection = KitchenTicketFilter.SelectionForDestination(
+                order.Items, policy, KitchenTicketDestination.General);
+            generalDefaultSuccess = await PrintGeneralOrDefaultTicketAsync(
+                order.WithItems(generalSelection.Items.ToList()),
+                config, isManualPrint, "General Kitchen", generalSelection.HasUnknown);
+            frontKitchenSuccess = KitchenPrintOutcome.Sent;
+            backKitchenSuccess = KitchenPrintOutcome.Sent;
+        }
+        else
+        {
+            (frontKitchenSuccess, backKitchenSuccess) =
+                await PrintStationTicketsAsync(order, config, isManualPrint);
+
+            // Unassigned roots and their riders are Default work (the routing matrix in
+            // CASHIER-POS-REDESIGN-PLAN §9 — "unassigned" must never mean "silently omitted"):
+            // they used to drop out of both station tickets and print nothing at all.
+            var defaultSelection = KitchenTicketFilter.SelectionForDestination(
+                order.Items, policy, KitchenTicketDestination.Default);
+            generalDefaultSuccess = await PrintGeneralOrDefaultTicketAsync(
+                order.WithItems(defaultSelection.Items.ToList()),
+                config, isManualPrint, "Default Kitchen", defaultSelection.HasUnknown);
+        }
+
+        _logger.LogInformation("🖨️ Print complete for order {OrderNumber}: Cashier={C}, Front={F}, Back={B}, General/Default={G}",
+            order.OrderNumber, cashierSuccess, frontKitchenSuccess, backKitchenSuccess, generalDefaultSuccess);
+
+        return (cashierSuccess, frontKitchenSuccess, backKitchenSuccess, generalDefaultSuccess);
+    }
+
+    /// <summary>
+    /// Prints one additive UPDATE job. Unlike a legacy order receipt this is exactly one copy on the
+    /// resolved General/Default kitchen destination. Failed, unknown and unconfigured outcomes are
+    /// typed so the pipeline can retain the job instead of acknowledging a missing note as sent.
+    /// </summary>
+    public async Task<KitchenPrintOutcome> PrintUpdateAsync(
+        PrinterFeedUpdate update,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+        if (update.JobId == Guid.Empty
+            || update.Revision <= 0
+            || update.JobType != DevicePrintJobType.Update
+            || !UpdateJobRouting.IsUpdateTarget(update.Target)
+            || update.OrderId == Guid.Empty
+            || string.IsNullOrWhiteSpace(update.OrderNumber)
+            || string.IsNullOrWhiteSpace(update.Text)
+            || update.CreatedAt == default
+            || !string.Equals(update.Audience, "Kitchen", StringComparison.OrdinalIgnoreCase))
+        {
+            return KitchenPrintOutcome.Unknown;
+        }
+
+        var config = await _printerService.LoadConfigurationAsync();
+        if (!config.KitchenAutoPrint)
+        {
+            _logger.LogInformation("Automatic update printing is disabled for job {JobId}", update.JobId);
+            return KitchenPrintOutcome.Skipped;
+        }
+
+        var destination = UpdateJobRouting.Resolve(update.Target, config);
+        if (!destination.IsConfigured || destination.PrinterName is not { Length: > 0 } printerName)
+        {
+            _logger.LogWarning("No destination configured for update job {JobId}", update.JobId);
+            _requestLogService.LogPrintResponse(
+                "Update", update.OrderNumber, false, "No kitchen destination configured");
+            return KitchenPrintOutcome.NotConfigured;
+        }
+
+        var content = UpdateReceiptComposer.Compose(update);
+        var sent = await PrintRawContentAsync(printerName, content);
+        _logger.LogInformation("Update job {JobId} to {Printer}: {Result}",
+            update.JobId, destination.PrinterName, sent ? "✓" : "✗");
+        return sent ? KitchenPrintOutcome.Sent : KitchenPrintOutcome.Failed;
+    }
+
+    /// <summary>
+    /// The legacy station path, byte-for-byte: the Front ticket and the Back ticket exactly as they
+    /// printed before the routing policy existed. Only the Stations policy calls this.
+    /// </summary>
+    private async Task<(KitchenPrintOutcome Front, KitchenPrintOutcome Back)> PrintStationTicketsAsync(
+        Order order,
+        PrinterConfiguration config,
+        bool isManualPrint)
+    {
+        var policy = KitchenRoutingPolicy.Stations;
+        var frontSelection = KitchenTicketFilter.SelectionForDestination(
+            order.Items, policy, KitchenTicketDestination.FrontKitchen);
+        var backSelection = KitchenTicketFilter.SelectionForDestination(
+            order.Items, policy, KitchenTicketDestination.BackKitchen);
+        var frontKitchenOrder = order.WithItems(frontSelection.Items.ToList());
+        var backKitchenOrder = order.WithItems(backSelection.Items.ToList());
         var hasFrontKitchenItems = frontKitchenOrder.Items.Count > 0;
         var hasBackKitchenItems = backKitchenOrder.Items.Count > 0;
 
-        // 3. Print to FrontKitchen if there are FrontKitchen items
+        var frontKitchenSuccess = KitchenPrintOutcome.Failed;
+        var backKitchenSuccess = KitchenPrintOutcome.Failed;
+
+        // Print to FrontKitchen if there are FrontKitchen items
         if (hasFrontKitchenItems)
         {
             try
@@ -150,10 +252,17 @@ public class OrderPrintService : IOrderPrintService
         }
         else
         {
-            frontKitchenSuccess = true; // No items to print
+            frontKitchenSuccess = frontSelection.HasUnknown
+                ? KitchenPrintOutcome.Unknown
+                : KitchenPrintOutcome.Sent; // No known items to print
         }
 
-        // 4. Print to BackKitchen if there are BackKitchen items
+        // Keep any known leaf work that can be routed, but surface an unknown sibling instead of
+        // silently claiming the whole station succeeded.
+        if (frontSelection.HasUnknown)
+            frontKitchenSuccess = KitchenPrintOutcome.Unknown;
+
+        // Print to BackKitchen if there are BackKitchen items
         if (hasBackKitchenItems)
         {
             try
@@ -182,13 +291,69 @@ public class OrderPrintService : IOrderPrintService
         }
         else
         {
-            backKitchenSuccess = true; // No items to print
+            backKitchenSuccess = backSelection.HasUnknown
+                ? KitchenPrintOutcome.Unknown
+                : KitchenPrintOutcome.Sent; // No known items to print
         }
 
-        _logger.LogInformation("🖨️ Print complete for order {OrderNumber}: Cashier={C}, Front={F}, Back={B}",
-            order.OrderNumber, cashierSuccess, frontKitchenSuccess, backKitchenSuccess);
+        if (backSelection.HasUnknown)
+            backKitchenSuccess = KitchenPrintOutcome.Unknown;
 
-        return (cashierSuccess, frontKitchenSuccess, backKitchenSuccess);
+        return (frontKitchenSuccess, backKitchenSuccess);
+    }
+
+    /// <summary>
+    /// Composes and sends the ONE General (SingleKitchen) or Default (Stations) kitchen ticket
+    /// through the shared transport path, to the destination
+    /// <see cref="KitchenDestinationResolver"/> picks over the saved configuration. An empty
+    /// selection owes nothing and is trivially satisfied; work with no resolvable destination is
+    /// <see cref="KitchenPrintStatus.NotConfigured"/> — the kitchen never sees a ticket, so it is
+    /// neither printed nor success (issue #113 C02: this used to collapse into a silent true).
+    /// </summary>
+    private async Task<KitchenPrintOutcome> PrintGeneralOrDefaultTicketAsync(
+        Order filtered,
+        PrinterConfiguration config,
+        bool isManualPrint,
+        string header,
+        bool hasUnknown = false)
+    {
+        if (filtered.Items.Count == 0)
+        {
+            return hasUnknown ? KitchenPrintOutcome.Unknown : KitchenPrintOutcome.Sent;
+        }
+
+        // Manual reprints bypass the auto-print toggle (consistent with the Front/Back path).
+        // An intentionally-skipped print (auto-print off) is a success, not a failure — checked
+        // before resolution, exactly how Front/Back skip.
+        if (!isManualPrint && !config.KitchenAutoPrint)
+        {
+            _logger.LogInformation("Auto-print disabled for {Header}", header);
+            return hasUnknown ? KitchenPrintOutcome.Unknown : KitchenPrintOutcome.Skipped;
+        }
+
+        var resolution = KitchenDestinationResolver.Resolve(new KitchenDestinationSettings(
+            config.DefaultKitchenPrinterName,
+            config.KitchenPrinterName,
+            config.FrontKitchenPrinterName,
+            config.BackKitchenPrinterName));
+
+        if (!resolution.IsConfigured || resolution.PrinterName is not { Length: > 0 } printerName)
+        {
+            _logger.LogWarning(
+                "No resolvable {Header} destination for order {OrderNumber}: {ItemCount} items stay pending configuration",
+                header, filtered.OrderNumber, filtered.Items.Count);
+            _requestLogService.LogPrintResponse(
+                header, filtered.OrderNumber, false, "No kitchen destination configured");
+            return hasUnknown ? KitchenPrintOutcome.Unknown : KitchenPrintOutcome.NotConfigured;
+        }
+
+        var content = FormatKitchenReceipt(filtered, config, config.KitchenPaperWidth, header);
+        var sent = await PrintRawContentAsync(printerName, content);
+        _logger.LogInformation("{Header} print ({ItemCount} items) to {Printer}: {Result}",
+            header, filtered.Items.Count, resolution.PrinterName, sent ? "✓" : "✗");
+        if (hasUnknown)
+            return KitchenPrintOutcome.Unknown;
+        return sent ? KitchenPrintOutcome.Sent : KitchenPrintOutcome.Failed;
     }
 
     /// <summary>
@@ -459,7 +624,7 @@ public class OrderPrintService : IOrderPrintService
             foreach (var item in order.Items)
             {
                 sb.Append(ApplyStyle(styles.CashierItemLine));
-                ReceiptComposer.AppendCashierItemLines(sb, item, depth: 0, spacing, labels);
+                ReceiptComposer.AppendCashierItemLines(sb, item, depth: 0, spacing, labels, currency: order.Currency);
                 sb.Append(ResetStyle(styles.CashierItemLine));
             }
         }
@@ -473,16 +638,16 @@ public class OrderPrintService : IOrderPrintService
 
         // Subtotal, Tax, Discounts, Delivery Fee, Tip (Cashier Totals section)
         sb.Append(ApplyStyle(styles.CashierTotals));
-        sb.AppendLine($"{labels.Subtotal}: CHF {ReceiptComposer.Money(order.SubTotal)}");
+        sb.AppendLine($"{labels.Subtotal}: {ReceiptComposer.Money(order.SubTotal, order.Currency)}");
 
         if (order.Tax > 0)
         {
-            sb.AppendLine($"{labels.Tax}: CHF {ReceiptComposer.Money(order.Tax)}");
+            sb.AppendLine($"{labels.Tax}: {ReceiptComposer.Money(order.Tax, order.Currency)}");
         }
 
         if (order.Discount > 0)
         {
-            sb.AppendLine($"{labels.Discount} ({order.DiscountPercentage.ToString(CultureInfo.InvariantCulture)}%): -CHF {ReceiptComposer.Money(order.Discount)}");
+            sb.AppendLine($"{labels.Discount} ({order.DiscountPercentage.ToString(CultureInfo.InvariantCulture)}%): -{ReceiptComposer.Money(order.Discount, order.Currency)}");
         }
 
         // Customer-specific discount money is SEPARATE from Discount (backend OrderPricingService:
@@ -490,7 +655,7 @@ public class OrderPrintService : IOrderPrintService
         // breakdown does not reconcile against the total whenever it applied.
         if (order.CustomerDiscountAmount > 0)
         {
-            sb.AppendLine($"{labels.CustomerDiscount}: -CHF {ReceiptComposer.Money(order.CustomerDiscountAmount)}");
+            sb.AppendLine($"{labels.CustomerDiscount}: -{ReceiptComposer.Money(order.CustomerDiscountAmount, order.Currency)}");
         }
 
         if (!string.IsNullOrWhiteSpace(order.PromoCode))
@@ -500,12 +665,12 @@ public class OrderPrintService : IOrderPrintService
 
         if (order.DeliveryFee > 0)
         {
-            sb.AppendLine($"{labels.DeliveryFee}: CHF {ReceiptComposer.Money(order.DeliveryFee)}");
+            sb.AppendLine($"{labels.DeliveryFee}: {ReceiptComposer.Money(order.DeliveryFee, order.Currency)}");
         }
 
         if (order.Tip > 0)
         {
-            sb.AppendLine($"{labels.Tip}: CHF {ReceiptComposer.Money(order.Tip)}");
+            sb.AppendLine($"{labels.Tip}: {ReceiptComposer.Money(order.Tip, order.Currency)}");
         }
 
         sb.Append(ResetStyle(styles.CashierTotals));
@@ -513,20 +678,20 @@ public class OrderPrintService : IOrderPrintService
 
         // Total (Cashier Grand Total section — defaults: double size, bold, emphasized)
         sb.Append(ApplyStyle(styles.CashierGrandTotal));
-        sb.AppendLine($"{labels.Total}: CHF {ReceiptComposer.Money(order.Total)}");
+        sb.AppendLine($"{labels.Total}: {ReceiptComposer.Money(order.Total, order.Currency)}");
         sb.Append(ResetStyle(styles.CashierGrandTotal));
         sb.AppendLine();
 
         // What has already been paid, and what the till still has to collect.
         if (order.TotalPaid > 0)
         {
-            sb.AppendLine($"{labels.Paid}: CHF {ReceiptComposer.Money(order.TotalPaid)}");
+            sb.AppendLine($"{labels.Paid}: {ReceiptComposer.Money(order.TotalPaid, order.Currency)}");
         }
 
         if (order.RemainingAmount > 0)
         {
             sb.Append(EXTRA_DARK_ON);
-            sb.AppendLine($"{labels.Due}: CHF {ReceiptComposer.Money(order.RemainingAmount)}");
+            sb.AppendLine($"{labels.Due}: {ReceiptComposer.Money(order.RemainingAmount, order.Currency)}");
             sb.Append(EXTRA_DARK_OFF);
         }
 
@@ -539,10 +704,11 @@ public class OrderPrintService : IOrderPrintService
             sb.AppendLine($"{labels.Payment}:");
             foreach (var payment in order.Payments)
             {
+                var paymentLabel = labels.PaymentMethodLabel(payment.PaymentMethod);
                 var method = string.IsNullOrWhiteSpace(payment.CardLastFourDigits)
-                    ? payment.PaymentMethod
-                    : $"{payment.PaymentMethod} *{payment.CardLastFourDigits}";
-                sb.AppendLine($"{method}: CHF {ReceiptComposer.Money(payment.Amount)}");
+                    ? paymentLabel
+                    : $"{paymentLabel} *{payment.CardLastFourDigits}";
+                sb.AppendLine($"{method}: {ReceiptComposer.Money(payment.Amount, order.Currency ?? payment.Currency)}");
             }
             sb.Append(EXTRA_DARK_OFF);
             sb.AppendLine();

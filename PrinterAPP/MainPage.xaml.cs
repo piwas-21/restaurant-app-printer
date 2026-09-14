@@ -17,7 +17,9 @@ public partial class MainPage : ContentPage
     private readonly IUpdateService _updateService;
     private readonly IPrinterTestService _printerTestService;
     private readonly ILogger<MainPage> _logger;
+    private readonly KitchenRoutingSettingsControls _routingControls;
     private PrinterConfiguration _config;
+    private KitchenRoutingSettingsProjection _routingSettings;
     private bool _isServiceRunning = false;
 
     public MainPage(
@@ -30,6 +32,12 @@ public partial class MainPage : ContentPage
         ILogger<MainPage> logger)
     {
         InitializeComponent();
+        _routingControls = new(
+            KitchenRoutingModePicker,
+            new(KitchenPrinterPicker, KitchenPrinterIpEntry),
+            new(FrontKitchenPrinterPicker, FrontKitchenPrinterIpEntry),
+            new(BackKitchenPrinterPicker, BackKitchenPrinterIpEntry),
+            CashierPrinterPicker);
         _printerService = printerService;
         _eventStreamingService = eventStreamingService;
         _orderPipeline = orderPipeline;
@@ -38,6 +46,7 @@ public partial class MainPage : ContentPage
         _printerTestService = printerTestService;
         _logger = logger;
         _config = new PrinterConfiguration();
+        _routingSettings = KitchenRoutingSettingsMapper.Load(_config);
 
         // Status only. Printing itself is owned by IOrderPipeline so it keeps working with no page
         // on screen — see ADR-007.
@@ -73,6 +82,11 @@ public partial class MainPage : ContentPage
             RestaurantNameEntry.Text = _config.RestaurantName;
             KitchenLocationEntry.Text = _config.KitchenLocation;
 
+            // Kitchen routing is projected through a MAUI-free mapper so legacy fallbacks and
+            // explicit General/Front/Back targets round-trip without page business logic.
+            _routingSettings = KitchenRoutingSettingsMapper.Load(_config);
+            KitchenRoutingSettingsUiBinder.ApplyToUi(_routingControls, _routingSettings);
+
             // Kitchen printer settings
             KitchenAutoPrintSwitch.IsToggled = _config.KitchenAutoPrint;
             KitchenPrintCopiesEntry.Text = _config.KitchenPrintCopies.ToString();
@@ -100,13 +114,8 @@ public partial class MainPage : ContentPage
             // Load available printers
             await LoadPrintersAsync();
 
-            // Round-trip a saved network IP OR sink target into the IP entry (the picker can't hold
-            // either, and on Android it enumerates nothing). The sink must round-trip for the same
-            // reason the IP does, and one worse: a sink that loads into a blank field is invisible —
-            // the operator sees no sign the printer is capturing to disk, and the next save silently
-            // replaces it with whatever the picker happens to hold.
-            if (PrinterTargetEntry.IsNetworkFieldTarget(_config.KitchenPrinterName))
-                KitchenPrinterIpEntry.Text = _config.KitchenPrinterName;
+            // Cashier network/sink targets round-trip separately; kitchen targets were applied
+            // through KitchenRoutingSettingsMapper before the printer list was loaded.
             if (PrinterTargetEntry.IsNetworkFieldTarget(_config.CashierPrinterName))
                 CashierPrinterIpEntry.Text = _config.CashierPrinterName;
 
@@ -174,53 +183,11 @@ public partial class MainPage : ContentPage
 
             if (printers != null && printers.Count > 0)
             {
-                // Load both kitchen and cashier printer pickers
-                KitchenPrinterPicker.ItemsSource = printers;
-                CashierPrinterPicker.ItemsSource = printers;
-
-                // Select saved kitchen printer if it exists
-                if (!string.IsNullOrEmpty(_config.KitchenPrinterName))
-                {
-                    var savedPrinter = printers.FirstOrDefault(p => p.Contains(_config.KitchenPrinterName));
-                    if (savedPrinter != null)
-                    {
-                        KitchenPrinterPicker.SelectedItem = savedPrinter;
-                    }
-                    else if (printers.Count > 0)
-                    {
-                        KitchenPrinterPicker.SelectedIndex = 0;
-                    }
-                }
-                else if (printers.Count > 0)
-                {
-                    KitchenPrinterPicker.SelectedIndex = 0;
-                }
-
-                // Select saved cashier printer if it exists
-                if (!string.IsNullOrEmpty(_config.CashierPrinterName))
-                {
-                    var savedPrinter = printers.FirstOrDefault(p => p.Contains(_config.CashierPrinterName));
-                    if (savedPrinter != null)
-                    {
-                        CashierPrinterPicker.SelectedItem = savedPrinter;
-                    }
-                    else if (printers.Count > 1)
-                    {
-                        CashierPrinterPicker.SelectedIndex = 1; // Default to second printer if available
-                    }
-                    else if (printers.Count > 0)
-                    {
-                        CashierPrinterPicker.SelectedIndex = 0;
-                    }
-                }
-                else if (printers.Count > 1)
-                {
-                    CashierPrinterPicker.SelectedIndex = 1; // Default to second printer
-                }
-                else if (printers.Count > 0)
-                {
-                    CashierPrinterPicker.SelectedIndex = 0;
-                }
+                KitchenRoutingSettingsUiBinder.PopulatePrinterPickers(
+                    printers,
+                    _routingSettings,
+                    _routingControls,
+                    _config.CashierPrinterName);
             }
             else
             {
@@ -344,6 +311,9 @@ public partial class MainPage : ContentPage
                 if (!e.Cashier) failed.Add("cashier");
                 if (!e.FrontKitchen) failed.Add("front kitchen");
                 if (!e.BackKitchen) failed.Add("back kitchen");
+                // NotConfigured General/Default work fails AllPrinted without touching the bool
+                // flags above — name it, or the status label would say nothing failed (issue #113).
+                if (!e.GeneralDefault) failed.Add("general/default kitchen");
 
                 StatusLabel.Text = $"Order #{e.Order.OrderNumber} — {string.Join(" + ", failed)} did NOT print";
                 StatusLabel.TextColor = CraftColors.WarningText;
@@ -472,11 +442,20 @@ public partial class MainPage : ContentPage
     {
         try
         {
+            var routingSettings = KitchenRoutingSettingsUiBinder.ReadFromUi(
+                _routingSettings,
+                _routingControls);
+            var routingValidation = KitchenRoutingSettingsMapper.Validate(routingSettings);
+            if (!routingValidation.IsValid)
+            {
+                await DisplayAlert("Invalid kitchen routing", routingValidation.ErrorMessage, "OK");
+                return;
+            }
+
             // Validate any manually-entered printer IPs up front so we don't save an unusable value
             // (which would later be mis-routed to the Windows spooler as a "printer name").
             foreach (var (entry, label) in new[]
                      {
-                         (KitchenPrinterIpEntry.Text, "Kitchen"),
                          (CashierPrinterIpEntry.Text, "Cashier"),
                      })
             {
@@ -548,23 +527,16 @@ public partial class MainPage : ContentPage
                 _ => PrintLanguagePolicy.English,
             };
 
-            // Kitchen printer settings
+            // Kitchen printer settings. The mapper owns routing mode and target migration. It
+            // intentionally leaves KitchenPrinterName untouched as the legacy fallback.
             _config.KitchenAutoPrint = KitchenAutoPrintSwitch.IsToggled;
             _config.KitchenPaperWidth = KitchenPaperWidthPicker.SelectedIndex == 0 ? 80 : 58;
             if (int.TryParse(KitchenPrintCopiesEntry.Text, out int kitchenCopies))
             {
                 _config.KitchenPrintCopies = Math.Max(1, Math.Min(kitchenCopies, 5)); // Limit 1-5
             }
-            // A manually-entered network IP takes precedence over the spooler picker (and is the
-            // only way to set a printer on Android, where the picker enumerates nothing).
-            if (!string.IsNullOrWhiteSpace(KitchenPrinterIpEntry.Text))
-            {
-                _config.KitchenPrinterName = KitchenPrinterIpEntry.Text.Trim();
-            }
-            else if (KitchenPrinterPicker.SelectedItem != null)
-            {
-                _config.KitchenPrinterName = KitchenPrinterPicker.SelectedItem.ToString()!.Replace(" (Default)", "").Trim();
-            }
+            KitchenRoutingSettingsMapper.Apply(_config, routingSettings);
+            _routingSettings = routingSettings;
 
             // Cashier printer settings
             _config.CashierAutoPrint = CashierAutoPrintSwitch.IsToggled;
@@ -700,6 +672,7 @@ public partial class MainPage : ContentPage
             {
                 // Reset to defaults
                 _config = new PrinterConfiguration();
+                _routingSettings = KitchenRoutingSettingsMapper.Load(_config);
 
                 // Update UI
                 ApiUrlEntry.Text = _config.ApiBaseUrl;
@@ -708,6 +681,7 @@ public partial class MainPage : ContentPage
                 KitchenLocationEntry.Text = _config.KitchenLocation;
 
                 // Kitchen printer settings
+                KitchenRoutingSettingsUiBinder.ApplyToUi(_routingControls, _routingSettings);
                 KitchenAutoPrintSwitch.IsToggled = _config.KitchenAutoPrint;
                 KitchenPrintCopiesEntry.Text = _config.KitchenPrintCopies.ToString();
                 KitchenPaperWidthPicker.SelectedIndex = _config.KitchenPaperWidth == 80 ? 0 : 1;
@@ -722,10 +696,14 @@ public partial class MainPage : ContentPage
                 RestrictStartTimePicker.Time = _config.RestrictStartTime;
                 RestrictEndTimePicker.Time = _config.RestrictEndTime;
 
-                if (KitchenPrinterPicker.ItemsSource != null && KitchenPrinterPicker.ItemsSource.Cast<object>().Any())
-                {
-                    KitchenPrinterPicker.SelectedIndex = 0;
-                }
+                // Routing targets reset to blank explicit fields. A legacy KitchenPrinterName,
+                // if present on disk, is not erased by this UI reset until the operator saves.
+                KitchenPrinterPicker.SelectedItem = null;
+                FrontKitchenPrinterPicker.SelectedItem = null;
+                BackKitchenPrinterPicker.SelectedItem = null;
+                KitchenPrinterIpEntry.Text = string.Empty;
+                FrontKitchenPrinterIpEntry.Text = string.Empty;
+                BackKitchenPrinterIpEntry.Text = string.Empty;
 
                 if (CashierPrinterPicker.ItemsSource != null && CashierPrinterPicker.ItemsSource.Cast<object>().Any())
                 {

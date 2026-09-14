@@ -1,119 +1,220 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using PrinterAPP.Models;
 
 namespace PrinterAPP.Services;
 
-/// <summary>
-/// Resilient parser for the printer-feed response body (<c>{ "data": { "items": [ ...orders ] } }</c>).
-///
-/// Deserialises every order in <c>data.items</c> INDEPENDENTLY so one malformed order cannot wedge the
-/// whole feed. A prod bug (fixed in PR #61 / v1.0.20) shipped because a single field drift
-/// (<c>deliveryAddress</c> typed <c>string</c> vs the object the backend sends) threw for the entire
-/// batch inside the poll loop; because <c>_lastPollTime</c> only advances after a successful batch, the
-/// next 5s poll re-fetched and re-threw on the same order forever — nothing printed until app restart.
-///
-/// Here each element is deserialised in its own try/catch: good orders come back in
-/// <see cref="OrderFeedParseResult.Orders"/>, and each failure is captured in
-/// <see cref="OrderFeedParseResult.Errors"/> (with the order number/index when extractable) for the
-/// caller to log to the Errors/Diagnostics page and skip. MAUI-free so the unit-test project
-/// (plain net10.0) can link it — same pattern as <see cref="PrinterTransportResolver"/>.
-/// </summary>
+/// <summary>Resilient parser for orders and additive update jobs in one printer-feed response.</summary>
 public static class OrderFeedParser
 {
-    // Same options the poll/SSE paths used for the whole-batch deserialize: case-insensitive matching so
-    // the backend's camelCase JSON binds to the models' PascalCase properties.
-    private static readonly JsonSerializerOptions Options = new() { PropertyNameCaseInsensitive = true };
-
-    /// <summary>
-    /// Parses a printer-feed response body. Never throws for a malformed order or a malformed envelope:
-    /// envelope/parse problems and per-order failures are returned in
-    /// <see cref="OrderFeedParseResult.Errors"/>. An absent or empty <c>data.items</c> array yields an
-    /// empty result with no errors (matches the old "no new orders" path).
-    /// </summary>
+    private static readonly JsonSerializerOptions Options = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter() },
+    };
+    /// <summary>Parses a feed body without throwing for malformed JSON or individual entries.</summary>
     public static OrderFeedParseResult Parse(string json)
     {
-        var orders = new List<Order>();
-        var errors = new List<OrderFeedParseError>();
-
-        JsonDocument document;
         try
         {
-            document = JsonDocument.Parse(json);
+            using var document = JsonDocument.Parse(json);
+            return ParseRoot(document.RootElement);
         }
-        // Broad by design: the whole point of this parser is that NOTHING about a bad response body
-        // escapes to wedge the poll loop. A malformed body (JsonException) or a null one
-        // (ArgumentNullException) becomes a reported envelope error, never a thrown exception.
         catch (Exception ex)
         {
-            errors.Add(new OrderFeedParseError(-1, null, $"Response body was not valid JSON: {ex.Message}"));
-            return new OrderFeedParseResult(orders, errors);
+            return InvalidBody(ex);
         }
-
-        using (document)
-        {
-            // data.items is the paged wrapper; a missing/empty array is a normal "no orders" poll.
-            if (!TryGetPropertyIgnoreCase(document.RootElement, "data", out var data)
-                || data.ValueKind != JsonValueKind.Object
-                || !TryGetPropertyIgnoreCase(data, "items", out var items)
-                || items.ValueKind != JsonValueKind.Array)
-            {
-                return new OrderFeedParseResult(orders, errors);
-            }
-
-            var index = 0;
-            foreach (var element in items.EnumerateArray())
-            {
-                try
-                {
-                    var order = element.Deserialize<Order>(Options);
-                    if (order is null)
-                    {
-                        errors.Add(new OrderFeedParseError(index, TryReadOrderNumber(element),
-                            "Order element deserialised to null."));
-                    }
-                    else
-                    {
-                        orders.Add(order);
-                    }
-                }
-                // Broad by design: one un-deserialisable order — for ANY reason, not just JsonException
-                // (a future model change could make System.Text.Json throw NotSupportedException etc.) —
-                // is logged + skipped by the caller; the rest of the batch still prints. This is the whole
-                // guarantee of the fix, so it must not be scoped to a single exception type.
-                catch (Exception ex)
-                {
-                    errors.Add(new OrderFeedParseError(index, TryReadOrderNumber(element), ex.Message));
-                }
-
-                index++;
-            }
-        }
-
-        return new OrderFeedParseResult(orders, errors);
     }
-
-    // Best-effort order number for diagnostics — read straight off the raw element so it works even when
-    // the element as a whole fails to deserialise (that's exactly when the caller needs to name the order).
-    private static string? TryReadOrderNumber(JsonElement element)
+    private static OrderFeedParseResult ParseRoot(JsonElement root)
     {
-        if (element.ValueKind == JsonValueKind.Object
-            && TryGetPropertyIgnoreCase(element, "orderNumber", out var orderNumber))
+        var status = ReadSuccessStatus(root);
+        if (!TryGetPropertyIgnoreCase(root, "data", out var data) || data.ValueKind != JsonValueKind.Object)
+            return InvalidEnvelope(status.FailureMessage);
+        var parsed = ParseData(data);
+        ApplyEnvelopeStatus(parsed, status);
+        return ToResult(parsed);
+    }
+    private static FeedStatus ReadSuccessStatus(JsonElement root)
+    {
+        if (!TryGetPropertyIgnoreCase(root, "success", out var success))
+            return new(true, null);
+        return success.ValueKind switch
         {
-            // Only String/Number are real order numbers. ToString() on Null/Bool/Object/Array would emit
-            // misleading raw JSON ("null", "true", "{}") into diagnostics, so treat those as "no number".
-            return orderNumber.ValueKind switch
-            {
-                JsonValueKind.String => orderNumber.GetString(),
-                JsonValueKind.Number => orderNumber.ToString(),
-                _ => null
-            };
+            JsonValueKind.True => new(true, null),
+            JsonValueKind.False => new(false, ReadMessage(root)),
+            _ => new(false, "The feed success flag was not a boolean."),
+        };
+    }
+    private static string? ReadMessage(JsonElement root) =>
+        TryGetPropertyIgnoreCase(root, "message", out var message) && message.ValueKind == JsonValueKind.String
+            ? message.GetString() : null;
+    private static ParsedData ParseData(JsonElement data)
+    {
+        var parsed = new ParsedData();
+        ParseOrdersIfPresent(data, parsed);
+        ReadNextUpdateCursor(data, parsed);
+        ReadHasMoreUpdates(data, parsed);
+        ParseUpdatesIfPresent(data, parsed);
+        ValidateUpdatePage(parsed);
+        return parsed;
+    }
+    private static void ParseOrdersIfPresent(JsonElement data, ParsedData parsed)
+    {
+        if (TryGetPropertyIgnoreCase(data, "items", out var items) && items.ValueKind == JsonValueKind.Array)
+            ParseOrders(items, parsed.Orders, parsed.Errors);
+    }
+    private static void ReadNextUpdateCursor(JsonElement data, ParsedData parsed)
+    {
+        if (!TryGetPropertyIgnoreCase(data, "nextUpdateCursor", out var cursor))
+            return;
+        if (cursor.ValueKind == JsonValueKind.String)
+        {
+            parsed.NextUpdateCursor = cursor.GetString();
+            if (string.IsNullOrWhiteSpace(parsed.NextUpdateCursor))
+                parsed.Fail("The update cursor was empty.");
+            return;
         }
-
+        if (cursor.ValueKind != JsonValueKind.Null)
+            parsed.Fail("The update cursor was not a string or null.");
+    }
+    private static void ReadHasMoreUpdates(JsonElement data, ParsedData parsed)
+    {
+        if (!TryGetPropertyIgnoreCase(data, "hasMoreUpdates", out var more))
+            return;
+        if (more.ValueKind == JsonValueKind.True)
+        {
+            parsed.HasMoreUpdates = true;
+            return;
+        }
+        if (more.ValueKind != JsonValueKind.False)
+            parsed.Fail("The update page flag was not a boolean.");
+    }
+    private static void ParseUpdatesIfPresent(JsonElement data, ParsedData parsed)
+    {
+        if (!TryGetPropertyIgnoreCase(data, "updates", out var updateArray))
+            return;
+        if (updateArray.ValueKind == JsonValueKind.Array)
+        {
+            ParseUpdates(updateArray, parsed.Updates, parsed.UpdateErrors);
+            return;
+        }
+        parsed.Fail("The update page was not an array.");
+    }
+    private static void ValidateUpdatePage(ParsedData parsed)
+    {
+        if ((parsed.Updates.Count > 0 || parsed.HasMoreUpdates)
+            && string.IsNullOrWhiteSpace(parsed.NextUpdateCursor))
+            parsed.Fail("An update page requires a non-empty next cursor.");
+    }
+    private static void ApplyEnvelopeStatus(ParsedData parsed, FeedStatus status)
+    {
+        if (!status.IsSuccess)
+        {
+            parsed.IsSuccess = false;
+            parsed.FailureMessage = status.FailureMessage ?? parsed.FailureMessage;
+        }
+        if (parsed.UpdateErrors.Count == 0)
+            return;
+        parsed.IsSuccess = false;
+        parsed.FailureMessage ??= $"The update page contained {parsed.UpdateErrors.Count} invalid item(s).";
+        parsed.Errors.AddRange(parsed.UpdateErrors);
+    }
+    private static OrderFeedParseResult ToResult(ParsedData parsed) => new(parsed.Orders, parsed.Errors)
+    {
+        Updates = parsed.Updates, UpdateErrors = parsed.UpdateErrors, NextUpdateCursor = parsed.NextUpdateCursor,
+        HasMoreUpdates = parsed.HasMoreUpdates, IsSuccess = parsed.IsSuccess, HasDataEnvelope = true,
+        FailureMessage = parsed.FailureMessage,
+    };
+    private static OrderFeedParseResult InvalidBody(Exception ex) => new(
+        Array.Empty<Order>(), new[] { new OrderFeedParseError(-1, null, $"Response body was not valid JSON: {ex.Message}") })
+    {
+        IsSuccess = false, HasDataEnvelope = false,
+    };
+    private static OrderFeedParseResult InvalidEnvelope(string? failureMessage) => new(
+        Array.Empty<Order>(), Array.Empty<OrderFeedParseError>())
+    {
+        IsSuccess = false, HasDataEnvelope = false, FailureMessage = failureMessage,
+    };
+    private static void ParseOrders(JsonElement items, ICollection<Order> orders, ICollection<OrderFeedParseError> errors)
+    {
+        var index = 0;
+        foreach (var element in items.EnumerateArray())
+        {
+            try
+            {
+                var order = element.Deserialize<Order>(Options);
+                if (order is null)
+                    errors.Add(new OrderFeedParseError(index, TryReadOrderNumber(element), "Order element deserialised to null."));
+                else
+                    orders.Add(order);
+            }
+            catch (Exception ex)
+            {
+                errors.Add(new OrderFeedParseError(index, TryReadOrderNumber(element), ex.Message));
+            }
+            index++;
+        }
+    }
+    private static void ParseUpdates(JsonElement updateArray, ICollection<PrinterFeedUpdate> updates,
+        ICollection<OrderFeedParseError> errors)
+    {
+        var index = 0;
+        foreach (var element in updateArray.EnumerateArray())
+        {
+            try
+            {
+                var update = element.Deserialize<PrinterFeedUpdate>(Options);
+                if (update is null)
+                    errors.Add(new OrderFeedParseError(index, TryReadUpdateOrderNumber(element), "Update element deserialised to null."));
+                else
+                {
+                    var validationError = ValidateUpdate(element, update);
+                    if (validationError is not null)
+                        errors.Add(new OrderFeedParseError(index, TryReadUpdateOrderNumber(element), validationError));
+                    else
+                        updates.Add(update);
+                }
+            }
+            catch (Exception ex)
+            {
+                errors.Add(new OrderFeedParseError(index, TryReadUpdateOrderNumber(element), ex.Message));
+            }
+            index++;
+        }
+    }
+    private static string? ValidateUpdate(JsonElement element, PrinterFeedUpdate update)
+    {
+        foreach (var property in RequiredUpdateProperties)
+        {
+            if (!TryGetPropertyIgnoreCase(element, property, out _))
+                return $"Update {property} is required.";
+        }
+        if (update.JobId == Guid.Empty) return "Update jobId is required.";
+        if (update.Revision <= 0) return "Update revision must be positive.";
+        if (update.JobType != DevicePrintJobType.Update) return "Update jobType is not Update.";
+        if (update.Target is not (DevicePrintTarget.General or DevicePrintTarget.Default))
+            return "Update target is not General or Default.";
+        if (update.OrderId == Guid.Empty) return "Update orderId is required.";
+        if (!string.Equals(update.Audience, "Kitchen", StringComparison.OrdinalIgnoreCase))
+            return "Update audience is not Kitchen.";
+        if (string.IsNullOrWhiteSpace(update.OrderNumber)) return "Update orderNumber is required.";
+        if (string.IsNullOrWhiteSpace(update.Text)) return "Update text is required.";
+        if (update.CreatedAt == default) return "Update createdAt is required.";
         return null;
     }
-
-    // JsonElement.TryGetProperty is case-sensitive; the old whole-batch path bound case-insensitively
-    // (PropertyNameCaseInsensitive), so mirror that here to avoid a silent behaviour change on casing.
+    private static readonly string[] RequiredUpdateProperties = [
+        "jobId", "revision", "jobType", "target", "orderId", "orderNumber", "audience", "text", "createdAt"];
+    private static string? TryReadOrderNumber(JsonElement element) => TryReadScalar(element, "orderNumber");
+    private static string? TryReadUpdateOrderNumber(JsonElement element) => TryReadScalar(element, "orderNumber");
+    private static string? TryReadScalar(JsonElement element, string propertyName)
+    {
+        if (element.ValueKind != JsonValueKind.Object || !TryGetPropertyIgnoreCase(element, propertyName, out var value))
+            return null;
+        return value.ValueKind switch
+        {
+            JsonValueKind.String => value.GetString(), JsonValueKind.Number => value.ToString(), _ => null,
+        };
+    }
     private static bool TryGetPropertyIgnoreCase(JsonElement element, string name, out JsonElement value)
     {
         if (element.ValueKind == JsonValueKind.Object)
@@ -127,18 +228,33 @@ public static class OrderFeedParser
                 }
             }
         }
-
         value = default;
         return false;
     }
+    private sealed record FeedStatus(bool IsSuccess, string? FailureMessage);
+    private sealed class ParsedData
+    {
+        public List<Order> Orders { get; } = [];
+        public List<PrinterFeedUpdate> Updates { get; } = [];
+        public List<OrderFeedParseError> Errors { get; } = [];
+        public List<OrderFeedParseError> UpdateErrors { get; } = [];
+        public string? NextUpdateCursor { get; set; }
+        public bool HasMoreUpdates { get; set; }
+        public bool IsSuccess { get; set; } = true;
+        public string? FailureMessage { get; set; }
+        public void Fail(string message) { IsSuccess = false; FailureMessage ??= message; }
+    }
 }
-
-/// <summary>Outcome of <see cref="OrderFeedParser.Parse"/>: the orders that deserialised, and the failures.</summary>
-public sealed record OrderFeedParseResult(IReadOnlyList<Order> Orders, IReadOnlyList<OrderFeedParseError> Errors);
-
-/// <summary>
-/// A single order (or the envelope) that could not be read from the feed. <see cref="Index"/> is the
-/// position in <c>data.items</c> (or -1 for an envelope/whole-body failure); <see cref="OrderNumber"/> is
-/// the order number when it could be read off the raw JSON, otherwise null.
-/// </summary>
+/// <summary>Orders, updates, cursor metadata and parse diagnostics from one feed response.</summary>
+public sealed record OrderFeedParseResult(IReadOnlyList<Order> Orders, IReadOnlyList<OrderFeedParseError> Errors)
+{
+    public IReadOnlyList<PrinterFeedUpdate> Updates { get; init; } = Array.Empty<PrinterFeedUpdate>();
+    public IReadOnlyList<OrderFeedParseError> UpdateErrors { get; init; } = Array.Empty<OrderFeedParseError>();
+    public string? NextUpdateCursor { get; init; }
+    public bool HasMoreUpdates { get; init; }
+    public bool IsSuccess { get; init; } = true;
+    public bool HasDataEnvelope { get; init; }
+    public string? FailureMessage { get; init; }
+}
+/// <summary>A single order or update element that could not be read from the feed.</summary>
 public sealed record OrderFeedParseError(int Index, string? OrderNumber, string Message);

@@ -20,4 +20,23 @@ public interface IFeedCursorStore
 
     /// <summary>Writes the cursor. Best-effort — never throws.</summary>
     void Save(FeedCursor cursor);
+
+    /// <summary>
+    /// Attempts to durably write the cursor and reports whether the store accepted it. The default
+    /// implementation preserves compatibility with existing test/config stores whose <see cref="Save"/>
+    /// method is the only contract they implement; file-backed stores override it to report I/O
+    /// failure instead of silently letting an in-memory cursor run ahead of durable state.
+    /// </summary>
+    bool TrySave(FeedCursor cursor)
+    {
+        try
+        {
+            Save(cursor);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
 }

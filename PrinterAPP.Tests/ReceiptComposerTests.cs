@@ -17,10 +17,10 @@ public class ReceiptComposerTests
     private static readonly PrintLabels En = PrintLabelCatalog.For("en");
     private static readonly PrintLabels De = PrintLabelCatalog.For("de");
 
-    private static string ComposeCashier(OrderItem item, PrintLabels? labels = null)
+    private static string ComposeCashier(OrderItem item, PrintLabels? labels = null, string? currency = null)
     {
         var sb = new StringBuilder();
-        ReceiptComposer.AppendCashierItemLines(sb, item, depth: 0, spacing: 32, labels ?? En);
+        ReceiptComposer.AppendCashierItemLines(sb, item, depth: 0, spacing: 32, labels ?? En, currency: currency);
         return sb.ToString();
     }
 
@@ -95,10 +95,28 @@ public class ReceiptComposerTests
         var ticket = ComposeCashier(item);
 
         Assert.Contains("2x Menu Deal", ticket);
-        Assert.Contains("CHF 31.90", ticket);
-        Assert.Equal(1, CountOccurrences(ticket, "CHF")); // children are covered by the parent total
         Assert.Contains("+ 2x Fries", ticket);
         Assert.Contains("+ 1x Ayran", ticket);
+    }
+
+    [Fact]
+    public void Cashier_price_uses_the_order_currency_when_declared()
+    {
+        var item = new OrderItem { ProductName = "Menu Deal", Quantity = 2, ItemTotal = 31.90m };
+
+        Assert.Contains("EUR 31.90", ComposeCashier(item, currency: "EUR"));
+        Assert.Contains("CHF 31.90", ComposeCashier(item, currency: "CHF"));
+    }
+
+    [Fact]
+    public void Cashier_price_stays_bare_when_no_currency_is_known()
+    {
+        // C18: an unknown currency must never be invented into CHF — the bare amount prints.
+        var ticket = ComposeCashier(new OrderItem { ProductName = "Menu Deal", Quantity = 2, ItemTotal = 31.90m });
+
+        Assert.Contains("31.90", ticket);
+        Assert.DoesNotContain("CHF", ticket);
+        Assert.DoesNotContain("EUR", ticket);
     }
 
     [Fact]
