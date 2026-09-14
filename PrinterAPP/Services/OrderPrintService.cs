@@ -704,9 +704,7 @@ public class OrderPrintService : IOrderPrintService
             sb.AppendLine($"{labels.Payment}:");
             foreach (var payment in order.Payments)
             {
-                var paymentLabel = payment.PaymentMethod == "CreditCard"
-                    ? labels.CardAtRestaurant
-                    : payment.PaymentMethod;
+                var paymentLabel = labels.PaymentMethodLabel(payment.PaymentMethod);
                 var method = string.IsNullOrWhiteSpace(payment.CardLastFourDigits)
                     ? paymentLabel
                     : $"{paymentLabel} *{payment.CardLastFourDigits}";

@@ -48,6 +48,25 @@ public sealed record PrintLabels(
         "Delivery" => Delivery,
         _ => rawType,
     };
+
+    /// <summary>
+    /// Maps the on-site card intent without leaking a backend enum to paper. The feed normally
+    /// sends <c>CreditCard</c>, but old installations may send the generic <c>Card</c> alias or
+    /// numeric enum value 2; all known forms get the same label while unknown values remain visible.
+    /// </summary>
+    public string PaymentMethodLabel(string? rawMethod)
+    {
+        var normalized = (rawMethod ?? string.Empty)
+            .Trim()
+            .Replace(" ", string.Empty, StringComparison.Ordinal)
+            .Replace("-", string.Empty, StringComparison.Ordinal)
+            .Replace("_", string.Empty, StringComparison.Ordinal)
+            .ToLowerInvariant();
+
+        return normalized is "creditcard" or "card" or "2"
+            ? CardAtRestaurant
+            : rawMethod ?? string.Empty;
+    }
 }
 
 /// <summary>

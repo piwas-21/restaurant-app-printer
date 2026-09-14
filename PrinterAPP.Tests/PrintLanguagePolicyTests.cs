@@ -73,6 +73,23 @@ public class PrintLanguagePolicyTests
         Assert.Same(PrintLabelCatalog.English, PrintLabelCatalog.For("auto")); // auto is a policy value, not a catalog language
     }
 
+    [Theory]
+    [InlineData("CreditCard")]
+    [InlineData(" credit-card ")]
+    [InlineData("card")]
+    [InlineData("2")]
+    public void Card_payment_aliases_map_to_the_localized_card_at_restaurant_label(string rawMethod)
+    {
+        Assert.Equal("CARD AT RESTAURANT", PrintLabelCatalog.English.PaymentMethodLabel(rawMethod));
+        Assert.Equal("KARTENZAHLUNG IM RESTAURANT", PrintLabelCatalog.German.PaymentMethodLabel(rawMethod));
+    }
+
+    [Fact]
+    public void Unknown_payment_method_remains_visible()
+    {
+        Assert.Equal("Voucher", PrintLabelCatalog.English.PaymentMethodLabel("Voucher"));
+    }
+
     [Fact]
     public void Order_type_names_map_the_backend_enum_values()
     {
