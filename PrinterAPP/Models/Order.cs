@@ -91,7 +91,8 @@ public class OrderItem
     public string? KitchenType { get; set; } // e.g., "FrontKitchen", "BackKitchen", etc.
 
     /// <summary>
-    /// Backend OrderItemDto.Kind, on the wire as the enum NAME ("SideItem"/"BundleChild"), null on
+    /// Backend OrderItemDto.Kind, on the wire as the enum NAME
+    /// ("SideItem"/"BundleChild"/"CustomizationOption"), null on
     /// top-level and historic rows. Decides what a child's Quantity means: a true side item is
     /// stored PER UNIT of its parent, everything else is already line-absolute (backend
     /// OrderChildRendering.LineQuantity, #318/#305). The printer scales only on this explicit

@@ -191,6 +191,41 @@ public class ReceiptComposerTests
     }
 
     [Fact]
+    public void Product_customization_option_prints_recursively_on_both_surfaces()
+    {
+        var item = new OrderItem
+        {
+            ProductName = "Menu Tacos",
+            Quantity = 2,
+            SideItems =
+            [
+                new OrderItem
+                {
+                    ProductName = "Tacos 1 viande",
+                    Quantity = 2,
+                    Kind = "BundleChild",
+                    SideItems =
+                    [
+                        new OrderItem
+                        {
+                            ProductName = "Extra viande",
+                            Quantity = 2,
+                            Kind = "CustomizationOption"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        foreach (var ticket in new[] { ComposeKitchen(item), ComposeCashier(item) })
+        {
+            Assert.Contains("+ 2x Tacos 1 viande", ticket);
+            Assert.Contains("+ 2x Extra viande", ticket);
+            Assert.DoesNotContain("+ 4x Extra viande", ticket);
+        }
+    }
+
+    [Fact]
     public void Special_instruction_prints_with_a_label_on_both_surfaces()
     {
         var item = new OrderItem
