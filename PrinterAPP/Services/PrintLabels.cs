@@ -1,3 +1,6 @@
+using System.Globalization;
+using PrinterAPP.Models;
+
 namespace PrinterAPP.Services;
 
 /// <summary>
@@ -49,13 +52,13 @@ public sealed record PrintLabels(
         _ => rawType,
     };
 
-    // Backend PaymentMethod.CreditCard numeric value is 2; legacy feed payloads still send it as "2".
-    private const string BackendCreditCardPaymentMethodValue = "2";
+    // Legacy feed payloads may still send the backend enum's numeric code instead of its name.
 
     /// <summary>
     /// Maps the on-site card intent without leaking a backend enum to paper. The feed normally
     /// sends <c>CreditCard</c>, but old installations may send the generic <c>Card</c> alias or
-    /// numeric enum value 2; all known forms get the same label while unknown values remain visible.
+    /// the legacy numeric enum code; all known forms get the same label while unknown values
+    /// remain visible.
     /// </summary>
     public string PaymentMethodLabel(string? rawMethod)
     {
@@ -66,8 +69,10 @@ public sealed record PrintLabels(
             .Replace("_", string.Empty, StringComparison.Ordinal)
             .ToLowerInvariant();
 
-        return normalized is "creditcard" or "card" or BackendCreditCardPaymentMethodValue
-            ? CardAtRestaurant
+        var isCardPayment = normalized is "creditcard" or "card"
+            || normalized == ((int)PaymentMethodCode.CreditCard).ToString(CultureInfo.InvariantCulture);
+
+        return isCardPayment ? CardAtRestaurant
             : rawMethod ?? string.Empty;
     }
 }
