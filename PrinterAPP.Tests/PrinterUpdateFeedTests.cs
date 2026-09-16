@@ -99,6 +99,24 @@ public sealed class PrinterUpdateFeedTests : IDisposable
         Assert.Contains("text", result.UpdateErrors[0].Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void Parser_preserves_stable_table_identity_on_update_jobs()
+    {
+        var update = PrinterUpdateTestData.Update() with
+        {
+            TableNumber = null,
+            TableId = Guid.Parse("33333333-3333-3333-3333-333333333333"),
+            TableLabel = "T-QA",
+        };
+
+        var result = OrderFeedParser.Parse(PrinterUpdateTestData.Feed(new[] { update }, "cursor-1"));
+
+        var parsed = Assert.Single(result.Updates);
+        Assert.Equal(update.TableId, parsed.TableId);
+        Assert.Equal("T-QA", parsed.TableLabel);
+        Assert.Null(parsed.TableNumber);
+    }
+
     private EventStreamingService CreateFeed(FeedServer server, IPrintUpdateJobStore store) =>
         new(
             new FeedPrinter(server.BaseUrl), new NoopRequestLogService(), new InMemoryFeedCursorStore(),

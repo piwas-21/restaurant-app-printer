@@ -78,6 +78,22 @@ public class ReceiptComposerTests
     }
 
     [Fact]
+    public void Type_and_table_line_sanitizes_control_characters_in_table_label()
+    {
+        var order = new Order
+        {
+            Type = "DineIn",
+            TableLabel = "T\u001b@\r\nQA",
+        };
+        var builder = new StringBuilder();
+
+        ReceiptComposer.AppendTypeAndTableLine(builder, order, En);
+
+        Assert.Contains("Table T @ QA", builder.ToString());
+        Assert.DoesNotContain("T\u001b@\r\nQA", builder.ToString());
+    }
+
+    [Fact]
     public void Cashier_price_appears_once_on_the_parent_line_only()
     {
         var item = new OrderItem

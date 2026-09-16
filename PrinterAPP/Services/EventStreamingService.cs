@@ -485,6 +485,8 @@ public class EventStreamingService : IEventStreamingService
                         // dedup path above uses as orderKey.
                         _requestLogService.LogOrderReceived(
                             order.OrderNumber,
+                            order.TableId,
+                            order.TableLabel,
                             order.TableNumber,
                             order.Total,
                             data,
@@ -528,6 +530,8 @@ public class EventStreamingService : IEventStreamingService
                         // dedup path above uses as orderKey.
                         _requestLogService.LogOrderReceived(
                             order.OrderNumber,
+                            order.TableId,
+                            order.TableLabel,
                             order.TableNumber,
                             order.Total,
                             data,
