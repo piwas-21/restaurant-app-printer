@@ -47,7 +47,8 @@ public class OrderPrintToSinkTests
             {
                 OrderNumber = "E2E-4242",
                 Type = "DineIn",
-                TableNumber = 7,
+                TableId = Guid.Parse("11111111-1111-1111-1111-111111111111"),
+                TableLabel = "T-QA",
                 Status = "Confirmed",
                 SubTotal = 16.50m,
                 Total = 16.50m,
@@ -71,6 +72,7 @@ public class OrderPrintToSinkTests
             // The order's human content made it into the receipt (ASCII survives PC857 unchanged).
             Assert.True(SubsequenceIndex(bytes, Encoding.ASCII.GetBytes("E2E-4242")) >= 0, "order number missing");
             Assert.True(SubsequenceIndex(bytes, Encoding.ASCII.GetBytes("Adana Kebab")) >= 0, "item name missing");
+            Assert.True(SubsequenceIndex(bytes, Encoding.ASCII.GetBytes("Table T-QA")) >= 0, "stable table label missing");
         }
         finally
         {
@@ -517,7 +519,16 @@ public class OrderPrintToSinkTests
         public void LogSSEConnection(string endpoint, string status, string? url = null, Dictionary<string, string>? headers = null) { }
         public void LogSSEResponse(string endpoint, int statusCode, Dictionary<string, string>? responseHeaders = null) { }
         public void LogSSEEvent(string eventType, string data, string? rawData = null, string? source = null) { }
-        public void LogOrderReceived(string orderNumber, int? tableNumber, decimal total, string? orderJson = null, string? source = null) { }
+        public void LogOrderReceived(
+            string orderNumber,
+            Guid? tableId,
+            string? tableLabel,
+            int? tableNumber,
+            decimal total,
+            string? orderJson = null,
+            string? source = null)
+        {
+        }
         public void LogPrintRequest(string printerType, string orderNumber, string printerName, string? printContent = null)
         {
             lock (_gate) { _printLogOrderNumbers.Add(orderNumber); }

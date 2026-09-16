@@ -45,6 +45,7 @@
     <!-- Order models (MAUI-free; plain System.Text.Json records). Pinned here to guard the
          backend-DTO mirror after a string-vs-object drift on deliveryAddress wedged the prod poll. -->
     <Compile Include="..\PrinterAPP\Models\Order.cs" Link="Linked\Order.cs" />
+    <Compile Include="..\PrinterAPP\Models\TableDisplay.cs" Link="Linked\TableDisplay.cs" />
     <Compile Include="..\PrinterAPP\Models\PaymentMethodCode.cs" Link="Linked\PaymentMethodCode.cs" />
     <Compile Include="..\PrinterAPP\Models\DeliveryAddress.cs" Link="Linked\DeliveryAddress.cs" />
     <!-- Resilient per-order feed parser (MAUI-free): one bad order must not wedge the whole poll batch. -->

@@ -92,7 +92,8 @@ public class OrderPrintService : IOrderPrintService
             bool isManualPrint = false,
             CancellationToken cancellationToken = default)
     {
-        _logger.LogInformation("🖨️ Printing order {OrderNumber} to all printers", order.OrderNumber);
+        _logger.LogInformation("🖨️ Printing order {OrderNumber} for {Table} to all printers",
+            order.OrderNumber, TableDisplay.ResolveLabel(order.TableLabel, order.TableNumber) ?? "no table");
 
         var config = await _printerService.LoadConfigurationAsync();
         var policy = new KitchenRoutingPolicy(config.KitchenRoutingMode);
@@ -455,8 +456,11 @@ public class OrderPrintService : IOrderPrintService
             // Log print response
             if (success)
             {
-                _logger.LogInformation("Successfully printed order #{OrderNumber} to {PrinterType} printer ({Copies} copies)",
-                    order.OrderNumber, printerType, copies);
+                _logger.LogInformation("Successfully printed order #{OrderNumber} for {Table} to {PrinterType} printer ({Copies} copies)",
+                    order.OrderNumber,
+                    TableDisplay.ResolveLabel(order.TableLabel, order.TableNumber) ?? "no table",
+                    printerType,
+                    copies);
                 _requestLogService.LogPrintResponse(printerType.ToString(), order.OrderNumber, true, $"Printed {copies} {(copies > 1 ? "copies" : "copy")}");
             }
             else

@@ -223,18 +223,13 @@ public static class ReceiptComposer
     /// <summary>
     /// The "Type: Dine-in - Table 7" line, appended only with a table when one actually applies —
     /// takeaway/delivery orders have none, and a dangling "Table" with a blank number reads broken.
-    /// One implementation because the two surfaces used to carry twin copies of it.
+    /// Stable labels take precedence over numeric compatibility values.
     /// </summary>
     public static void AppendTypeAndTableLine(StringBuilder sb, Order order, PrintLabels labels)
     {
-        if (order.TableNumber.HasValue && order.TableNumber.Value > 0)
-        {
-            sb.AppendLine($"{labels.Type}: {labels.OrderType(order.Type)} - {labels.Table} {order.TableNumber}");
-        }
-        else
-        {
-            sb.AppendLine($"{labels.Type}: {labels.OrderType(order.Type)}");
-        }
+        var orderType = TableDisplay.FormatOrderType(
+            labels.OrderType(order.Type), order.TableLabel, order.TableNumber, labels.Table);
+        sb.AppendLine($"{labels.Type}: {orderType}");
     }
 
     /// <summary>The order-level notes block; both surfaces print it above the items, never under them.</summary>

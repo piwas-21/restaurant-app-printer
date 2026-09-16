@@ -15,7 +15,8 @@ public interface IRequestLogService
     // fit in an int, so the old int parameters recorded the parse-failure fallback 0 on every real
     // order. It is also the key the surrounding code already dedups on (EventStreamingService's
     // orderKey), so a log line now joins up with the rest of the pipeline.
-    void LogOrderReceived(string orderNumber, int? tableNumber, decimal total, string? orderJson = null, string? source = null);
+    void LogOrderReceived(string orderNumber, Guid? tableId, string? tableLabel, int? tableNumber,
+        decimal total, string? orderJson = null, string? source = null);
     void LogPrintRequest(string printerType, string orderNumber, string printerName, string? printContent = null);
     void LogPrintResponse(string printerType, string orderNumber, bool success, string? error = null, string? details = null);
     void LogError(string operation, string message, string? details = null);

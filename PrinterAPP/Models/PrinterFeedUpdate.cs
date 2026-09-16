@@ -16,6 +16,10 @@ public sealed record PrinterFeedUpdate
     public Guid OrderId { get; init; }
     public string OrderNumber { get; init; } = string.Empty;
     public int? TableNumber { get; init; }
+    /// <summary>Stable configured-table identity when the update feed supplies it.</summary>
+    public Guid? TableId { get; init; }
+    /// <summary>Display label captured with the order; null on legacy update jobs.</summary>
+    public string? TableLabel { get; init; }
     public string Audience { get; init; } = "Kitchen";
     public string Text { get; init; } = string.Empty;
     public DateTime CreatedAt { get; init; }

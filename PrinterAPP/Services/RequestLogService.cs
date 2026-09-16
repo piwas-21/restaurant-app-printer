@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using Microsoft.Extensions.Logging;
+using PrinterAPP.Models;
 
 namespace PrinterAPP.Services;
 
@@ -53,9 +54,13 @@ public class RequestLogService : IRequestLogService
         AddLogEntry(entry);
     }
 
-    public void LogOrderReceived(string orderNumber, int? tableNumber, decimal total, string? orderJson = null, string? source = null)
+    public void LogOrderReceived(string orderNumber, Guid? tableId, string? tableLabel, int? tableNumber,
+        decimal total, string? orderJson = null, string? source = null)
     {
-        var entry = CreateLogEntry(LogType.Order, OrderLabel(orderNumber), $"Table {tableNumber}", $"${total:F2}", source ?? "General");
+        var table = TableDisplay.ResolveLabel(tableLabel, tableNumber);
+        var tableMessage = table is null ? "No table" : $"Table {table}";
+        var entry = CreateLogEntry(LogType.Order, OrderLabel(orderNumber), tableMessage,
+            $"${total:F2}", source ?? "General");
         entry.ResponseBody = orderJson;
         AddLogEntry(entry);
     }
