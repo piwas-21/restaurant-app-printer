@@ -67,6 +67,83 @@ public class ReceiptComposerTests
     }
 
     [Fact]
+    public void Quantity_one_paid_add_on_prints_extra_on_both_receipt_surfaces()
+    {
+        var item = new OrderItem
+        {
+            ProductName = "Tacos 1 Viande",
+            Quantity = 1,
+            IngredientCustomizations =
+            [
+                new IngredientCustomization
+                {
+                    IngredientName = "Cheddar",
+                    Quantity = 1,
+                    IsAddOn = true,
+                },
+            ],
+        };
+
+        Assert.Contains("+ EXTRA Cheddar x1", ComposeCashier(item));
+        Assert.Contains("+ EXTRA Cheddar x1", ComposeKitchen(item));
+    }
+
+    [Fact]
+    public void Zero_quantity_add_on_does_not_print_as_extra_on_both_receipt_surfaces()
+    {
+        var item = new OrderItem
+        {
+            ProductName = "Tacos 1 Viande",
+            Quantity = 1,
+            IngredientCustomizations =
+            [
+                new IngredientCustomization
+                {
+                    IngredientName = "Cheddar",
+                    Quantity = 0,
+                    IsAddOn = true,
+                },
+            ],
+        };
+
+        var cashier = ComposeCashier(item);
+        var kitchen = ComposeKitchen(item);
+
+        Assert.DoesNotContain("Cheddar", cashier);
+        Assert.DoesNotContain("Cheddar", kitchen);
+        Assert.DoesNotContain("+ EXTRA Cheddar", cashier);
+        Assert.DoesNotContain("+ EXTRA Cheddar", kitchen);
+    }
+
+    [Fact]
+    public void Removed_add_on_keeps_removal_precedence()
+    {
+        var item = new OrderItem
+        {
+            ProductName = "Tacos 1 Viande",
+            Quantity = 1,
+            IngredientCustomizations =
+            [
+                new IngredientCustomization
+                {
+                    IngredientName = "Onion",
+                    Quantity = 1,
+                    IsAddOn = true,
+                    IsRemoved = true,
+                },
+            ],
+        };
+
+        var cashier = ComposeCashier(item);
+        var kitchen = ComposeKitchen(item);
+
+        Assert.Contains("- NO Onion", cashier);
+        Assert.Contains("- NO Onion", kitchen);
+        Assert.DoesNotContain("EXTRA Onion", cashier);
+        Assert.DoesNotContain("EXTRA Onion", kitchen);
+    }
+
+    [Fact]
     public void Kitchen_keeps_wide_item_line_and_tall_customization_commands()
     {
         var ticket = ComposeKitchen(CustomizedKebab());
@@ -75,6 +152,22 @@ public class ReceiptComposerTests
 
         Assert.True(ticket.Contains(wide), "item line lost its wide-size command");
         Assert.True(ticket.Contains(tall), "customization lines lost their tall-size command");
+    }
+
+    [Fact]
+    public void Type_and_table_line_sanitizes_control_characters_in_table_label()
+    {
+        var order = new Order
+        {
+            Type = "DineIn",
+            TableLabel = "T\u001b@\r\nQA",
+        };
+        var builder = new StringBuilder();
+
+        ReceiptComposer.AppendTypeAndTableLine(builder, order, En);
+
+        Assert.Contains("Table T @ QA", builder.ToString());
+        Assert.DoesNotContain("T\u001b@\r\nQA", builder.ToString());
     }
 
     [Fact]
@@ -188,6 +281,41 @@ public class ReceiptComposerTests
 
         var cashier = ComposeCashier(item);
         Assert.Contains("+ 2x Ayran", cashier);
+    }
+
+    [Fact]
+    public void Product_customization_option_prints_recursively_on_both_surfaces()
+    {
+        var item = new OrderItem
+        {
+            ProductName = "Menu Tacos",
+            Quantity = 2,
+            SideItems =
+            [
+                new OrderItem
+                {
+                    ProductName = "Tacos 1 viande",
+                    Quantity = 2,
+                    Kind = "BundleChild",
+                    SideItems =
+                    [
+                        new OrderItem
+                        {
+                            ProductName = "Extra viande",
+                            Quantity = 2,
+                            Kind = "CustomizationOption"
+                        }
+                    ]
+                }
+            ]
+        };
+
+        foreach (var ticket in new[] { ComposeKitchen(item), ComposeCashier(item) })
+        {
+            Assert.Contains("+ 2x Tacos 1 viande", ticket);
+            Assert.Contains("+ 2x Extra viande", ticket);
+            Assert.DoesNotContain("+ 4x Extra viande", ticket);
+        }
     }
 
     [Fact]

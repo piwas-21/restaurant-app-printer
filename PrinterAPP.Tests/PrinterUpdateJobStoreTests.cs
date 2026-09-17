@@ -161,6 +161,35 @@ public sealed class PrinterUpdateJobStoreTests
     }
 
     [Fact]
+    public void Update_receipt_prints_an_alphanumeric_table_label_safely()
+    {
+        var update = PrinterUpdateTestData.Update() with
+        {
+            TableNumber = null,
+            TableLabel = "T-QA",
+        };
+
+        var receipt = UpdateReceiptComposer.Compose(update);
+
+        Assert.Contains("Table: T-QA", receipt);
+    }
+
+    [Fact]
+    public void Update_receipt_cannot_inject_control_bytes_through_table_label()
+    {
+        var update = PrinterUpdateTestData.Update() with
+        {
+            TableNumber = null,
+            TableLabel = "T\u001b@\r\nQA",
+        };
+
+        var receipt = UpdateReceiptComposer.Compose(update);
+
+        Assert.Contains("Table: T @ QA", receipt);
+        Assert.DoesNotContain("T\u001b@\r\nQA", receipt);
+    }
+
+    [Fact]
     public void Legacy_order_ack_shape_remains_three_unidentified_receipts()
     {
         var order = new Order { Id = Guid.NewGuid().ToString(), OrderNumber = "LEGACY-1" };

@@ -24,9 +24,9 @@ public static class UpdateReceiptComposer
         builder.AppendLine("*** UPDATE ***");
         builder.Append(EscPosCommands.BoldOff);
         builder.AppendLine($"Order: {SanitizeField(update.OrderNumber)}");
-        if (update.TableNumber is > 0)
+        if (TableDisplay.ResolveLabel(update.TableLabel, update.TableNumber) is { } tableLabel)
         {
-            builder.AppendLine($"Table: {update.TableNumber.Value}");
+            builder.AppendLine($"Table: {tableLabel}");
         }
 
         builder.AppendLine("Note:");

@@ -180,6 +180,21 @@ public class KitchenTicketFilterTests
     }
 
     [Fact]
+    public void CustomizationOption_WithoutOwnKitchen_RidesWithItsProduct()
+    {
+        var extra = Item("Extra viande", null);
+        extra.Kind = "CustomizationOption";
+        var items = new List<OrderItem>
+        {
+            Item("Tacos 1 viande", Back, children: [extra])
+        };
+
+        var back = Assert.Single(KitchenTicketFilter.ItemsForKitchen(items, Back));
+        Assert.Equal("Extra viande", Assert.Single(back.SideItems!).ProductName);
+        Assert.Empty(KitchenTicketFilter.ItemsForKitchen(items, Front));
+    }
+
+    [Fact]
     public void OrderWithNothingForThisKitchen_YieldsNoTicket()
     {
         var items = new List<OrderItem> { Item("Ayran", Front) };

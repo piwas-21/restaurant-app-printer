@@ -53,12 +53,20 @@ workflow runs in). Create a **fine-grained PAT** scoped to **only** `piwas-21/pr
 
 ## Step 1: Update Version Number
 
-Edit `PrinterAPP/PrinterAPP.csproj` and increment the version:
+Edit `PrinterAPP/PrinterAPP.csproj` and increment all three version values:
 
 ```xml
-<Version>1.0.3</Version>
-<ApplicationDisplayVersion>1.0.3</ApplicationDisplayVersion>
+<!-- `<Version>` becomes the assembly version that UpdateService compares with the release tag. -->
+<Version>1.0.30</Version>
+<!-- Android's user-visible version label. -->
+<ApplicationDisplayVersion>1.0.30</ApplicationDisplayVersion>
+<!-- Android's integer versionCode; it must be greater than the previous APK's code. -->
+<ApplicationVersion>29</ApplicationVersion>
 ```
+
+`ApplicationDisplayVersion` alone does not fix an updater that is built with an older assembly
+version, and reusing an Android `ApplicationVersion` prevents an APK from installing over the
+previous build. Keep both values increasing alongside `<Version>` for every release.
 
 ## Step 2: Commit and Tag
 

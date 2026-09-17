@@ -164,4 +164,27 @@ public class OrderFeedParserTests
         Assert.Equal(0, error.Index);
         Assert.Null(error.OrderNumber);
     }
+
+    [Fact]
+    public void Stable_table_identity_fields_survive_feed_deserialization()
+    {
+        const string json = """
+            {
+              "orderNumber": "202609160001",
+              "type": "DineIn",
+              "tableId": "11111111-1111-1111-1111-111111111111",
+              "tableLabel": "T-QA",
+              "tableNumber": null,
+              "status": "Confirmed",
+              "items": [ { "productName": "Pide", "quantity": 1 } ]
+            }
+            """;
+
+        var result = OrderFeedParser.Parse(Feed(json));
+
+        var order = Assert.Single(result.Orders);
+        Assert.Equal(Guid.Parse("11111111-1111-1111-1111-111111111111"), order.TableId);
+        Assert.Equal("T-QA", order.TableLabel);
+        Assert.Null(order.TableNumber);
+    }
 }
