@@ -7,12 +7,8 @@ using FontSize = PrinterAPP.Models.FontSize;
 namespace PrinterAPP.Services;
 
 /// <summary>
-/// The per-item block both ticket surfaces share — item line, ingredient customizations, special
-/// instructions and the recursive walk into <see cref="OrderItem.SideItems"/> (bundle components
-/// nest to arbitrary depth since backend PR #237, so both surfaces must recurse). Pure and
-/// MAUI-free: appends to the caller's <see cref="StringBuilder"/> and decides nothing else, so the
-/// unit tests can pin the composed text without a printer (same shape as
-/// <see cref="KitchenTicketFilter"/>).
+/// The per-item block shared by both ticket surfaces, including recursive <see cref="OrderItem.SideItems"/> rendering.
+/// Pure and MAUI-free: appends to the caller's <see cref="StringBuilder"/> so tests can pin text without a printer.
 /// </summary>
 public static class ReceiptComposer
 {
@@ -35,12 +31,8 @@ public static class ReceiptComposer
         string.IsNullOrWhiteSpace(currency) ? Money(amount) : $"{currency} {Money(amount)}";
 
     /// <summary>
-    /// A child's quantity for the WHOLE line, mirroring backend OrderChildRendering.LineQuantity
-    /// with the one signal the feed payload carries: an explicit <c>Kind == "SideItem"</c> is
-    /// stored PER UNIT of its parent, so it scales by the parent line; a bundle child is already
-    /// line-absolute, and an unclassifiable row (Kind null) prints exactly as stored — the backend
-    /// itself refuses to scale what it cannot classify, because the alternative once measured a
-    /// stored 6 rendering as 18 on a 3-unit line.
+    /// A <c>SideItem</c> child is stored per parent unit and scales; a bundle child is line-absolute,
+    /// while an unclassifiable row prints exactly as stored. This mirrors backend LineQuantity.
     /// </summary>
     private static int ChildQuantity(OrderItem child, int parentQuantity) =>
         string.Equals(child.Kind, SideItemKind, StringComparison.OrdinalIgnoreCase)
@@ -130,9 +122,8 @@ public static class ReceiptComposer
     }
 
     /// <summary>
-    /// The item's quantity-and-name line. When the venue styled quantity and name identically (or
-    /// styles are unwired) it is ONE styled run — "2x Fries" stays a contiguous run of text; when
-    /// the two sections differ it becomes two runs, which is the point of styling them separately.
+    /// The item's quantity-and-name line. Identical or unwired styles remain one contiguous run;
+    /// differing quantity/name styles become separate runs.
     /// </summary>
     private static void AppendKitchenNameLine(
         StringBuilder sb, OrderItem item, int qty, int depth, string indent, PrintStyleSettings? styles)
@@ -241,60 +232,69 @@ public static class ReceiptComposer
         }
     }
 
-    /// <summary>
-    /// The ingredient rows a line carries, in the catalog's language, followed by its special
-    /// instruction. Rows are exactly the projection the backend freezes at checkout — selected
-    /// (kept), extra (positive explicit add-on or quantity above one) and removed — because
-    /// "selected ingredients don't appear on the paper" was the complaint: the old filter hid
-    /// every selection at quantity one, which is precisely what an explicitly chosen sauce or
-    /// topping is. A line with no customization
-    /// rows prints nothing extra, so untouched recipes stay clean.
-    /// </summary>
+    /// <summary>Appends the frozen ingredient projection and the item's special instruction.</summary>
     private static void AppendDetailLines(StringBuilder sb, OrderItem item, string indent, bool tallEmphasis, PrintLabels labels, PrintStyleSettings? styles = null)
     {
-        // With styles wired (live app) the configured Ingredients section drives each line — its
-        // default is Tall with no weight, byte-for-byte what the pinned tall toggle printed. With
-        // styles null (existing unit-test callers) the legacy tall toggle behaves exactly as before.
         var ingredientStyle = styles?.KitchenIngredients;
-        Action openStyle = ingredientStyle is not null
-            ? () => sb.Append(ApplyStyleCommands(ingredientStyle))
-            : () => { if (tallEmphasis) sb.Append(EscPosCommands.SizeTall); };
-        Action closeStyle = ingredientStyle is not null
-            ? () => sb.Append(ResetStyleCommands(ingredientStyle))
-            : () => { if (tallEmphasis) sb.Append(EscPosCommands.SizeNormal); };
-
-        foreach (var ing in item.IngredientCustomizations ?? Enumerable.Empty<IngredientCustomization>())
-        {
-            if (!ing.IsRemoved && ing.Quantity <= 0)
-            {
-                continue;
-            }
-            string line;
-            if (ing.IsRemoved)
-            {
-                line = $"{indent}   - {labels.NoPrefix} {ing.IngredientName}";
-            }
-            else if (ing.IsAddOn || ing.Quantity > 1)
-            {
-                line = $"{indent}   {labels.ExtraPrefix} {ing.IngredientName} x{ing.Quantity}";
-            }
-            else
-            {
-                line = $"{indent}   {labels.SelectedPrefix} {ing.IngredientName}";
-            }
-
-            openStyle();
-            sb.AppendLine(line);
-            closeStyle();
-        }
+        AppendIngredientLines(sb, item, indent, labels, ingredientStyle, tallEmphasis);
 
         if (!string.IsNullOrWhiteSpace(item.SpecialInstructions))
         {
-            // Detail lines land BEFORE the recursive walk into SideItems (both callers), so a
-            // parent's note never reads as if it belonged to the last child printed.
-            openStyle();
-            sb.AppendLine($"{indent}   {labels.Note}: {item.SpecialInstructions}");
-            closeStyle();
+            // Keep the note with its parent, before the recursive child walk in both callers.
+            AppendStyledLine(sb, $"{indent}   {labels.Note}: {item.SpecialInstructions}", ingredientStyle, tallEmphasis);
+        }
+    }
+
+    private static void AppendIngredientLines(
+        StringBuilder sb, OrderItem item, string indent, PrintLabels labels, SectionStyle? style, bool tallEmphasis)
+    {
+        foreach (var ingredient in item.IngredientCustomizations ?? Enumerable.Empty<IngredientCustomization>())
+        {
+            if (ShouldPrintIngredient(ingredient))
+            {
+                AppendStyledLine(sb, FormatIngredientLine(ingredient, indent, labels), style, tallEmphasis);
+            }
+        }
+    }
+
+    private static bool ShouldPrintIngredient(IngredientCustomization ingredient) =>
+        ingredient.IsRemoved || ingredient.Quantity > 0;
+
+    private static string FormatIngredientLine(IngredientCustomization ingredient, string indent, PrintLabels labels)
+    {
+        if (ingredient.IsRemoved)
+        {
+            return $"{indent}   - {labels.NoPrefix} {ingredient.IngredientName}";
+        }
+
+        if (ingredient.IsAddOn || ingredient.Quantity > 1)
+        {
+            return $"{indent}   {labels.ExtraPrefix} {ingredient.IngredientName} x{ingredient.Quantity}";
+        }
+
+        return $"{indent}   {labels.SelectedPrefix} {ingredient.IngredientName}";
+    }
+
+    private static void AppendStyledLine(StringBuilder sb, string line, SectionStyle? style, bool tallEmphasis)
+    {
+        if (style is not null)
+        {
+            sb.Append(ApplyStyleCommands(style));
+            sb.AppendLine(line);
+            sb.Append(ResetStyleCommands(style));
+            return;
+        }
+
+        if (tallEmphasis)
+        {
+            sb.Append(EscPosCommands.SizeTall);
+        }
+
+        sb.AppendLine(line);
+
+        if (tallEmphasis)
+        {
+            sb.Append(EscPosCommands.SizeNormal);
         }
     }
 }
