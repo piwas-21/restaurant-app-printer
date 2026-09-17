@@ -77,7 +77,7 @@ public static class ReceiptComposer
             // A component/add-on of the line above — no price of its own (see doc above), and the
             // quantity is the whole-line one, so "3 pizzas, a cola each" reads "+ 3x Cola".
             var qty = ChildQuantity(item, parentQuantity);
-            sb.AppendLine($"{indent}+ {qty}x {item.ProductName}");
+            sb.AppendLine($"{indent}+ {qty}x {name}");
         }
 
         AppendDetailLines(sb, item, indent, tallEmphasis: false, labels);
