@@ -99,12 +99,84 @@ public sealed class OfferFamilyPrintContractTests
     }
 
     [Fact]
+    public void Standalone_tacos_bundle_and_larger_menu_keep_their_frozen_print_identities()
+    {
+        var order = DeserializeOrder("""
+        {
+          "orderNumber": "202609170005",
+          "currency": "EUR",
+          "items": [
+            {
+              "productId": "99999999-9999-9999-9999-999999999991",
+              "menuID": "99999999-9999-9999-9999-999999999991",
+              "productName": "Tacos 1 Viande",
+              "quantity": 1,
+              "unitPrice": 9.00,
+              "itemTotal": 9.00,
+              "kitchenType": "FrontKitchen",
+              "sideItems": [
+                {
+                  "productId": "99999999-9999-9999-9999-999999999992",
+                  "productName": "Tacos",
+                  "quantity": 1,
+                  "kind": "BundleChild",
+                  "kitchenType": "FrontKitchen"
+                }
+              ]
+            },
+            {
+              "productId": "99999999-9999-9999-9999-999999999993",
+              "menuID": "99999999-9999-9999-9999-999999999993",
+              "productName": "Menu Tacos 1 Viande",
+              "quantity": 1,
+              "unitPrice": 12.00,
+              "itemTotal": 12.00,
+              "kitchenType": "FrontKitchen",
+              "sideItems": [
+                {
+                  "productName": "Frites",
+                  "quantity": 1,
+                  "kind": "BundleChild"
+                },
+                {
+                  "productName": "Boisson",
+                  "quantity": 1,
+                  "kind": "BundleChild"
+                }
+              ]
+            }
+          ]
+        }
+        """);
+
+        var standalone = order.Items[0];
+        var largerMenu = order.Items[1];
+        var cashier = string.Concat(
+            ComposeCashier(standalone, order.Currency),
+            ComposeCashier(largerMenu, order.Currency));
+        var kitchen = string.Concat(
+            ComposeKitchen(standalone),
+            ComposeKitchen(largerMenu));
+
+        Assert.Equal("Tacos 1 Viande", standalone.ProductName);
+        Assert.Contains("EUR 9.00", cashier);
+        Assert.Contains("EUR 12.00", cashier);
+        Assert.Contains("1x Tacos 1 Viande", cashier);
+        Assert.Contains("1x Menu Tacos 1 Viande", cashier);
+        Assert.Contains("+ 1x Frites", cashier);
+        Assert.Contains("+ 1x Boisson", cashier);
+        Assert.Contains("1x Tacos 1 Viande", kitchen);
+        Assert.Contains("1x Menu Tacos 1 Viande", kitchen);
+    }
+
+    [Fact]
     public void Variation_linked_menu_bundle_prints_the_child_variation_snapshot()
     {
         var variationId = "55555555-5555-5555-5555-555555555555";
         var order = DeserializeOrder("""
         {
           "orderNumber": "202609170003",
+          "currency": "EUR",
           "items": [
             {
               "productId": "66666666-6666-6666-6666-666666666666",
@@ -119,7 +191,7 @@ public sealed class OfferFamilyPrintContractTests
                   "productId": "77777777-7777-7777-7777-777777777777",
                   "productVariationId": "55555555-5555-5555-5555-555555555555",
                   "productName": "Nuggets",
-                  "variationName": "12 pieces",
+                  "variationName": "12 pièces",
                   "quantity": 1,
                   "kind": "BundleChild",
                   "kitchenType": "FrontKitchen"
@@ -142,10 +214,11 @@ public sealed class OfferFamilyPrintContractTests
         var kitchen = ComposeKitchen(menu);
 
         Assert.Equal(variationId, nuggets.ProductVariationId);
-        Assert.Equal("12 pieces", nuggets.VariationName);
-        Assert.Contains("+ 1x Nuggets (12 pieces)", cashier);
+        Assert.Equal("12 pièces", nuggets.VariationName);
+        Assert.Contains("EUR 13.00", cashier);
+        Assert.Contains("+ 1x Nuggets (12 pièces)", cashier);
         Assert.Contains("+ 1x Nuggets", kitchen);
-        Assert.Contains("- 12 pieces", kitchen);
+        Assert.Contains("- 12 pièces", kitchen);
         Assert.Contains("+ 1x Cola", cashier);
         Assert.DoesNotContain("+ 2x Nuggets", cashier);
     }

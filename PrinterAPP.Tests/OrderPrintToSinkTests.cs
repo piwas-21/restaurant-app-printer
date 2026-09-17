@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
+using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
 using PrinterAPP.Models;
 using PrinterAPP.Services;
@@ -18,6 +19,11 @@ namespace PrinterAPP.Tests;
 /// </summary>
 public class OrderPrintToSinkTests
 {
+    private static readonly JsonSerializerOptions BackendJsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+    };
+
     [Fact]
     public async Task PrintOrderAsync_Cashier_SendsFramedEscPosReceipt_ToNetworkSink()
     {
@@ -248,6 +254,98 @@ public class OrderPrintToSinkTests
         Assert.Contains("+ Hot Sauce", ticket); // selected at quantity one — used to be filtered off
         Assert.Contains("+ 1x Ayran", ticket);  // side item — used to be cashier-invisible
         Assert.Contains("Adana Kebab", ticket);
+    }
+
+    /// <summary>
+    /// Golden path for the current backend wire shape: deserialize a real OrderDto-shaped JSON
+    /// payload, then drive that model through OrderPrintService into the loopback printer sink.
+    /// This covers the offer-family standalone/menu identity, EUR display currency and the
+    /// quantity-one IsAddOn/removal precedence in the same path as a feed-delivered order.
+    /// </summary>
+    [Fact]
+    public async Task PrintOrderAsync_Cashier_ConsumesBackendOfferFamilyJson_ThroughLoopbackSink()
+    {
+        using var sink = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        var order = JsonSerializer.Deserialize<Order>("""
+        {
+          "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+          "orderNumber": "202609170006",
+          "type": "TakeAway",
+          "currency": "EUR",
+          "status": "Confirmed",
+          "subTotal": 12.00,
+          "total": 12.00,
+          "orderDate": "2026-09-17T12:00:00Z",
+          "items": [
+            {
+              "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+              "productId": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+              "menuID": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+              "productName": "Menu Tacos 1 Viande",
+              "variationName": "Menu",
+              "quantity": 1,
+              "unitPrice": 12.00,
+              "itemTotal": 12.00,
+              "kitchenType": "FrontKitchen",
+              "ingredientCustomizations": [
+                {
+                  "ingredientId": "dddddddd-dddd-dddd-dddd-dddddddddddd",
+                  "ingredientName": "Cheddar",
+                  "quantity": 1,
+                  "isRemoved": false,
+                  "isAddOn": true
+                },
+                {
+                  "ingredientId": "eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee",
+                  "ingredientName": "Oignons",
+                  "quantity": 1,
+                  "isRemoved": true,
+                  "isAddOn": true
+                }
+              ],
+              "sideItems": [
+                {
+                  "id": "ffffffff-ffff-ffff-ffff-ffffffffffff",
+                  "productName": "Frites",
+                  "quantity": 1,
+                  "kind": "BundleChild"
+                },
+                {
+                  "id": "11111111-1111-1111-1111-111111111111",
+                  "productName": "Boisson",
+                  "quantity": 1,
+                  "kind": "BundleChild"
+                }
+              ]
+            }
+          ]
+        }
+        """, BackendJsonOptions);
+
+        Assert.NotNull(order);
+        using var paths = new TempPathProvider();
+        var service = new OrderPrintService(
+            new StubPrinterService(new PrinterConfiguration
+            {
+                CashierPrinterName = sink.PrinterName,
+                CashierAutoPrint = true,
+                CashierPrintCopies = 1,
+            }),
+            new CapturingRequestLogService(),
+            NullLogger<OrderPrintService>.Instance,
+            paths);
+
+        Assert.True(await service.PrintOrderAsync(order!, PrinterType.Cashier, isManualPrint: true, cts.Token));
+        var ticket = await sink.ReadTicketAsync(cts.Token);
+
+        Assert.Contains("EUR 12.00", ticket);
+        Assert.Contains("1x Menu Tacos 1 Viande (Menu)", ticket);
+        Assert.Contains("+ EXTRA Cheddar x1", ticket);
+        Assert.Contains("- NO Oignons", ticket);
+        Assert.Contains("+ 1x Frites", ticket);
+        Assert.Contains("+ 1x Boisson", ticket);
     }
 
     /// <summary>A fixed venue language choice must localize the receipt labels on the wire.</summary>
