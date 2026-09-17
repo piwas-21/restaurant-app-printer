@@ -248,12 +248,11 @@ public static class ReceiptComposer
     private static void AppendIngredientLines(
         StringBuilder sb, OrderItem item, string indent, PrintLabels labels, SectionStyle? style, bool tallEmphasis)
     {
-        foreach (var ingredient in item.IngredientCustomizations ?? Enumerable.Empty<IngredientCustomization>())
+        var ingredients = item.IngredientCustomizations?.Where(ShouldPrintIngredient)
+            ?? Enumerable.Empty<IngredientCustomization>();
+        foreach (var ingredient in ingredients)
         {
-            if (ShouldPrintIngredient(ingredient))
-            {
-                AppendStyledLine(sb, FormatIngredientLine(ingredient, indent, labels), style, tallEmphasis);
-            }
+            AppendStyledLine(sb, FormatIngredientLine(ingredient, indent, labels), style, tallEmphasis);
         }
     }
 
