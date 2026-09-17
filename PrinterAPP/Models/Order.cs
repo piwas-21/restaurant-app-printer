@@ -5,8 +5,8 @@ public class Order
 {
     public string Id { get; set; } = string.Empty;
     public string OrderNumber { get; set; } = string.Empty;
-    public string UserId { get; set; } = string.Empty;
-    public string CustomerName { get; set; } = string.Empty;
+    public string? UserId { get; set; }
+    public string? CustomerName { get; set; }
     public string? CustomerEmail { get; set; }
     public string? CustomerPhone { get; set; }
     public string Type { get; set; } = string.Empty; // DineIn, TakeAway, Delivery
@@ -15,6 +15,8 @@ public class Order
     public Guid? TableId { get; set; }
     /// <summary>Display label captured with the order; may be alphanumeric or null on legacy rows.</summary>
     public string? TableLabel { get; set; }
+    /// <summary>Explicit table-visit membership; null for legacy and anonymous orders.</summary>
+    public Guid? ServiceSessionId { get; set; }
 
     // Type, with the table appended only when one actually applies (a seated order). Takeaway/
     // Delivery have no table, so we show just the type instead of a dangling "Table" with a blank
@@ -41,10 +43,26 @@ public class Order
     public decimal TotalPaid { get; set; }
     public decimal RemainingAmount { get; set; }
     public bool IsFullyPaid { get; set; }
+    public bool IsKitchenReleased { get; set; }
+    public DateTime? KitchenReleasedAt { get; set; }
+    public string? KitchenReleasedBy { get; set; }
+    public int Version { get; set; }
     public string Status { get; set; } = string.Empty; // Pending, InProgress, Completed, Cancelled
     public string PaymentStatus { get; set; } = string.Empty;
+    public List<OrderPermittedAction>? PermittedActions { get; set; }
+
+    public bool IsFocusOrder { get; set; }
+    public int? Priority { get; set; }
+    public string? FocusReason { get; set; }
+    public DateTime? FocusedAt { get; set; }
+    public string? FocusedBy { get; set; }
+    public string? OrderTypeOverrideBy { get; set; }
+    public string? OrderTypeOverrideItems { get; set; }
+
     public DateTime OrderDate { get; set; }
-    public DateTime CreatedAt { get; set; }
+    public DateTime? EstimatedDeliveryTime { get; set; }
+    public DateTime? ActualDeliveryTime { get; set; }
+    public DateTime? CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 
     /// <summary>
@@ -58,10 +76,13 @@ public class Order
 
     /// <summary>Applied voucher code (backend OrderDto.PromoCode) — explains a printed discount.</summary>
     public string? PromoCode { get; set; }
+    public bool HasUserLimitDiscount { get; set; }
+    public decimal UserLimitAmount { get; set; }
+    public string? CancellationReason { get; set; }
     public DeliveryAddress? DeliveryAddress { get; set; }
     public List<OrderItem> Items { get; set; } = new();
-    public List<Payment>? Payments { get; set; }
-    public List<OrderStatusHistory>? StatusHistory { get; set; }
+    public List<Payment> Payments { get; set; } = new();
+    public List<OrderStatusHistory> StatusHistory { get; set; } = new();
 
     /// <summary>
     /// The same order with a different item list — how a kitchen ticket is built without mutating
@@ -81,7 +102,7 @@ public class Order
 public class OrderItem
 {
     public string Id { get; set; } = string.Empty;
-    public string ProductId { get; set; } = string.Empty;
+    public string? ProductId { get; set; }
     public string? ProductVariationId { get; set; }
     public string? MenuID { get; set; }
     public string ProductName { get; set; } = string.Empty;
@@ -144,15 +165,27 @@ public class IngredientCustomization
     public string IngredientName { get; set; } = string.Empty;
     public int Quantity { get; set; }
     public bool IsRemoved { get; set; } // true if customer removed this ingredient
+    /// <summary>True when this frozen row is a paid optional extra selected by the guest.</summary>
+    public bool IsAddOn { get; set; }
+}
+
+/// <summary>One explainable action from the backend's permitted order-action projection.</summary>
+public class OrderPermittedAction
+{
+    public string Action { get; set; } = string.Empty;
+    public bool Allowed { get; set; }
+    public string? ReasonCode { get; set; }
+    public bool RequiresReason { get; set; }
 }
 
 public class Payment
 {
     public string Id { get; set; } = string.Empty;
     public string OrderId { get; set; } = string.Empty;
+    public string? OperationId { get; set; }
     public string PaymentMethod { get; set; } = string.Empty; // Cash, Card, etc.
     public decimal Amount { get; set; }
-    /// <summary>ISO code the tender moved money in (backend OrderPaymentDto.Currency); null on cash and historical rows.</summary>
+    /// <summary>ISO code of the tender's currency when provided by the feed; null on cash and historical rows.</summary>
     public string? Currency { get; set; }
     public string Status { get; set; } = string.Empty;
     public string? TransactionId { get; set; }
@@ -160,7 +193,13 @@ public class Payment
     public DateTime PaymentDate { get; set; }
     public string? CardLastFourDigits { get; set; }
     public string? CardType { get; set; }
-    public DateTime CreatedAt { get; set; }
+    public string? PaymentGateway { get; set; }
+    public string? PaymentNotes { get; set; }
+    public bool IsRefunded { get; set; }
+    public decimal? RefundedAmount { get; set; }
+    public DateTime? RefundDate { get; set; }
+    public DateTime? CreatedAt { get; set; }
+    public string? RefundReason { get; set; }
 }
 
 public class OrderStatusHistory
