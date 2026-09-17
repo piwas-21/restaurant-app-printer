@@ -265,12 +265,16 @@ public static class ReceiptComposer
 
         foreach (var ing in item.IngredientCustomizations ?? Enumerable.Empty<IngredientCustomization>())
         {
+            if (!ing.IsRemoved && ing.Quantity <= 0)
+            {
+                continue;
+            }
             string line;
             if (ing.IsRemoved)
             {
                 line = $"{indent}   - {labels.NoPrefix} {ing.IngredientName}";
             }
-            else if (ing.Quantity > 0 && (ing.IsAddOn || ing.Quantity > 1))
+            else if (ing.IsAddOn || ing.Quantity > 1)
             {
                 line = $"{indent}   {labels.ExtraPrefix} {ing.IngredientName} x{ing.Quantity}";
             }

@@ -109,8 +109,8 @@ public class ReceiptComposerTests
         var cashier = ComposeCashier(item);
         var kitchen = ComposeKitchen(item);
 
-        Assert.Contains("+ Cheddar", cashier);
-        Assert.Contains("+ Cheddar", kitchen);
+        Assert.DoesNotContain("Cheddar", cashier);
+        Assert.DoesNotContain("Cheddar", kitchen);
         Assert.DoesNotContain("+ EXTRA Cheddar", cashier);
         Assert.DoesNotContain("+ EXTRA Cheddar", kitchen);
     }
