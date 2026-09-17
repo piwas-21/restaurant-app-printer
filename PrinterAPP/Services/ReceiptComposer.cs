@@ -244,7 +244,7 @@ public static class ReceiptComposer
     /// <summary>
     /// The ingredient rows a line carries, in the catalog's language, followed by its special
     /// instruction. Rows are exactly the projection the backend freezes at checkout — selected
-    /// (kept), extra (explicit add-on or quantity above one) and removed — because
+    /// (kept), extra (positive explicit add-on or quantity above one) and removed — because
     /// "selected ingredients don't appear on the paper" was the complaint: the old filter hid
     /// every selection at quantity one, which is precisely what an explicitly chosen sauce or
     /// topping is. A line with no customization
@@ -270,7 +270,7 @@ public static class ReceiptComposer
             {
                 line = $"{indent}   - {labels.NoPrefix} {ing.IngredientName}";
             }
-            else if (ing.IsAddOn || ing.Quantity > 1)
+            else if (ing.Quantity > 0 && (ing.IsAddOn || ing.Quantity > 1))
             {
                 line = $"{indent}   {labels.ExtraPrefix} {ing.IngredientName} x{ing.Quantity}";
             }

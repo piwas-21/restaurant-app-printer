@@ -89,6 +89,33 @@ public class ReceiptComposerTests
     }
 
     [Fact]
+    public void Zero_quantity_add_on_does_not_print_as_extra_on_both_receipt_surfaces()
+    {
+        var item = new OrderItem
+        {
+            ProductName = "Tacos 1 Viande",
+            Quantity = 1,
+            IngredientCustomizations =
+            [
+                new IngredientCustomization
+                {
+                    IngredientName = "Cheddar",
+                    Quantity = 0,
+                    IsAddOn = true,
+                },
+            ],
+        };
+
+        var cashier = ComposeCashier(item);
+        var kitchen = ComposeKitchen(item);
+
+        Assert.Contains("+ Cheddar", cashier);
+        Assert.Contains("+ Cheddar", kitchen);
+        Assert.DoesNotContain("+ EXTRA Cheddar", cashier);
+        Assert.DoesNotContain("+ EXTRA Cheddar", kitchen);
+    }
+
+    [Fact]
     public void Removed_add_on_keeps_removal_precedence()
     {
         var item = new OrderItem

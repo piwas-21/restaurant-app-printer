@@ -185,7 +185,7 @@ public class Payment
     public string? OperationId { get; set; }
     public string PaymentMethod { get; set; } = string.Empty; // Cash, Card, etc.
     public decimal Amount { get; set; }
-    /// <summary>ISO code the tender moved money in (backend OrderPaymentDto.Currency); null on cash and historical rows.</summary>
+    /// <summary>ISO code of the tender's currency when provided by the feed; null on cash and historical rows.</summary>
     public string? Currency { get; set; }
     public string Status { get; set; } = string.Empty;
     public string? TransactionId { get; set; }
