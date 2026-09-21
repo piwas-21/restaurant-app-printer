@@ -91,6 +91,49 @@ public class PrintAckOutboxTests : IDisposable
     }
 
     [Fact]
+    public async Task RoutedAck_RestartFlushesStableJobIdentityExactlyOnce()
+    {
+        var jobId = Guid.NewGuid();
+        var ack = Ack();
+        ack.JobId = jobId;
+        ack.Revision = 4;
+        ack.JobType = DevicePrintJobType.Order;
+
+        await _outbox.EnqueueAsync(new[] { ack });
+
+        var reopened = new PrintAckOutbox(new TempPaths(_dir), NullLogger<PrintAckOutbox>.Instance);
+        var flushed = new List<PrintAck>();
+        await reopened.FlushAsync(batch =>
+        {
+            flushed.AddRange(batch);
+            return Task.FromResult(true);
+        });
+
+        var persisted = Assert.Single(flushed);
+        Assert.Equal(jobId, persisted.JobId);
+        Assert.Equal(4, persisted.Revision);
+        Assert.Equal(DevicePrintJobType.Order, persisted.JobType);
+
+        var secondFlush = 0;
+        await reopened.FlushAsync(_ =>
+        {
+            secondFlush++;
+            return Task.FromResult(true);
+        });
+        Assert.Equal(0, secondFlush);
+    }
+
+    [Fact]
+    public async Task Enqueue_ThrowsWhenDurablePathCannotBeWritten()
+    {
+        var pathFile = Path.Combine(_dir, "not-a-directory");
+        File.WriteAllText(pathFile, "occupied");
+        var failing = new PrintAckOutbox(new TempPaths(pathFile), NullLogger<PrintAckOutbox>.Instance);
+
+        await Assert.ThrowsAnyAsync<Exception>(() => failing.EnqueueAsync(new[] { Ack() }));
+    }
+
+    [Fact]
     public async Task Enqueue_coalesces_only_the_same_routed_job_identity()
     {
         var orderId = Guid.NewGuid();

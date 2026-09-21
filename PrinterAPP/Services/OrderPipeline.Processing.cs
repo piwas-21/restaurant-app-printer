@@ -184,8 +184,10 @@ public partial class OrderPipeline
 
         bool cashier;
         KitchenPrintOutcome frontKitchen, backKitchen, generalDefault;
+        var routedOrder = order.RoutingStates is { Count: > 0 };
+        var routedAckPersistenceAttempted = false;
+        var routedAcksDurablyStored = false;
 
-        // Phase 1: everything up to and including physical output.
         try
         {
             _logger.LogInformation("Order received: #{OrderNumber} — {EventType}",
@@ -197,9 +199,25 @@ public partial class OrderPipeline
                 await _orderPrintService.PrintOrderToAllPrintersAsync(
                     order, cancellationToken: CancellationToken.None);
 
-            // Confirm only when all local queued routes completed; otherwise release for retry.
-            if (OrderRoutingStateValidation.CanConfirm(order, _deviceIdentity.DeviceId,
-                    cashier, frontKitchen, backKitchen, generalDefault))
+            // Routed confirmation requires durable final acks before advancing feed cursor/dedup.
+            var canConfirm = OrderRoutingStateValidation.CanConfirm(
+                order, _deviceIdentity.DeviceId, cashier, frontKitchen, backKitchen, generalDefault);
+            if (canConfirm && routedOrder)
+            {
+                routedAckPersistenceAttempted = true;
+                var finalAcks = await BuildPrintAcksAsync(
+                    order, cashier, frontKitchen, backKitchen, generalDefault, orderEvent.Timestamp);
+                if (finalAcks.Count == 0)
+                {
+                    throw new InvalidDataException(
+                        $"Routed order {order.OrderNumber} produced no final printer acknowledgements.");
+                }
+
+                await _printAckOutbox.EnqueueAsync(finalAcks, CancellationToken.None);
+                routedAcksDurablyStored = true;
+            }
+
+            if (canConfirm)
             {
                 _feed.ConfirmOrderHandled(order.OrderNumber);
             }
@@ -210,11 +228,13 @@ public partial class OrderPipeline
         }
         catch (Exception ex)
         {
-            // One bad order must never take the pipeline down — the feed keeps polling. Surfaced on
-            // the Diagnostics page and to Sentry so a systematic failure is visible to the fleet.
-            _logger.LogError(ex, "Error processing order {OrderNumber}", order.OrderNumber);
+            var failureMessage = routedAckPersistenceAttempted
+                ? $"Order {order.OrderNumber} printed, but durable routed acknowledgement persistence failed; "
+                    + "physical output may have occurred and a retry may print duplicate paper."
+                : $"Failed to process order {order.OrderNumber}";
+            _logger.LogError(ex, "{FailureMessage}", failureMessage);
             _requestLogService.LogError(
-                "Order Pipeline", $"Failed to process order {order.OrderNumber}", ex.Message);
+                "Order Pipeline", failureMessage, ex.Message);
             SentrySdk.CaptureException(ex);
             _feed.ReleaseOrderForRetry(order.OrderNumber, order.CreatedAt, order.UpdatedAt);
 
@@ -226,38 +246,40 @@ public partial class OrderPipeline
                 BackKitchen = false,
                 GeneralDefault = KitchenPrintOutcome.Failed,
                 Error = ex,
+                AckPersistenceAmbiguous = routedAckPersistenceAttempted,
             });
             return;
         }
 
-        // Phase 2 — bookkeeping. The receipts are already out of the printer, so a failure here must
-        // never be reported as a print failure: it would contradict the history entry, put a false
-        // print-failure on the fleet dashboard, and (before this split) raise OrderProcessed a second
-        // time for the same order with fabricated all-false flags.
         try
         {
-            // One kitchen flag: every destination must have printed or owed nothing. NotConfigured
-            // (unassigned work, nowhere to go) is NOT printed (issue #113).
             _orderHistoryService.UpdatePrintStatus(
                 order.Id,
                 frontKitchen.IsSuccess && backKitchen.IsSuccess && generalDefault.IsSuccess,
                 cashier);
 
-            // Queue per-target print acks for the fleet backend (durable outbox → served-vs-acked
-            // missed-order reconciliation). Config is re-read rather than cached so a Save made
-            // between orders is reflected in the ack.
-            await _printAckOutbox.EnqueueAsync(
-                await BuildPrintAcksAsync(order, cashier, frontKitchen, backKitchen, generalDefault,
-                    orderEvent.Timestamp), CancellationToken.None);
+            if (!routedAcksDurablyStored)
+            {
+                routedAckPersistenceAttempted |= routedOrder;
+                await _printAckOutbox.EnqueueAsync(
+                    await BuildPrintAcksAsync(order, cashier, frontKitchen, backKitchen, generalDefault,
+                        orderEvent.Timestamp), CancellationToken.None);
+                routedAcksDurablyStored = routedOrder;
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Post-print bookkeeping failed for order {OrderNumber}", order.OrderNumber);
+            var failureMessage = routedAckPersistenceAttempted && !routedAcksDurablyStored
+                ? $"Order {order.OrderNumber} printed, but durable routed acknowledgement persistence failed; "
+                    + "physical output may have occurred and a retry may print duplicate paper."
+                : $"Post-print bookkeeping failed for order {order.OrderNumber}";
+            _logger.LogError(ex, "{FailureMessage}", failureMessage);
             _requestLogService.LogError(
-                "Order Pipeline",
-                $"Order {order.OrderNumber} printed, but recording it failed",
+                "Order Pipeline", failureMessage,
                 ex.Message);
             SentrySdk.CaptureException(ex);
+            if (routedAckPersistenceAttempted && !routedAcksDurablyStored)
+                _feed.ReleaseOrderForRetry(order.OrderNumber, order.CreatedAt, order.UpdatedAt);
         }
 
         // Raised exactly once, always with the real per-printer outcome.
@@ -268,33 +290,8 @@ public partial class OrderPipeline
             FrontKitchen = frontKitchen,
             BackKitchen = backKitchen,
             GeneralDefault = generalDefault,
+            AckPersistenceAmbiguous = routedAckPersistenceAttempted && !routedAcksDurablyStored,
         });
-    }
-
-    // A throwing subscriber must not be able to reach the pipeline's own error handling and turn a
-    // good print into a reported failure. Invoked one subscriber at a time via GetInvocationList
-    // rather than a plain multicast call, because a plain call abandons the rest of the list at the
-    // first throw — one broken subscriber would silently deprive all the others of the event.
-    private void RaiseOrderProcessed(OrderProcessedEventArgs args)
-    {
-        var handler = OrderProcessed;
-        if (handler is null)
-        {
-            return;
-        }
-
-        foreach (var subscriber in handler.GetInvocationList().Cast<EventHandler<OrderProcessedEventArgs>>())
-        {
-            try
-            {
-                subscriber(this, args);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "An OrderProcessed subscriber threw");
-                SentrySdk.CaptureException(ex);
-            }
-        }
     }
 
 }
