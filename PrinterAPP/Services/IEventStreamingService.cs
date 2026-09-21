@@ -28,8 +28,13 @@ public interface IEventStreamingService
     /// Removes an in-flight order from the session dedup set after its asynchronous print attempt
     /// did not produce a confirmed result. The next feed delivery may then retry it; a concurrent
     /// duplicate that arrived while the attempt was running remains suppressed until this point.
+    /// When the order came from SSE rather than polling, valid server timestamps may synthesize a
+    /// bounded poll floor so a later poll can still recover it.
     /// </summary>
-    void ReleaseOrderForRetry(string orderNumber);
+    void ReleaseOrderForRetry(
+        string orderNumber,
+        DateTime? createdAt = null,
+        DateTime? updatedAt = null);
 
     /// <summary>UTC time of the last successful order-feed poll, or null if none yet. Distinguishes
     /// "polling healthily" from "listening but wedged" (e.g. the deserialisation-wedge class), which

@@ -205,7 +205,7 @@ public partial class OrderPipeline
             }
             else
             {
-                _feed.ReleaseOrderForRetry(order.OrderNumber);
+                _feed.ReleaseOrderForRetry(order.OrderNumber, order.CreatedAt, order.UpdatedAt);
             }
         }
         catch (Exception ex)
@@ -216,7 +216,7 @@ public partial class OrderPipeline
             _requestLogService.LogError(
                 "Order Pipeline", $"Failed to process order {order.OrderNumber}", ex.Message);
             SentrySdk.CaptureException(ex);
-            _feed.ReleaseOrderForRetry(order.OrderNumber);
+            _feed.ReleaseOrderForRetry(order.OrderNumber, order.CreatedAt, order.UpdatedAt);
 
             RaiseOrderProcessed(new OrderProcessedEventArgs
             {

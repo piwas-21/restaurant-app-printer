@@ -432,7 +432,7 @@ public sealed class OrderPipelinePrintOutcomeTests : IDisposable
 
         public void ConfirmOrderHandled(string orderNumber) => _confirmed.Add(orderNumber);
 
-        public void ReleaseOrderForRetry(string orderNumber) { }
+        public void ReleaseOrderForRetry(string orderNumber, DateTime? createdAt = null, DateTime? updatedAt = null) { }
 
         public void Emit(Order order) =>
             OrderReceived?.Invoke(this, new OrderEvent

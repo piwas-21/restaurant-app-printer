@@ -209,6 +209,87 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
         Assert.True(cursorStore.Load().LastPollTime > OrderTimestamp, "successful retry did not advance the cursor");
     }
 
+    [Fact]
+    public async Task An_sse_failure_synthesizes_a_floor_when_the_poll_cursor_is_already_ahead()
+    {
+        _filterByModifiedSince = true;
+        _routeRecovery = true;
+        var cursorStore = new InMemoryFeedCursorStore();
+        cursorStore.Save(new FeedCursor
+        {
+            LastPollTime = DateTime.UtcNow.AddMinutes(-1),
+            ProcessedOrders = new Dictionary<string, DateTime>(),
+        });
+
+        var sseFeed = CreateFeed(cursorStore);
+        var sseAttempts = 0;
+        sseFeed.OrderReceived += (_, e) =>
+        {
+            if (e.Order is not null)
+            {
+                sseAttempts++;
+                // Simulate the async print path returning NoWork/failure after an SSE delivery.
+                sseFeed.ReleaseOrderForRetry(e.Order.OrderNumber, e.Order.CreatedAt, e.Order.UpdatedAt);
+            }
+        };
+
+        await sseFeed.ProcessEventAsync(
+            "order-created", SseUnassignedRouteJson, "kitchen", CancellationToken.None);
+
+        var recoveredFloor = cursorStore.Load().LastPollTime;
+        Assert.Equal(1, sseAttempts);
+        Assert.True(recoveredFloor < OrderTimestamp, "SSE retry did not establish a timestamp floor");
+
+        _routeAssigned = true;
+        var pollFeed = CreateFeed(cursorStore);
+        var printed = 0;
+        pollFeed.OrderReceived += (_, e) =>
+        {
+            if (e.Order is not null)
+            {
+                printed++;
+                pollFeed.ConfirmOrderHandled(e.Order.OrderNumber);
+            }
+        };
+
+        await pollFeed.StartListeningAsync();
+        Assert.True(
+            await WaitUntilAsync(() => printed > 0),
+            "the next poll did not recover an SSE-delivered order after route assignment");
+        await pollFeed.StopListeningAsync();
+
+        Assert.Equal(1, printed);
+        Assert.Contains("ORD-1001", cursorStore.Load().ProcessedOrders.Keys);
+    }
+
+    [Fact]
+    public async Task An_sse_future_timestamp_does_not_rewind_the_poll_cursor()
+    {
+        _filterByModifiedSince = false;
+        var ahead = DateTime.UtcNow.AddMinutes(-1);
+        var cursorStore = new InMemoryFeedCursorStore();
+        cursorStore.Save(new FeedCursor
+        {
+            LastPollTime = ahead,
+            ProcessedOrders = new Dictionary<string, DateTime>(),
+        });
+
+        var feed = CreateFeed(cursorStore);
+        feed.OrderReceived += (_, e) =>
+        {
+            if (e.Order is not null)
+                feed.ReleaseOrderForRetry(e.Order.OrderNumber, e.Order.CreatedAt, e.Order.UpdatedAt);
+        };
+
+        var future = DateTime.UtcNow.AddDays(1);
+        await feed.ProcessEventAsync(
+            "order-created", SseRouteJson(future, future), "kitchen", CancellationToken.None);
+
+        Assert.True(
+            cursorStore.Load().LastPollTime >= ahead,
+            "a malformed/future SSE timestamp rewound the poll cursor without a bounded floor");
+    }
+
     // Covers the CALL SITE, which the pure UnconfirmedOrderExpiry tests cannot: deleting the
     // ExpireUnrecoverableUnconfirmedOrders() call from CleanupOldProcessedOrders reverts the whole
     // retention fix — unconfirmed orders go back to outliving the cursor look-back clamp, their floor
@@ -411,6 +492,27 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
             "deviceId": "device-a"
           }]
         } ] } }
+        """;
+
+    private static string SseUnassignedRouteJson => SseRouteJson(OrderTimestamp, OrderTimestamp);
+
+    private static string SseRouteJson(DateTime createdAt, DateTime updatedAt) => $$"""
+        {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "orderNumber": "ORD-1001",
+          "status": "Confirmed",
+          "type": "DineIn",
+          "createdAt": "{{createdAt:O}}",
+          "updatedAt": "{{updatedAt:O}}",
+          "items": [{ "productName": "Kebab", "quantity": 1 }],
+          "routingStates": [{
+            "jobId": "22222222-2222-2222-2222-222222222222",
+            "revision": 1,
+            "target": "General",
+            "status": "Queued",
+            "deviceId": "other-device"
+          }]
+        }
         """;
 
     private static int GetFreePort()

@@ -77,6 +77,7 @@ public class EventStreamingService : IEventStreamingService
     // actually printed something forces an immediate write, because that is the state whose loss
     // causes a duplicate ticket.
     private static readonly TimeSpan CursorSaveInterval = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan RetryFloorAllowance = TimeSpan.FromSeconds(1);
     private DateTime _lastCursorSaveAt = DateTime.MinValue;
     private bool _cursorSavePending;
 
@@ -766,7 +767,10 @@ public class EventStreamingService : IEventStreamingService
     }
 
     /// <inheritdoc />
-    public void ReleaseOrderForRetry(string orderNumber)
+    public void ReleaseOrderForRetry(
+        string orderNumber,
+        DateTime? createdAt = null,
+        DateTime? updatedAt = null)
     {
         if (string.IsNullOrEmpty(orderNumber))
         {
@@ -788,6 +792,11 @@ public class EventStreamingService : IEventStreamingService
             // Keep a poll-delivered order's floor until a later retry confirms it. Without this,
             // the poll cursor advances beyond a failed/no-work order before the backend can assign
             // its route. SSE-only orders have no floor and are simply released from dedup.
+            if (!_unconfirmedPollWindows.ContainsKey(orderNumber)
+                && TryGetRetryFloor(createdAt, updatedAt, DateTime.UtcNow, out var retryFloor))
+            {
+                _unconfirmedPollWindows[orderNumber] = retryFloor;
+            }
             _expiredUnconfirmed.Remove(orderNumber);
         }
 
@@ -800,6 +809,33 @@ public class EventStreamingService : IEventStreamingService
             // immediately while retaining that floor so a later route assignment is observable.
             PersistCursor(force: true);
         }
+    }
+
+    private static bool TryGetRetryFloor(
+        DateTime? createdAt,
+        DateTime? updatedAt,
+        DateTime now,
+        out DateTime floor)
+    {
+        var earliest = now - FeedCursorStore.MaxLookBack;
+        var candidates = new[] { createdAt, updatedAt }
+            .Where(value => value is { } timestamp && timestamp != default)
+            .Select(value => value!.Value.Kind == DateTimeKind.Utc
+                ? value.Value
+                : value.Value.ToUniversalTime())
+            .Where(timestamp => timestamp <= now)
+            .ToList();
+        if (candidates.Count == 0)
+        {
+            floor = default;
+            return false;
+        }
+
+        var candidate = candidates.Min();
+        floor = candidate <= earliest + RetryFloorAllowance
+            ? earliest
+            : candidate - RetryFloorAllowance;
+        return true;
     }
 
     /// <summary>

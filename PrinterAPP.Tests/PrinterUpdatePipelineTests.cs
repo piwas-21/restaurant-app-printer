@@ -117,7 +117,7 @@ public sealed class PrinterUpdatePipelineTests
             return Task.CompletedTask;
         }
         public void ConfirmOrderHandled(string orderNumber) { }
-        public void ReleaseOrderForRetry(string orderNumber) { }
+        public void ReleaseOrderForRetry(string orderNumber, DateTime? createdAt = null, DateTime? updatedAt = null) { }
         public void Emit(PrinterFeedUpdate update) => UpdateReceived?.Invoke(this, update);
     }
 
