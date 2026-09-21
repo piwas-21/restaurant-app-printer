@@ -101,8 +101,17 @@ public static class OrderRoutingStateValidation
         KitchenPrintOutcome general)
     {
         var selection = Select(order, deviceId);
-        if (selection.IsLegacy || !selection.IsValid || selection.EligibleTargets.Count == 0)
-            return selection.IsLegacy;
+        if (selection.IsLegacy)
+        {
+            // Legacy responses have no server-owned route identity. Unknown kitchen outcomes are
+            // still a deserialisation/routing failure, not proof that the order was handled.
+            return front.Status != KitchenPrintStatus.Unknown
+                && back.Status != KitchenPrintStatus.Unknown
+                && general.Status != KitchenPrintStatus.Unknown;
+        }
+
+        if (!selection.IsValid || selection.EligibleTargets.Count == 0)
+            return false;
 
         foreach (var target in selection.EligibleTargets)
         {
