@@ -24,6 +24,13 @@ public interface IEventStreamingService
     /// </summary>
     void ConfirmOrderHandled(string orderNumber);
 
+    /// <summary>
+    /// Removes an in-flight order from the session dedup set after its asynchronous print attempt
+    /// did not produce a confirmed result. The next feed delivery may then retry it; a concurrent
+    /// duplicate that arrived while the attempt was running remains suppressed until this point.
+    /// </summary>
+    void ReleaseOrderForRetry(string orderNumber);
+
     /// <summary>UTC time of the last successful order-feed poll, or null if none yet. Distinguishes
     /// "polling healthily" from "listening but wedged" (e.g. the deserialisation-wedge class), which
     /// <see cref="IsListening"/> alone can't — surfaced in the fleet heartbeat.</summary>

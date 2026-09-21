@@ -185,8 +185,7 @@ public partial class OrderPipeline
         bool cashier;
         KitchenPrintOutcome frontKitchen, backKitchen, generalDefault;
 
-        // Phase 1 — everything up to and including the physical print. Only a failure in here means
-        // the order did not print.
+        // Phase 1: everything up to and including physical output.
         try
         {
             _logger.LogInformation("Order received: #{OrderNumber} — {EventType}",
@@ -198,13 +197,15 @@ public partial class OrderPipeline
                 await _orderPrintService.PrintOrderToAllPrintersAsync(
                     order, cancellationToken: CancellationToken.None);
 
-            // A routed order is confirmed only when every queued route assigned to this device
-            // completed successfully. Terminal/ambiguous routes and a device with no local work
-            // stay unconfirmed so a later server retry can recover them without claiming output.
+            // Confirm only when all local queued routes completed; otherwise release for retry.
             if (OrderRoutingStateValidation.CanConfirm(order, _deviceIdentity.DeviceId,
                     cashier, frontKitchen, backKitchen, generalDefault))
             {
                 _feed.ConfirmOrderHandled(order.OrderNumber);
+            }
+            else
+            {
+                _feed.ReleaseOrderForRetry(order.OrderNumber);
             }
         }
         catch (Exception ex)
@@ -215,6 +216,7 @@ public partial class OrderPipeline
             _requestLogService.LogError(
                 "Order Pipeline", $"Failed to process order {order.OrderNumber}", ex.Message);
             SentrySdk.CaptureException(ex);
+            _feed.ReleaseOrderForRetry(order.OrderNumber);
 
             RaiseOrderProcessed(new OrderProcessedEventArgs
             {

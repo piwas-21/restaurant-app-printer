@@ -764,6 +764,41 @@ public class EventStreamingService : IEventStreamingService
         PersistCursor(force: true);
     }
 
+    /// <inheritdoc />
+    public void ReleaseOrderForRetry(string orderNumber)
+    {
+        if (string.IsNullOrEmpty(orderNumber))
+        {
+            return;
+        }
+
+        bool released;
+        lock (_processedOrdersLock)
+        {
+            // Confirmation wins if it raced this recovery path. Removing a confirmed key would
+            // turn a successful print into a duplicate on the next poll.
+            if (!_processedOrders.ContainsKey(orderNumber)
+                || _persistableOrders.Contains(orderNumber))
+            {
+                return;
+            }
+
+            released = _processedOrders.Remove(orderNumber);
+            _unconfirmedPollWindows.Remove(orderNumber);
+            _expiredUnconfirmed.Remove(orderNumber);
+        }
+
+        if (released)
+        {
+            _logger.LogInformation(
+                "Order {OrderNumber} was not confirmed printed; releasing it for feed retry",
+                orderNumber);
+            // A polling delivery may have pinned the durable cursor to this order's window. Save
+            // immediately after removing that floor so a later route assignment is observable.
+            PersistCursor(force: true);
+        }
+    }
+
     /// <summary>
     /// Clean up processed orders older than MaxProcessedOrdersAge, and expire unconfirmed orders on
     /// the shorter <see cref="UnconfirmedRetention"/>.
