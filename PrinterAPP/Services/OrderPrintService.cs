@@ -11,6 +11,7 @@ public class OrderPrintService : IOrderPrintService
     private readonly IRequestLogService _requestLogService;
     private readonly ILogger<OrderPrintService> _logger;
     private readonly PrintStyleSettingsService _styleService;
+    private readonly IDeviceIdentityService? _deviceIdentity;
 
     // ESC/POS Commands for MAXIMUM darkness printing
     private const string ESC_INIT = "\x1B\x40"; // Initialize printer
@@ -44,10 +45,12 @@ public class OrderPrintService : IOrderPrintService
         IPrinterService printerService,
         IRequestLogService requestLogService,
         ILogger<OrderPrintService> logger,
-        IAppDataPathProvider pathProvider)
+        IAppDataPathProvider pathProvider,
+        IDeviceIdentityService? deviceIdentity = null)
     {
         _printerService = printerService;
         _requestLogService = requestLogService;
+        _deviceIdentity = deviceIdentity;
         _logger = logger;
         // Path provider injected (was `new PrintStyleSettingsService()` with a MAUI default) so this
         // service is source-linkable into the headless print-to-sink test.
@@ -97,15 +100,45 @@ public class OrderPrintService : IOrderPrintService
 
         var config = await _printerService.LoadConfigurationAsync();
         var policy = new KitchenRoutingPolicy(config.KitchenRoutingMode);
+        // Manual reprints are an operator-directed local action and preserve the existing "all
+        // configured destinations" behavior. Only the unattended feed path is device-routed.
+        var routeSelection = isManualPrint
+            ? OrderRoutingStateValidation.RoutingSelection.Legacy
+            : OrderRoutingStateValidation.Select(order, _deviceIdentity?.DeviceId);
+        if (!routeSelection.IsLegacy && !routeSelection.IsValid)
+        {
+            _logger.LogError("Rejected routed order {OrderNumber}: {Reason}",
+                order.OrderNumber, routeSelection.FailureReason);
+            _requestLogService.LogError(
+                "Printer Routing", $"Rejected routed order {order.OrderNumber}",
+                routeSelection.FailureReason ?? "Invalid route state");
+            return (false, KitchenPrintOutcome.Unknown, KitchenPrintOutcome.Unknown,
+                KitchenPrintOutcome.Unknown);
+        }
+
+        if (!routeSelection.IsLegacy && routeSelection.EligibleTargets.Count == 0)
+        {
+            _logger.LogWarning("No queued route assigned to this device for order {OrderNumber}",
+                order.OrderNumber);
+            _requestLogService.LogWarning(
+                "Printer Routing", $"No local print work for order {order.OrderNumber}",
+                "The server route is not queued for this device; no output or acknowledgement was recorded.");
+            return (false, KitchenPrintOutcome.NoWork, KitchenPrintOutcome.NoWork,
+                KitchenPrintOutcome.NoWork);
+        }
+
+        var routedTargets = routeSelection.IsLegacy ? null : routeSelection.EligibleTargets;
         bool cashierSuccess = false;
-        var frontKitchenSuccess = KitchenPrintOutcome.Failed;
-        var backKitchenSuccess = KitchenPrintOutcome.Failed;
-        var generalDefaultSuccess = KitchenPrintOutcome.Failed;
+        var frontKitchenSuccess = KitchenPrintOutcome.Sent;
+        var backKitchenSuccess = KitchenPrintOutcome.Sent;
+        var generalDefaultSuccess = KitchenPrintOutcome.Sent;
 
         // 1. ALWAYS print to Cashier (full receipt with prices)
         try
         {
-            cashierSuccess = await PrintOrderAsync(order, PrinterType.Cashier, isManualPrint, cancellationToken);
+            cashierSuccess = routedTargets is null || routedTargets.Contains(DevicePrintTarget.Cashier)
+                ? await PrintOrderAsync(order, PrinterType.Cashier, isManualPrint, cancellationToken)
+                : false;
             _logger.LogInformation("Cashier print: {Result}", cashierSuccess ? "✓" : "✗");
         }
         catch (Exception ex)
@@ -125,27 +158,35 @@ public class OrderPrintService : IOrderPrintService
             // Every printable line belongs on ONE General ticket at the resolved destination; the
             // stations are owed nothing, which reports the same trivially-true the empty-kitchen
             // path has always reported.
-            var generalSelection = KitchenTicketFilter.SelectionForDestination(
-                order.Items, policy, KitchenTicketDestination.General);
-            generalDefaultSuccess = await PrintGeneralOrDefaultTicketAsync(
-                order.WithItems(generalSelection.Items.ToList()),
-                config, isManualPrint, "General Kitchen", generalSelection.HasUnknown);
+            if (AllowsGeneralOrDefault(routedTargets))
+            {
+                var generalSelection = KitchenTicketFilter.SelectionForDestination(
+                    order.Items, policy, KitchenTicketDestination.General);
+                generalDefaultSuccess = await PrintGeneralOrDefaultTicketAsync(
+                    order.WithItems(generalSelection.Items.ToList()),
+                    config, isManualPrint, "General Kitchen", generalSelection.HasUnknown,
+                    routedTargets?.Contains(DevicePrintTarget.General) == true);
+            }
             frontKitchenSuccess = KitchenPrintOutcome.Sent;
             backKitchenSuccess = KitchenPrintOutcome.Sent;
         }
         else
         {
             (frontKitchenSuccess, backKitchenSuccess) =
-                await PrintStationTicketsAsync(order, config, isManualPrint);
+                await PrintStationTicketsAsync(order, config, isManualPrint, routedTargets);
 
             // Unassigned roots and their riders are Default work (the routing matrix in
             // CASHIER-POS-REDESIGN-PLAN §9 — "unassigned" must never mean "silently omitted"):
             // they used to drop out of both station tickets and print nothing at all.
-            var defaultSelection = KitchenTicketFilter.SelectionForDestination(
-                order.Items, policy, KitchenTicketDestination.Default);
-            generalDefaultSuccess = await PrintGeneralOrDefaultTicketAsync(
-                order.WithItems(defaultSelection.Items.ToList()),
-                config, isManualPrint, "Default Kitchen", defaultSelection.HasUnknown);
+            if (AllowsGeneralOrDefault(routedTargets))
+            {
+                var defaultSelection = KitchenTicketFilter.SelectionForDestination(
+                    order.Items, policy, KitchenTicketDestination.Default);
+                generalDefaultSuccess = await PrintGeneralOrDefaultTicketAsync(
+                    order.WithItems(defaultSelection.Items.ToList()),
+                    config, isManualPrint, "Default Kitchen", defaultSelection.HasUnknown,
+                    routedTargets?.Contains(DevicePrintTarget.Default) == true);
+            }
         }
 
         _logger.LogInformation("🖨️ Print complete for order {OrderNumber}: Cashier={C}, Front={F}, Back={B}, General/Default={G}",
@@ -207,7 +248,8 @@ public class OrderPrintService : IOrderPrintService
     private async Task<(KitchenPrintOutcome Front, KitchenPrintOutcome Back)> PrintStationTicketsAsync(
         Order order,
         PrinterConfiguration config,
-        bool isManualPrint)
+        bool isManualPrint,
+        IReadOnlySet<DevicePrintTarget>? routedTargets = null)
     {
         var policy = KitchenRoutingPolicy.Stations;
         var frontSelection = KitchenTicketFilter.SelectionForDestination(
@@ -223,7 +265,11 @@ public class OrderPrintService : IOrderPrintService
         var backKitchenSuccess = KitchenPrintOutcome.Failed;
 
         // Print to FrontKitchen if there are FrontKitchen items
-        if (hasFrontKitchenItems)
+        if (routedTargets is not null && !routedTargets.Contains(DevicePrintTarget.FrontKitchen))
+        {
+            frontKitchenSuccess = KitchenPrintOutcome.Sent;
+        }
+        else if (hasFrontKitchenItems)
         {
             try
             {
@@ -253,7 +299,9 @@ public class OrderPrintService : IOrderPrintService
         }
         else
         {
-            frontKitchenSuccess = frontSelection.HasUnknown
+            frontKitchenSuccess = routedTargets is not null && routedTargets.Contains(DevicePrintTarget.FrontKitchen)
+                ? KitchenPrintOutcome.Unknown
+                : frontSelection.HasUnknown
                 ? KitchenPrintOutcome.Unknown
                 : KitchenPrintOutcome.Sent; // No known items to print
         }
@@ -264,7 +312,11 @@ public class OrderPrintService : IOrderPrintService
             frontKitchenSuccess = KitchenPrintOutcome.Unknown;
 
         // Print to BackKitchen if there are BackKitchen items
-        if (hasBackKitchenItems)
+        if (routedTargets is not null && !routedTargets.Contains(DevicePrintTarget.BackKitchen))
+        {
+            backKitchenSuccess = KitchenPrintOutcome.Sent;
+        }
+        else if (hasBackKitchenItems)
         {
             try
             {
@@ -292,7 +344,9 @@ public class OrderPrintService : IOrderPrintService
         }
         else
         {
-            backKitchenSuccess = backSelection.HasUnknown
+            backKitchenSuccess = routedTargets is not null && routedTargets.Contains(DevicePrintTarget.BackKitchen)
+                ? KitchenPrintOutcome.Unknown
+                : backSelection.HasUnknown
                 ? KitchenPrintOutcome.Unknown
                 : KitchenPrintOutcome.Sent; // No known items to print
         }
@@ -316,11 +370,12 @@ public class OrderPrintService : IOrderPrintService
         PrinterConfiguration config,
         bool isManualPrint,
         string header,
-        bool hasUnknown = false)
+        bool hasUnknown = false,
+        bool routeAssigned = false)
     {
         if (filtered.Items.Count == 0)
         {
-            return hasUnknown ? KitchenPrintOutcome.Unknown : KitchenPrintOutcome.Sent;
+            return hasUnknown || routeAssigned ? KitchenPrintOutcome.Unknown : KitchenPrintOutcome.Sent;
         }
 
         // Manual reprints bypass the auto-print toggle (consistent with the Front/Back path).
@@ -365,6 +420,11 @@ public class OrderPrintService : IOrderPrintService
     /// </summary>
     private static Order CreateFilteredOrder(Order original, string kitchenType) =>
         original.WithItems(KitchenTicketFilter.ItemsForKitchen(original.Items, kitchenType));
+
+    private static bool AllowsGeneralOrDefault(IReadOnlySet<DevicePrintTarget>? routedTargets) =>
+        routedTargets is null
+        || routedTargets.Contains(DevicePrintTarget.General)
+        || routedTargets.Contains(DevicePrintTarget.Default);
 
     public async Task<bool> PrintOrderAsync(Order order, PrinterType printerType, bool isManualPrint = false, CancellationToken cancellationToken = default)
     {

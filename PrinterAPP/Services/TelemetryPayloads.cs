@@ -6,7 +6,7 @@ namespace PrinterAPP.Services;
 /// Pure builders that map local state into telemetry request bodies. MAUI-free and side-effect-free
 /// so the "only non-PII, never the API key" contract is unit-testable. See the fleet-observability plan.
 /// </summary>
-public static class TelemetryPayloads
+public static partial class TelemetryPayloads
 {
     public static HeartbeatRequest Heartbeat(
         PrinterConfiguration config, string platform, string appVersion,
@@ -24,6 +24,8 @@ public static class TelemetryPayloads
             // config.ApiKey is DELIBERATELY not read here — the heartbeat body must carry no secret.
             KitchenPrinter = ComposeKitchenPrinter(config),
             CashierPrinter = NullIfBlank(config.CashierPrinterName),
+            TargetCapabilities = PrinterTargetCapabilityBuilder.Build(config),
+            KitchenRoutingMode = config.KitchenRoutingMode,
         };
     }
 
@@ -55,10 +57,19 @@ public static class TelemetryPayloads
     /// </summary>
     public static List<PrintAck> PrintAcks(
         Order order, bool cashier, bool frontKitchen, bool backKitchen,
-        PrinterConfiguration config, DateTime receivedAt)
+        PrinterConfiguration config, DateTime receivedAt, string? deviceId = null)
     {
         if (!Guid.TryParse(order.Id, out var orderId))
             return new List<PrintAck>();
+
+        if (!string.IsNullOrWhiteSpace(deviceId) && order.RoutingStates is { Count: > 0 })
+        {
+            return RoutedPrintAcks(order, orderId,
+                cashier ? KitchenPrintOutcome.Sent : KitchenPrintOutcome.Failed,
+                frontKitchen ? KitchenPrintOutcome.Sent : KitchenPrintOutcome.Failed,
+                backKitchen ? KitchenPrintOutcome.Sent : KitchenPrintOutcome.Failed,
+                KitchenPrintOutcome.Sent, config, receivedAt, deviceId);
+        }
 
         return new List<PrintAck>
         {
@@ -84,16 +95,60 @@ public static class TelemetryPayloads
         bool backKitchen,
         KitchenPrintOutcome generalDefault,
         PrinterConfiguration config,
-        DateTime receivedAt)
+        DateTime receivedAt,
+        string? deviceId = null)
     {
+        if (Guid.TryParse(order.Id, out var orderId)
+            && !string.IsNullOrWhiteSpace(deviceId)
+            && order.RoutingStates is { Count: > 0 })
+        {
+            return RoutedPrintAcks(order, orderId,
+                cashier ? KitchenPrintOutcome.Sent : KitchenPrintOutcome.Failed,
+                frontKitchen ? KitchenPrintOutcome.Sent : KitchenPrintOutcome.Failed,
+                backKitchen ? KitchenPrintOutcome.Sent : KitchenPrintOutcome.Failed,
+                generalDefault, config, receivedAt, deviceId);
+        }
+
         var acks = PrintAcks(order, cashier, frontKitchen, backKitchen, config, receivedAt);
-        if (!Guid.TryParse(order.Id, out var orderId))
+        if (!Guid.TryParse(order.Id, out var legacyOrderId))
             return acks;
 
         var target = config.KitchenRoutingMode == KitchenRoutingMode.SingleKitchen
             ? DevicePrintTarget.General
             : DevicePrintTarget.Default;
-        acks.Add(BuildOutcomeAck(orderId, target, generalDefault, receivedAt));
+        acks.Add(BuildOutcomeAck(legacyOrderId, target, generalDefault, receivedAt));
+        return acks;
+    }
+
+    /// <summary>Typed variant used by the routed pipeline so no-work is never reported as Printed.</summary>
+    public static List<PrintAck> PrintAcks(
+        Order order,
+        bool cashier,
+        KitchenPrintOutcome frontKitchen,
+        KitchenPrintOutcome backKitchen,
+        KitchenPrintOutcome generalDefault,
+        PrinterConfiguration config,
+        DateTime receivedAt,
+        string? deviceId = null)
+    {
+        if (Guid.TryParse(order.Id, out var orderId)
+            && !string.IsNullOrWhiteSpace(deviceId)
+            && order.RoutingStates is { Count: > 0 })
+        {
+            return RoutedPrintAcks(order, orderId,
+                cashier ? KitchenPrintOutcome.Sent : KitchenPrintOutcome.Failed,
+                frontKitchen, backKitchen, generalDefault, config, receivedAt, deviceId);
+        }
+
+        var acks = PrintAcks(order, cashier, frontKitchen.IsSuccess, backKitchen.IsSuccess,
+            config, receivedAt);
+        if (Guid.TryParse(order.Id, out var legacyOrderId))
+        {
+            var target = config.KitchenRoutingMode == KitchenRoutingMode.SingleKitchen
+                ? DevicePrintTarget.General
+                : DevicePrintTarget.Default;
+            acks.Add(BuildOutcomeAck(legacyOrderId, target, generalDefault, receivedAt));
+        }
         return acks;
     }
 
@@ -155,7 +210,8 @@ public static class TelemetryPayloads
         Guid orderId,
         DevicePrintTarget target,
         KitchenPrintOutcome outcome,
-        DateTime receivedAt)
+        DateTime receivedAt,
+        OrderRoutingState? route = null)
     {
         var status = outcome.Status switch
         {
@@ -179,6 +235,9 @@ public static class TelemetryPayloads
                 ? status.ToString()
                 : null,
             Copies = status == DevicePrintStatus.Printed ? 1 : 0,
+            JobId = route?.JobId,
+            Revision = route?.Revision,
+            JobType = route is null ? null : DevicePrintJobType.Order,
         };
     }
 

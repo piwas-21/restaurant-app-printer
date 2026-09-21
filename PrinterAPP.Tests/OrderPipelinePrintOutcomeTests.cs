@@ -115,6 +115,37 @@ public sealed class OrderPipelinePrintOutcomeTests : IDisposable
         Assert.Contains(order.OrderNumber, _feed.Confirmed);
     }
 
+    [Fact]
+    public async Task RoutedOrderWithoutLocalQueuedWork_IsNotConfirmedOrRecordedAsPrinted()
+    {
+        var order = new Order
+        {
+            Id = "9a1b6bd1-0a5b-4a0e-9d2a-3f3c1c0a4e99",
+            OrderNumber = "PIPE-ROUTE-NONE",
+            Type = "TakeAway",
+            Status = "Confirmed",
+            Total = 18.00m,
+            OrderDate = DateTime.Now,
+            Items = { new OrderItem { ProductName = "Soup", Quantity = 1, KitchenType = "None" } },
+            RoutingStates =
+            [new()
+            {
+                JobId = Guid.NewGuid(), Revision = 1, Target = DevicePrintTarget.General,
+                DeviceId = "other-device", Status = DevicePrintStatus.Queued,
+            }],
+        };
+
+        using var cts = new CancellationTokenSource(TestTimeout);
+        var args = await RunAsync(SingleKitchenConfig(), order, cts.Token);
+
+        Assert.Equal(KitchenPrintStatus.NoWork, args.GeneralDefault.Status);
+        Assert.False(args.Cashier);
+        Assert.DoesNotContain(order.OrderNumber, _feed.Confirmed);
+        Assert.Empty(_outbox.Enqueued);
+        Assert.False(_cashier.ReceivedAnything);
+        Assert.False(_generalDefault.ReceivedAnything);
+    }
+
     [Theory]
     [InlineData(false)] // nothing kitchen-side is configured at all
     [InlineData(true)]  // both stations configured — the resolver must not guess between them
@@ -305,7 +336,8 @@ public sealed class OrderPipelinePrintOutcomeTests : IDisposable
             new StubPrinterService(config),
             new NoopRequestLogService(),
             NullLogger<OrderPrintService>.Instance,
-            _paths);
+            _paths,
+            new StubDeviceIdentityService());
 
         var pipeline = new OrderPipeline(
             _feed,

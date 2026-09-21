@@ -1,3 +1,5 @@
+using PrinterAPP.Services;
+
 namespace PrinterAPP.Models;
 
 /// <summary>
@@ -19,4 +21,6 @@ public class HeartbeatRequest
     public string? ApiBaseUrl { get; set; }
     public string? KitchenPrinter { get; set; }
     public string? CashierPrinter { get; set; }
+    public List<PrinterTargetCapability>? TargetCapabilities { get; set; }
+    public KitchenRoutingMode? KitchenRoutingMode { get; set; }
 }

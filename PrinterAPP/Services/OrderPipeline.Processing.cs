@@ -198,12 +198,11 @@ public partial class OrderPipeline
                 await _orderPrintService.PrintOrderToAllPrintersAsync(
                     order, cancellationToken: CancellationToken.None);
 
-            // The order has been through the printers, so its dedup entry may now be persisted. An
-            // unknown kitchen assignment is different: a leaf was not safely routed, so leave the
-            // order unconfirmed and let the feed drive it again instead of losing kitchen work.
-            if (frontKitchen.Status != KitchenPrintStatus.Unknown
-                && backKitchen.Status != KitchenPrintStatus.Unknown
-                && generalDefault.Status != KitchenPrintStatus.Unknown)
+            // A routed order is confirmed only when every queued route assigned to this device
+            // completed successfully. Terminal/ambiguous routes and a device with no local work
+            // stay unconfirmed so a later server retry can recover them without claiming output.
+            if (OrderRoutingStateValidation.CanConfirm(order, _deviceIdentity.DeviceId,
+                    cashier, frontKitchen, backKitchen, generalDefault))
             {
                 _feed.ConfirmOrderHandled(order.OrderNumber);
             }
@@ -245,10 +244,9 @@ public partial class OrderPipeline
             // Queue per-target print acks for the fleet backend (durable outbox → served-vs-acked
             // missed-order reconciliation). Config is re-read rather than cached so a Save made
             // between orders is reflected in the ack.
-            var config = await _printerService.LoadConfigurationAsync();
-            await _printAckOutbox.EnqueueAsync(TelemetryPayloads.PrintAcks(
-                order, cashier, frontKitchen, backKitchen, config, orderEvent.Timestamp),
-                CancellationToken.None);
+            await _printAckOutbox.EnqueueAsync(
+                await BuildPrintAcksAsync(order, cashier, frontKitchen, backKitchen, generalDefault,
+                    orderEvent.Timestamp), CancellationToken.None);
         }
         catch (Exception ex)
         {

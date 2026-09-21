@@ -103,4 +103,88 @@ public class TelemetryPayloadsPrintAcksTests
 
         Assert.Empty(acks);   // without a real id the backend can't reconcile — don't send noise
     }
+
+    [Fact]
+    public void RoutedPrintAcks_OnlyAcknowledgesThisDeviceWithStableJobIdentity()
+    {
+        var orderId = Guid.NewGuid();
+        var frontJobId = Guid.NewGuid();
+        var otherJobId = Guid.NewGuid();
+        var order = OrderWithId(orderId.ToString());
+        order.RoutingStates = new List<OrderRoutingState>
+        {
+            new()
+            {
+                Id = Guid.NewGuid(), JobId = Guid.NewGuid(), Revision = 1,
+                Target = DevicePrintTarget.Cashier, DeviceId = "front-device",
+                Status = DevicePrintStatus.Queued, Version = 1,
+            },
+            new()
+            {
+                Id = Guid.NewGuid(), JobId = frontJobId, Revision = 2,
+                Target = DevicePrintTarget.FrontKitchen, DeviceId = "front-device",
+                Status = DevicePrintStatus.Queued, Version = 3,
+            },
+            new()
+            {
+                Id = Guid.NewGuid(), JobId = otherJobId, Revision = 1,
+                Target = DevicePrintTarget.BackKitchen, DeviceId = "back-device",
+                Status = DevicePrintStatus.Queued, Version = 1,
+            },
+            new()
+            {
+                Id = Guid.NewGuid(), JobId = Guid.NewGuid(), Revision = 1,
+                Target = DevicePrintTarget.General, DeviceId = "front-device",
+                Status = DevicePrintStatus.Printed, Version = 2,
+            },
+        };
+
+        var acks = TelemetryPayloads.PrintAcks(
+            order, cashier: true, KitchenPrintOutcome.Sent, KitchenPrintOutcome.Sent,
+            KitchenPrintOutcome.Sent,
+            new PrinterConfiguration { CashierPrinterName = "cashier", FrontKitchenPrinterName = "front" },
+            DateTime.UtcNow,
+            "front-device");
+
+        Assert.Equal(2, acks.Count);
+        var frontAck = Assert.Single(acks, ack => ack.Target == DevicePrintTarget.FrontKitchen);
+        Assert.Equal(frontJobId, frontAck.JobId);
+        Assert.Equal(2, frontAck.Revision);
+        Assert.Equal(DevicePrintJobType.Order, frontAck.JobType);
+        Assert.Equal(DevicePrintStatus.Printed, frontAck.Status);
+        var cashierAck = Assert.Single(acks, ack => ack.Target == DevicePrintTarget.Cashier);
+        Assert.Equal(DevicePrintStatus.Printed, cashierAck.Status);
+    }
+
+    [Fact]
+    public void RoutedPrintAcks_MalformedOrTerminalRoutes_AreNotAcknowledged()
+    {
+        var order = OrderWithId(Guid.NewGuid().ToString());
+        order.RoutingStates =
+        [
+            new()
+            {
+                JobId = Guid.NewGuid(), Revision = 1, Target = DevicePrintTarget.FrontKitchen,
+                DeviceId = "front-device", Status = DevicePrintStatus.Printed,
+            },
+        ];
+
+        var acks = TelemetryPayloads.PrintAcks(
+            order, true, KitchenPrintOutcome.Sent, KitchenPrintOutcome.Sent,
+            KitchenPrintOutcome.Sent, new PrinterConfiguration { FrontKitchenPrinterName = "front" },
+            DateTime.UtcNow, "front-device");
+
+        Assert.Empty(acks);
+
+        order.RoutingStates[0].Status = DevicePrintStatus.Sent;
+        Assert.Empty(TelemetryPayloads.PrintAcks(
+            order, true, KitchenPrintOutcome.Sent, KitchenPrintOutcome.Sent,
+            KitchenPrintOutcome.Sent, new PrinterConfiguration { FrontKitchenPrinterName = "front" },
+            DateTime.UtcNow, "front-device"));
+
+        order.RoutingStates[0].JobId = Guid.Empty;
+        Assert.Empty(TelemetryPayloads.PrintAcks(
+            order, true, KitchenPrintOutcome.Sent, KitchenPrintOutcome.Sent,
+            KitchenPrintOutcome.Sent, new PrinterConfiguration(), DateTime.UtcNow, "front-device"));
+    }
 }

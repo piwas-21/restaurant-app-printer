@@ -11,6 +11,7 @@ public class EventStreamingService : IEventStreamingService
     private readonly IRequestLogService _requestLogService;
     private readonly IFeedCursorStore _cursorStore;
     private readonly IPrintUpdateJobStore? _updateJobStore;
+    private readonly IDeviceIdentityService? _deviceIdentity;
     private readonly ILogger<EventStreamingService> _logger;
     private CancellationTokenSource? _cancellationTokenSource;
     private Task? _kitchenListeningTask;
@@ -100,12 +101,14 @@ public class EventStreamingService : IEventStreamingService
         IFeedCursorStore cursorStore,
         ILogger<EventStreamingService> logger,
         TimeSpan? pollInterval = null,
-        IPrintUpdateJobStore? updateJobStore = null)
+        IPrintUpdateJobStore? updateJobStore = null,
+        IDeviceIdentityService? deviceIdentity = null)
     {
         _printerService = printerService;
         _requestLogService = requestLogService;
         _cursorStore = cursorStore;
         _updateJobStore = updateJobStore;
+        _deviceIdentity = deviceIdentity;
         _logger = logger;
         _pollInterval = pollInterval is { } supplied && supplied > TimeSpan.Zero
             ? supplied
@@ -203,7 +206,9 @@ public class EventStreamingService : IEventStreamingService
         }
     }
 
-    private async Task ListenToStreamAsync(string apiBaseUrl, string endpoint, CancellationToken cancellationToken)
+    // Internal for the source-linked contract test: this keeps the SSE framing and route payload
+    // dispatch under test without making the obsolete streaming loop part of the public API.
+    internal async Task ListenToStreamAsync(string apiBaseUrl, string endpoint, CancellationToken cancellationToken)
     {
         var url = $"{apiBaseUrl.TrimEnd('/')}/api/events/{endpoint}";
         var retryDelay = TimeSpan.FromSeconds(5);
@@ -340,6 +345,7 @@ public class EventStreamingService : IEventStreamingService
                             eventType = null;
                         }
                     }
+
                 }
                 finally
                 {
@@ -375,7 +381,7 @@ public class EventStreamingService : IEventStreamingService
         }
     }
 
-    private async Task ProcessEventAsync(string eventType, string data, string sourceEndpoint, CancellationToken cancellationToken)
+    internal async Task ProcessEventAsync(string eventType, string data, string sourceEndpoint, CancellationToken cancellationToken)
     {
         try
         {
@@ -401,16 +407,25 @@ public class EventStreamingService : IEventStreamingService
                 try
                 {
                     // Try to parse as OrderEvent wrapper first (new format)
-                    var orderEvent = JsonSerializer.Deserialize<OrderEvent>(data, new JsonSerializerOptions
-                    {
-                        PropertyNameCaseInsensitive = true
-                    });
+                    var orderEvent = JsonSerializer.Deserialize<OrderEvent>(
+                        data, PrinterJsonSerialization.Options);
+
+                    // A valid direct-order payload deserialises to a wrapper with no Order. Force
+                    // the legacy fallback below instead of silently dropping that SSE shape.
+                    if (orderEvent?.Order is null)
+                        throw new JsonException("The SSE payload did not contain an Order wrapper.");
 
                     // Pattern match (not `orderEvent?.Order != null`) so the compiler narrows orderEvent
                     // to non-null in this block — clears CS8604 at OnOrderReceived(orderEvent) below.
                     if (orderEvent is { Order: not null })
                     {
                         var order = orderEvent.Order;
+
+                        if (!OrderRoutingStateValidation.TryValidate(order, out var routeError))
+                        {
+                            LogMalformedRoute(order.OrderNumber, routeError!, data);
+                            return;
+                        }
 
                         // FILTER: Only process orders with Confirmed status
                         if (!string.Equals(order.Status, "Confirmed", StringComparison.OrdinalIgnoreCase))
@@ -500,13 +515,15 @@ public class EventStreamingService : IEventStreamingService
                 catch
                 {
                     // If that fails, try to parse as Order directly (old format fallback)
-                    var order = JsonSerializer.Deserialize<Order>(data, new JsonSerializerOptions
-                    {
-                        PropertyNameCaseInsensitive = true
-                    });
+                    var order = JsonSerializer.Deserialize<Order>(data, PrinterJsonSerialization.Options);
 
                     if (order != null)
                     {
+                        if (!OrderRoutingStateValidation.TryValidate(order, out var routeError))
+                        {
+                            LogMalformedRoute(order.OrderNumber, routeError!, data);
+                            return;
+                        }
                         // FILTER: Only process orders with Confirmed status
                         if (!string.Equals(order.Status, "Confirmed", StringComparison.OrdinalIgnoreCase))
                         {
@@ -565,6 +582,13 @@ public class EventStreamingService : IEventStreamingService
     protected virtual void OnOrderReceived(OrderEvent orderEvent)
     {
         OrderReceived?.Invoke(this, orderEvent);
+    }
+
+    private void LogMalformedRoute(string orderNumber, string reason, string rawPayload)
+    {
+        _logger.LogError("Rejected routed SSE order {OrderNumber}: {Reason}", orderNumber, reason);
+        _requestLogService.LogError(
+            "Printer Routing", $"Rejected routed order {orderNumber}", reason + " Retry will be attempted.");
     }
 
     protected virtual void OnConnectionStatusChanged(string status)
@@ -891,6 +915,8 @@ public class EventStreamingService : IEventStreamingService
                     httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.ApiKey);
                 else
                     _logger.LogWarning("   ⚠️ No API key configured - request may fail if auth required");
+                if (_deviceIdentity is not null && !string.IsNullOrWhiteSpace(_deviceIdentity.DeviceId))
+                    httpClient.DefaultRequestHeaders.Add("X-Device-Id", _deviceIdentity.DeviceId);
 
                 var page = await FetchFeedPageAsync(
                     httpClient, baseUrl, pollWindowStart, language, updateCursor, cancellationToken);

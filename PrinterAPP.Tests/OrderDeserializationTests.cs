@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using PrinterAPP.Models;
 using Xunit;
 
@@ -14,7 +15,11 @@ namespace PrinterAPP.Tests;
 public class OrderDeserializationTests
 {
     // Same options the polling/SSE paths use (EventStreamingService): backend camelCase -> PascalCase.
-    private static readonly JsonSerializerOptions Options = new() { PropertyNameCaseInsensitive = true };
+    private static readonly JsonSerializerOptions Options = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter() },
+    };
 
     [Fact]
     public void Deserialize_delivery_order_binds_the_address_object()
@@ -266,5 +271,37 @@ public class OrderDeserializationTests
 
         Assert.NotNull(order);
         Assert.Null(order!.DeliveryAddress);
+    }
+
+    [Fact]
+    public void Deserialize_additive_routing_states_preserves_job_identity_and_device_binding()
+    {
+        const string json = """
+        {
+          "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+          "routingStates": [
+            {
+              "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+              "jobId": "cccccccc-cccc-cccc-cccc-cccccccccccc",
+              "revision": 1,
+              "target": "General",
+              "status": "Queued",
+              "deviceId": "front-device",
+              "failureReason": null,
+              "lastAcknowledgedAt": null,
+              "version": 2
+            }
+          ]
+        }
+        """;
+
+        var order = JsonSerializer.Deserialize<Order>(json, Options);
+
+        var route = Assert.Single(order!.RoutingStates!);
+        Assert.Equal(DevicePrintTarget.General, route.Target);
+        Assert.Equal(DevicePrintStatus.Queued, route.Status);
+        Assert.Equal("front-device", route.DeviceId);
+        Assert.Equal(Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"), route.JobId);
+        Assert.Equal(2, route.Version);
     }
 }
