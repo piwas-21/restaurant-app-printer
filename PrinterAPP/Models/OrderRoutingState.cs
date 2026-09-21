@@ -12,6 +12,8 @@ public sealed class OrderRoutingState
     public int Revision { get; set; }
     public DevicePrintTarget Target { get; set; }
     public DevicePrintStatus Status { get; set; }
+    /// <summary>Whether the backend requires this route for order completion; informational on the client.</summary>
+    public bool IsRequired { get; set; }
     public string? DeviceId { get; set; }
     public string? FailureReason { get; set; }
     public DateTime? LastAcknowledgedAt { get; set; }

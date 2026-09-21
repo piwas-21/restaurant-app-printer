@@ -28,7 +28,7 @@ public sealed class EventStreamingServiceRoutingTests
             "routingStates": [
               { "id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
                 "jobId": "cccccccc-cccc-cccc-cccc-cccccccccccc", "revision": 1,
-                "target": "Cashier", "status": "Queued", "deviceId": "device-a" }
+                "target": "Cashier", "status": "Queued", "isRequired": true, "deviceId": "device-a" }
             ],
             "items": [ { "productName": "Pide", "quantity": 1 } ]
           }
@@ -39,6 +39,7 @@ public sealed class EventStreamingServiceRoutingTests
         var route = Assert.Single(dispatched.Order!.RoutingStates!);
         Assert.Equal(DevicePrintTarget.Cashier, route.Target);
         Assert.Equal(DevicePrintStatus.Queued, route.Status);
+        Assert.True(route.IsRequired);
         Assert.Equal(Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"), route.JobId);
     }
 
@@ -67,6 +68,7 @@ public sealed class EventStreamingServiceRoutingTests
         var route = Assert.Single(dispatched.Order!.RoutingStates!);
         Assert.Equal(DevicePrintTarget.General, route.Target);
         Assert.Equal(2, route.Revision);
+        Assert.False(route.IsRequired, "legacy route payloads omit the additive field");
     }
 
     [Fact]

@@ -286,6 +286,7 @@ public class OrderDeserializationTests
               "revision": 1,
               "target": "General",
               "status": "Queued",
+              "isRequired": true,
               "deviceId": "front-device",
               "failureReason": null,
               "lastAcknowledgedAt": null,
@@ -302,6 +303,7 @@ public class OrderDeserializationTests
         Assert.Equal(DevicePrintStatus.Queued, route.Status);
         Assert.Equal("front-device", route.DeviceId);
         Assert.Equal(Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"), route.JobId);
+        Assert.True(route.IsRequired);
         Assert.Equal(2, route.Version);
     }
 }
