@@ -691,6 +691,7 @@ public class EventStreamingService : IEventStreamingService
                     ? proposedUpdateCursor
                     : liveUpdateCursor;
                 // Never persist a cursor past the earliest still-unconfirmed order's poll window.
+                ExpireUnrecoverableUnconfirmedOrders();
                 var persistedLastPoll = _unconfirmedPollWindows.Values.Append(targetLastPoll).Min();
 
                 snapshot = new FeedCursor
@@ -784,7 +785,9 @@ public class EventStreamingService : IEventStreamingService
             }
 
             released = _processedOrders.Remove(orderNumber);
-            _unconfirmedPollWindows.Remove(orderNumber);
+            // Keep a poll-delivered order's floor until a later retry confirms it. Without this,
+            // the poll cursor advances beyond a failed/no-work order before the backend can assign
+            // its route. SSE-only orders have no floor and are simply released from dedup.
             _expiredUnconfirmed.Remove(orderNumber);
         }
 
@@ -794,7 +797,7 @@ public class EventStreamingService : IEventStreamingService
                 "Order {OrderNumber} was not confirmed printed; releasing it for feed retry",
                 orderNumber);
             // A polling delivery may have pinned the durable cursor to this order's window. Save
-            // immediately after removing that floor so a later route assignment is observable.
+            // immediately while retaining that floor so a later route assignment is observable.
             PersistCursor(force: true);
         }
     }
@@ -935,7 +938,14 @@ public class EventStreamingService : IEventStreamingService
                 string? updateCursor;
                 lock (_processedOrdersLock)
                 {
-                    pollWindowStart = _lastPollTime;
+                    // A failed/no-work print releases its session dedup claim but keeps this
+                    // per-order floor. Query from the oldest active floor so the same order can be
+                    // observed again in this process, not only after a restart. Successful orders
+                    // remove their own floor, so unrelated retries do not rewind the feed forever.
+                    ExpireUnrecoverableUnconfirmedOrders();
+                    pollWindowStart = _unconfirmedPollWindows.Values
+                        .Append(_lastPollTime)
+                        .Min();
                     updateCursor = _lastUpdateCursor;
                 }
 

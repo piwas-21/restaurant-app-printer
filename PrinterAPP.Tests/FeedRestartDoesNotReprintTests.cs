@@ -28,6 +28,8 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
 
     // xUnit builds a fresh instance per test, so each one sets this for itself.
     private bool _filterByModifiedSince;
+    private volatile bool _routeRecovery;
+    private volatile bool _routeAssigned;
 
     public FeedRestartDoesNotReprintTests()
     {
@@ -156,6 +158,57 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
         Assert.True(reDriven, "an unprinted order was suppressed after a restart — the ticket is lost.");
     }
 
+    [Fact]
+    public async Task A_poll_no_work_keeps_its_floor_until_route_assignment_then_prints_once()
+    {
+        _filterByModifiedSince = true;
+        _routeRecovery = true;
+
+        var cursorStore = new InMemoryFeedCursorStore();
+        var first = CreateFeed(cursorStore);
+        var firstDeliveries = 0;
+        first.OrderReceived += (_, e) =>
+        {
+            if (e.Order is not null)
+            {
+                firstDeliveries++;
+                // The first backend snapshot has no route for this device. This is the pipeline's
+                // NoWork recovery call: release the in-flight dedup claim, but retain the poll floor.
+                first.ReleaseOrderForRetry(e.Order.OrderNumber);
+            }
+        };
+
+        await first.StartListeningAsync();
+        Assert.True(await WaitUntilAsync(() => firstDeliveries > 0), "the first poll never delivered the order");
+        await first.StopListeningAsync();
+        Assert.True(firstDeliveries > 0);
+
+        _routeAssigned = true;
+        var second = CreateFeed(cursorStore);
+        var secondDeliveries = 0;
+        var printed = 0;
+        second.OrderReceived += (_, e) =>
+        {
+            if (e.Order is not null)
+            {
+                secondDeliveries++;
+                printed++;
+                second.ConfirmOrderHandled(e.Order.OrderNumber);
+            }
+        };
+
+        await second.StartListeningAsync();
+        Assert.True(
+            await WaitUntilAsync(() => secondDeliveries > 0),
+            "the failed/no-work poll order was lost before its route assignment");
+        await second.StopListeningAsync();
+
+        Assert.Equal(1, secondDeliveries);
+        Assert.Equal(1, printed);
+        Assert.Contains("ORD-1001", cursorStore.Load().ProcessedOrders.Keys);
+        Assert.True(cursorStore.Load().LastPollTime > OrderTimestamp, "successful retry did not advance the cursor");
+    }
+
     // Covers the CALL SITE, which the pure UnconfirmedOrderExpiry tests cannot: deleting the
     // ExpireUnrecoverableUnconfirmedOrders() call from CleanupOldProcessedOrders reverts the whole
     // retention fix — unconfirmed orders go back to outliving the cursor look-back clamp, their floor
@@ -272,7 +325,10 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
                 || ParseModifiedSince(context.Request.Url) is not { } since
                 || OrderTimestamp > since;
 
-            var body = Encoding.UTF8.GetBytes(include ? OrderFeedJson : EmptyFeedJson);
+            var feedJson = _routeRecovery
+                ? _routeAssigned ? AssignedRouteFeedJson : UnassignedRouteFeedJson
+                : OrderFeedJson;
+            var body = Encoding.UTF8.GetBytes(include ? feedJson : EmptyFeedJson);
             context.Response.ContentType = "application/json";
             context.Response.ContentLength64 = body.Length;
             await context.Response.OutputStream.WriteAsync(body);
@@ -320,6 +376,40 @@ public sealed class FeedRestartDoesNotReprintTests : IDisposable
           "type": "DineIn",
           "deliveryAddress": null,
           "items": [{ "productName": "Kebab", "quantity": 1, "price": 42.50 }]
+        } ] } }
+        """;
+
+    private const string UnassignedRouteFeedJson = """
+        { "data": { "items": [ {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "orderNumber": "ORD-1001",
+          "status": "Confirmed",
+          "type": "DineIn",
+          "items": [{ "productName": "Kebab", "quantity": 1 }],
+          "routingStates": [{
+            "jobId": "22222222-2222-2222-2222-222222222222",
+            "revision": 1,
+            "target": "General",
+            "status": "Queued",
+            "deviceId": "other-device"
+          }]
+        } ] } }
+        """;
+
+    private const string AssignedRouteFeedJson = """
+        { "data": { "items": [ {
+          "id": "11111111-1111-1111-1111-111111111111",
+          "orderNumber": "ORD-1001",
+          "status": "Confirmed",
+          "type": "DineIn",
+          "items": [{ "productName": "Kebab", "quantity": 1 }],
+          "routingStates": [{
+            "jobId": "22222222-2222-2222-2222-222222222222",
+            "revision": 2,
+            "target": "General",
+            "status": "Queued",
+            "deviceId": "device-a"
+          }]
         } ] } }
         """;
 
