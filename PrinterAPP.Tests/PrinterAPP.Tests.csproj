@@ -47,9 +47,12 @@
     <Compile Include="..\PrinterAPP\Models\Order.cs" Link="Linked\Order.cs" />
     <Compile Include="..\PrinterAPP\Models\TableDisplay.cs" Link="Linked\TableDisplay.cs" />
     <Compile Include="..\PrinterAPP\Models\PaymentMethodCode.cs" Link="Linked\PaymentMethodCode.cs" />
+    <Compile Include="..\PrinterAPP\Models\OrderRoutingState.cs" Link="Linked\OrderRoutingState.cs" />
     <Compile Include="..\PrinterAPP\Models\DeliveryAddress.cs" Link="Linked\DeliveryAddress.cs" />
     <!-- Resilient per-order feed parser (MAUI-free): one bad order must not wedge the whole poll batch. -->
     <Compile Include="..\PrinterAPP\Services\OrderFeedParser.cs" Link="Linked\OrderFeedParser.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrinterJsonSerialization.cs" Link="Linked\PrinterJsonSerialization.cs" />
+    <Compile Include="..\PrinterAPP\Services\OrderRoutingStateValidation.cs" Link="Linked\OrderRoutingStateValidation.cs" />
     <!-- Config storage + migration (MAUI-free by design; see PrinterConfigurationStore.cs). -->
     <Compile Include="..\PrinterAPP\Models\PrinterConfiguration.cs" Link="Linked\PrinterConfiguration.cs" />
     <Compile Include="..\PrinterAPP\Services\IAppDataPathProvider.cs" Link="Linked\IAppDataPathProvider.cs" />
@@ -66,6 +69,7 @@
          The scheduler + MAUI wiring stay in the app head; the risk-bearing HTTP/payload logic is
          unit-tested here (headers, URL, error handling, and the "no API key in the body" contract). -->
     <Compile Include="..\PrinterAPP\Models\HeartbeatRequest.cs" Link="Linked\HeartbeatRequest.cs" />
+    <Compile Include="..\PrinterAPP\Models\PrinterTargetCapability.cs" Link="Linked\PrinterTargetCapability.cs" />
     <Compile Include="..\PrinterAPP\Models\PrintAck.cs" Link="Linked\PrintAck.cs" />
     <Compile Include="..\PrinterAPP\Models\DevicePrintTarget.cs" Link="Linked\DevicePrintTarget.cs" />
     <Compile Include="..\PrinterAPP\Models\DevicePrintStatus.cs" Link="Linked\DevicePrintStatus.cs" />
@@ -77,6 +81,8 @@
     <Compile Include="..\PrinterAPP\Services\TelemetryClient.cs" Link="Linked\TelemetryClient.cs" />
     <Compile Include="..\PrinterAPP\Services\TelemetrySendResult.cs" Link="Linked\TelemetrySendResult.cs" />
     <Compile Include="..\PrinterAPP\Services\TelemetryPayloads.cs" Link="Linked\TelemetryPayloads.cs" />
+    <Compile Include="..\PrinterAPP\Services\TelemetryPayloads.Routing.cs" Link="Linked\TelemetryPayloads.Routing.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrinterTargetCapabilityBuilder.cs" Link="Linked\PrinterTargetCapabilityBuilder.cs" />
     <Compile Include="..\PrinterAPP\Services\IPrintAckOutbox.cs" Link="Linked\IPrintAckOutbox.cs" />
     <Compile Include="..\PrinterAPP\Services\PrintAckOutbox.cs" Link="Linked\PrintAckOutbox.cs" />
     <Compile Include="..\PrinterAPP\Services\IPrintUpdateJobStore.cs" Link="Linked\IPrintUpdateJobStore.cs" />
@@ -105,6 +111,9 @@
     <Compile Include="..\PrinterAPP\Services\IOrderPipeline.cs" Link="Linked\IOrderPipeline.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderPipeline.cs" Link="Linked\OrderPipeline.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderPipeline.Processing.cs" Link="Linked\OrderPipeline.Processing.cs" />
+    <Compile Include="..\PrinterAPP\Services\OrderPipeline.Printing.cs" Link="Linked\OrderPipeline.Printing.cs" />
+    <Compile Include="..\PrinterAPP\Services\OrderPipeline.Events.cs" Link="Linked\OrderPipeline.Events.cs" />
+    <Compile Include="..\PrinterAPP\Services\OrderPipeline.Routing.cs" Link="Linked\OrderPipeline.Routing.cs" />
     <Compile Include="..\PrinterAPP\Services\IOrderHistoryService.cs" Link="Linked\IOrderHistoryService.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderHistoryItem.cs" Link="Linked\OrderHistoryItem.cs" />
     <Compile Include="..\PrinterAPP\Services\ITelemetryScheduler.cs" Link="Linked\ITelemetryScheduler.cs" />

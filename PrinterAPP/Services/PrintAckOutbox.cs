@@ -9,8 +9,8 @@ namespace PrinterAPP.Services;
 /// File-backed <see cref="IPrintAckOutbox"/>. MAUI-free (source-linked into the test project): the
 /// only platform seam is <see cref="IAppDataPathProvider"/> for the file location. A single
 /// <see cref="SemaphoreSlim"/> serialises reads/writes and the flush, so concurrent enqueue (from the
-/// print path) and flush (from the scheduler) can't corrupt the file. Best-effort throughout —
-/// telemetry must never break printing.
+/// print path) and flush (from the scheduler) can't corrupt the file. Enqueue is strict because a
+/// routed order must not be confirmed until its final ack is durable; flush remains best-effort.
 /// </summary>
 public class PrintAckOutbox : IPrintAckOutbox
 {
@@ -42,7 +42,7 @@ public class PrintAckOutbox : IPrintAckOutbox
         await _gate.WaitAsync(cancellationToken);
         try
         {
-            var pending = Load();
+            var pending = Load(failOnError: true);
             foreach (var ack in toAdd)
             {
                 // Update lifecycle acks are snapshots of one stable job, not independent work. Replace
@@ -58,10 +58,6 @@ public class PrintAckOutbox : IPrintAckOutbox
             if (pending.Count > MaxStored)
                 pending = pending.Skip(pending.Count - MaxStored).ToList();
             Save(pending);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Failed to enqueue print acks");
         }
         finally
         {
@@ -125,7 +121,7 @@ public class PrintAckOutbox : IPrintAckOutbox
         && left.OrderId == right.OrderId
         && left.Target == right.Target;
 
-    private List<PrintAck> Load()
+    private List<PrintAck> Load(bool failOnError = false)
     {
         try
         {
@@ -137,6 +133,9 @@ public class PrintAckOutbox : IPrintAckOutbox
         }
         catch (Exception ex)
         {
+            if (failOnError)
+                throw;
+
             // A corrupt/unreadable file must not wedge telemetry — start fresh.
             _logger.LogWarning(ex, "Print-ack outbox unreadable — resetting");
             return new List<PrintAck>();

@@ -85,6 +85,12 @@ public class Order
     public List<OrderStatusHistory> StatusHistory { get; set; } = new();
 
     /// <summary>
+    /// Durable printer routing returned by the forward backend. Null is intentional: older
+    /// backend responses omit this additive field and retain the legacy broadcast behavior.
+    /// </summary>
+    public List<OrderRoutingState>? RoutingStates { get; set; }
+
+    /// <summary>
     /// The same order with a different item list — how a kitchen ticket is built without mutating
     /// the order the history list and the UI are holding. Cloned rather than re-listed field by
     /// field so a field added here can't be silently dropped off a kitchen ticket. Shallow, like

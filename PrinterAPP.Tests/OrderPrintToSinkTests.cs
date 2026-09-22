@@ -416,6 +416,133 @@ public class OrderPrintToSinkTests
         Assert.Contains("Subtotal", englishTicket);
     }
 
+    [Fact]
+    public async Task PrintOrderToAllPrinters_RoutedOrder_OnlyUsesAssignedDeviceTarget()
+    {
+        using var cashier = new Sink();
+        using var front = new Sink();
+        using var back = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var paths = new TempPathProvider();
+
+        var order = BundleOrder(Item("Soup", "FrontKitchen"));
+        order.RoutingStates =
+        [
+            new()
+            {
+                JobId = Guid.NewGuid(), Revision = 1, Target = DevicePrintTarget.Cashier,
+                DeviceId = "front-device", Status = DevicePrintStatus.Queued,
+            },
+            new()
+            {
+                JobId = Guid.NewGuid(), Revision = 1, Target = DevicePrintTarget.FrontKitchen,
+                DeviceId = "front-device", Status = DevicePrintStatus.Queued,
+            },
+        ];
+        var service = new OrderPrintService(
+            new StubPrinterService(new PrinterConfiguration
+            {
+                CashierPrinterName = cashier.PrinterName,
+                FrontKitchenPrinterName = front.PrinterName,
+                BackKitchenPrinterName = back.PrinterName,
+            }),
+            new CapturingRequestLogService(),
+            NullLogger<OrderPrintService>.Instance,
+            paths,
+            new StubDeviceIdentity("front-device"));
+
+        var result = await service.PrintOrderToAllPrintersAsync(order, cancellationToken: cts.Token);
+
+        Assert.True(result.Cashier);
+        Assert.True(result.FrontKitchen.IsSuccess);
+        Assert.True(cashier.ReceivedAnything);
+        Assert.True(front.ReceivedAnything);
+        Assert.False(back.ReceivedAnything);
+        await front.ReadTicketAsync(cts.Token);
+    }
+
+    [Theory]
+    [InlineData(DevicePrintStatus.Printed)]
+    [InlineData(DevicePrintStatus.Sent)]
+    [InlineData(DevicePrintStatus.Failed)]
+    [InlineData(DevicePrintStatus.Skipped)]
+    public async Task PrintOrderToAllPrinters_NonQueuedLocalRoute_IsNoWork(
+        DevicePrintStatus status)
+    {
+        using var cashier = new Sink();
+        using var front = new Sink();
+        using var back = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var paths = new TempPathProvider();
+
+        var order = BundleOrder(Item("Soup", "FrontKitchen"));
+        order.RoutingStates =
+        [
+            new()
+            {
+                JobId = Guid.NewGuid(), Revision = 1, Target = DevicePrintTarget.FrontKitchen,
+                DeviceId = "front-device", Status = status,
+            },
+        ];
+        var service = new OrderPrintService(
+            new StubPrinterService(new PrinterConfiguration
+            {
+                CashierPrinterName = cashier.PrinterName,
+                FrontKitchenPrinterName = front.PrinterName,
+                BackKitchenPrinterName = back.PrinterName,
+            }),
+            new CapturingRequestLogService(),
+            NullLogger<OrderPrintService>.Instance,
+            paths,
+            new StubDeviceIdentity("front-device"));
+
+        var result = await service.PrintOrderToAllPrintersAsync(order, cancellationToken: cts.Token);
+
+        Assert.False(result.Cashier);
+        Assert.Equal(KitchenPrintStatus.NoWork, result.FrontKitchen.Status);
+        Assert.Equal(KitchenPrintStatus.NoWork, result.BackKitchen.Status);
+        Assert.Equal(KitchenPrintStatus.NoWork, result.GeneralDefault.Status);
+        Assert.False(cashier.ReceivedAnything);
+        Assert.False(front.ReceivedAnything);
+        Assert.False(back.ReceivedAnything);
+    }
+
+    [Fact]
+    public async Task Manual_reprint_ignores_terminal_route_and_prints_operator_requested_copy()
+    {
+        using var cashier = new Sink();
+        using var front = new Sink();
+        using var back = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var paths = new TempPathProvider();
+        var order = BundleOrder(Item("Soup", "FrontKitchen"));
+        order.RoutingStates =
+        [new()
+        {
+            JobId = Guid.NewGuid(), Revision = 1, Target = DevicePrintTarget.FrontKitchen,
+            DeviceId = "front-device", Status = DevicePrintStatus.Printed,
+        }];
+        var service = new OrderPrintService(
+            new StubPrinterService(new PrinterConfiguration
+            {
+                CashierPrinterName = cashier.PrinterName,
+                FrontKitchenPrinterName = front.PrinterName,
+            }),
+            new CapturingRequestLogService(),
+            NullLogger<OrderPrintService>.Instance,
+            paths,
+            new StubDeviceIdentity("front-device"));
+
+        var result = await service.PrintOrderToAllPrintersAsync(
+            order, isManualPrint: true, cancellationToken: cts.Token);
+
+        Assert.True(result.Cashier);
+        Assert.True(result.FrontKitchen.IsSuccess);
+        Assert.True(cashier.ReceivedAnything);
+        Assert.True(front.ReceivedAnything);
+        await front.ReadTicketAsync(cts.Token);
+    }
+
     private static Order MinimalOrder() => new()
     {
         OrderNumber = "202609040002",
@@ -593,6 +720,14 @@ public class OrderPrintToSinkTests
         public Task<bool> PrintTestReceiptAsync(string printerName, PrinterConfiguration config) => throw new NotSupportedException();
         public Task<HttpStatusCode?> TestPrinterFeedAsync(string apiUrl, string? apiKey) => throw new NotSupportedException();
         public Task SaveConfigurationAsync(PrinterConfiguration config) => throw new NotSupportedException();
+    }
+
+    private sealed class StubDeviceIdentity(string deviceId) : IDeviceIdentityService
+    {
+        public string DeviceId { get; } = deviceId;
+        public string Platform => "Test";
+        public string AppVersion => "test";
+        public void ApplySentryTags(string tenantSlug) { }
     }
 
     /// <summary>

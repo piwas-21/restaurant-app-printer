@@ -30,6 +30,7 @@
     <Compile Include="..\PrinterAPP\Models\Order.cs" Link="Linked\Order.cs" />
     <Compile Include="..\PrinterAPP\Models\TableDisplay.cs" Link="Linked\TableDisplay.cs" />
     <Compile Include="..\PrinterAPP\Models\DeliveryAddress.cs" Link="Linked\DeliveryAddress.cs" />
+    <Compile Include="..\PrinterAPP\Models\OrderRoutingState.cs" Link="Linked\OrderRoutingState.cs" />
     <Compile Include="..\PrinterAPP\Models\PrinterConfiguration.cs" Link="Linked\PrinterConfiguration.cs" />
     <!-- PrinterConfiguration.PrintLanguage references PrintLanguagePolicy.English; the policy is
          MAUI-free, so the link keeps this compile-only guard green. -->
@@ -38,6 +39,7 @@
     <Compile Include="..\PrinterAPP\Services\KitchenDestinationResolver.cs" Link="Linked\KitchenDestinationResolver.cs" />
     <Compile Include="..\PrinterAPP\Services\EscPosCommands.cs" Link="Linked\EscPosCommands.cs" />
     <Compile Include="..\PrinterAPP\Models\HeartbeatRequest.cs" Link="Linked\HeartbeatRequest.cs" />
+    <Compile Include="..\PrinterAPP\Models\PrinterTargetCapability.cs" Link="Linked\PrinterTargetCapability.cs" />
     <Compile Include="..\PrinterAPP\Models\PrintAck.cs" Link="Linked\PrintAck.cs" />
     <Compile Include="..\PrinterAPP\Models\DevicePrintTarget.cs" Link="Linked\DevicePrintTarget.cs" />
     <Compile Include="..\PrinterAPP\Models\DevicePrintStatus.cs" Link="Linked\DevicePrintStatus.cs" />
@@ -50,6 +52,8 @@
     <Compile Include="..\PrinterAPP\Services\TelemetryClient.cs" Link="Linked\TelemetryClient.cs" />
     <Compile Include="..\PrinterAPP\Services\TelemetrySendResult.cs" Link="Linked\TelemetrySendResult.cs" />
     <Compile Include="..\PrinterAPP\Services\TelemetryPayloads.cs" Link="Linked\TelemetryPayloads.cs" />
+    <Compile Include="..\PrinterAPP\Services\TelemetryPayloads.Routing.cs" Link="Linked\TelemetryPayloads.Routing.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrinterTargetCapabilityBuilder.cs" Link="Linked\PrinterTargetCapabilityBuilder.cs" />
     <Compile Include="..\PrinterAPP\Services\KitchenPrintOutcome.cs" Link="Linked\KitchenPrintOutcome.cs" />
     <Compile Include="..\PrinterAPP\Services\IPrintAckOutbox.cs" Link="Linked\IPrintAckOutbox.cs" />
     <Compile Include="..\PrinterAPP\Services\PrintAckOutbox.cs" Link="Linked\PrintAckOutbox.cs" />
@@ -65,6 +69,7 @@
          edge (a test double returns the PrinterConfiguration a user would type into Settings);
          OrderFeedParser is the real per-order deser (also linked by PrinterAPP.Tests). -->
     <Compile Include="..\PrinterAPP\Services\IPrinterService.cs" Link="Linked\IPrinterService.cs" />
+    <Compile Include="..\PrinterAPP\Services\IDeviceIdentityService.cs" Link="Linked\IDeviceIdentityService.cs" />
     <Compile Include="..\PrinterAPP\Services\IEventStreamingService.cs" Link="Linked\IEventStreamingService.cs" />
     <!-- Feed cursor persistence: EventStreamingService restores its poll cursor + dedup set from
          this on construction, so the E2E head must link it too (Phase 9d). -->
@@ -76,6 +81,8 @@
     <Compile Include="..\PrinterAPP\Services\UnconfirmedOrderExpiry.cs" Link="Linked\UnconfirmedOrderExpiry.cs" />
     <Compile Include="..\PrinterAPP\Services\EventStreamingService.cs" Link="Linked\EventStreamingService.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderFeedParser.cs" Link="Linked\OrderFeedParser.cs" />
+    <Compile Include="..\PrinterAPP\Services\OrderRoutingStateValidation.cs" Link="Linked\OrderRoutingStateValidation.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrinterJsonSerialization.cs" Link="Linked\PrinterJsonSerialization.cs" />
   </ItemGroup>
 
 </Project>

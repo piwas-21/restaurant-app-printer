@@ -36,6 +36,7 @@ public sealed class OrderPipelinePrintOutcomeTests : IDisposable
     private readonly RecordingHistory _history = new();
     private readonly RecordingOutbox _outbox = new();
     private readonly StubFeed _feed = new();
+    private readonly RecordingRequestLog _requestLog = new();
 
     public void Dispose()
     {
@@ -113,6 +114,101 @@ public sealed class OrderPipelinePrintOutcomeTests : IDisposable
 
         // Session dedup still confirms the order (it went through the printers).
         Assert.Contains(order.OrderNumber, _feed.Confirmed);
+    }
+
+    [Fact]
+    public async Task RoutedOrderWithoutLocalQueuedWork_IsNotConfirmedOrRecordedAsPrinted()
+    {
+        var order = new Order
+        {
+            Id = "9a1b6bd1-0a5b-4a0e-9d2a-3f3c1c0a4e99",
+            OrderNumber = "PIPE-ROUTE-NONE",
+            Type = "TakeAway",
+            Status = "Confirmed",
+            Total = 18.00m,
+            OrderDate = DateTime.Now,
+            Items = { new OrderItem { ProductName = "Soup", Quantity = 1, KitchenType = "None" } },
+            RoutingStates =
+            [new()
+            {
+                JobId = Guid.NewGuid(), Revision = 1, Target = DevicePrintTarget.General,
+                DeviceId = "other-device", Status = DevicePrintStatus.Queued,
+            }],
+        };
+
+        using var cts = new CancellationTokenSource(TestTimeout);
+        var args = await RunAsync(SingleKitchenConfig(), order, cts.Token);
+
+        Assert.Equal(KitchenPrintStatus.NoWork, args.GeneralDefault.Status);
+        Assert.False(args.Cashier);
+        Assert.DoesNotContain(order.OrderNumber, _feed.Confirmed);
+        Assert.Empty(_outbox.Enqueued);
+        Assert.False(_cashier.ReceivedAnything);
+        Assert.False(_generalDefault.ReceivedAnything);
+    }
+
+    [Fact]
+    public async Task RoutedOrder_PersistsFinalAckBeforeConfirmingFeed()
+    {
+        var jobId = Guid.NewGuid();
+        var order = new Order
+        {
+            Id = Guid.NewGuid().ToString(),
+            OrderNumber = "PIPE-ROUTE-ACK",
+            Type = "TakeAway",
+            Status = "Confirmed",
+            Total = 18.00m,
+            OrderDate = DateTime.UtcNow,
+            Items = { new OrderItem { ProductName = "Soup", Quantity = 1, KitchenType = "None" } },
+            RoutingStates =
+            [new()
+            {
+                JobId = jobId, Revision = 7, Target = DevicePrintTarget.General,
+                DeviceId = "test-device", Status = DevicePrintStatus.Queued,
+            }],
+        };
+        _outbox.DuringEnqueue = () => Assert.Empty(_feed.Confirmed);
+
+        using var cts = new CancellationTokenSource(TestTimeout);
+        await RunAsync(SingleKitchenConfig(), order, cts.Token);
+
+        var ack = Assert.Single(_outbox.Enqueued);
+        Assert.Equal(jobId, ack.JobId);
+        Assert.Equal(7, ack.Revision);
+        Assert.Equal(DevicePrintJobType.Order, ack.JobType);
+        Assert.Contains(order.OrderNumber, _feed.Confirmed);
+    }
+
+    [Fact]
+    public async Task RoutedOrder_AckPersistenceFailureLeavesPhysicalPrintAmbiguousAndUnconfirmed()
+    {
+        var order = new Order
+        {
+            Id = Guid.NewGuid().ToString(),
+            OrderNumber = "PIPE-ROUTE-ACK-FAIL",
+            Type = "TakeAway",
+            Status = "Confirmed",
+            Total = 18.00m,
+            OrderDate = DateTime.UtcNow,
+            Items = { new OrderItem { ProductName = "Soup", Quantity = 1, KitchenType = "None" } },
+            RoutingStates =
+            [new()
+            {
+                JobId = Guid.NewGuid(), Revision = 2, Target = DevicePrintTarget.General,
+                DeviceId = "test-device", Status = DevicePrintStatus.Queued,
+            }],
+        };
+        _outbox.EnqueueFailure = new IOException("disk full");
+
+        using var cts = new CancellationTokenSource(TestTimeout);
+        var args = await RunAsync(SingleKitchenConfig(), order, cts.Token);
+
+        Assert.True(_generalDefault.ReceivedAnything, "physical output should have happened before ack failure");
+        Assert.Empty(_feed.Confirmed);
+        Assert.Contains(order.OrderNumber, _feed.Released);
+        Assert.True(args.AckPersistenceAmbiguous);
+        Assert.Contains(_requestLog.Errors, error =>
+            error.Contains("duplicate paper", StringComparison.OrdinalIgnoreCase));
     }
 
     [Theory]
@@ -305,7 +401,8 @@ public sealed class OrderPipelinePrintOutcomeTests : IDisposable
             new StubPrinterService(config),
             new NoopRequestLogService(),
             NullLogger<OrderPrintService>.Instance,
-            _paths);
+            _paths,
+            new StubDeviceIdentityService());
 
         var pipeline = new OrderPipeline(
             _feed,
@@ -315,7 +412,7 @@ public sealed class OrderPipelinePrintOutcomeTests : IDisposable
             new StubTelemetryScheduler(),
             new StubPrinterService(config),
             new StubDeviceIdentityService(),
-            new NoopRequestLogService(),
+            _requestLog,
             NullLogger<OrderPipeline>.Instance);
 
         var processed = new TaskCompletionSource<OrderProcessedEventArgs>(
@@ -377,8 +474,10 @@ public sealed class OrderPipelinePrintOutcomeTests : IDisposable
     private sealed class StubFeed : IEventStreamingService
     {
         private readonly List<string> _confirmed = new();
+        private readonly List<string> _released = new();
 
         public IReadOnlyList<string> Confirmed => _confirmed;
+        public IReadOnlyList<string> Released => _released;
 
         public bool IsListening { get; private set; }
         public DateTime? LastSuccessfulPollAt => null;
@@ -399,6 +498,9 @@ public sealed class OrderPipelinePrintOutcomeTests : IDisposable
         }
 
         public void ConfirmOrderHandled(string orderNumber) => _confirmed.Add(orderNumber);
+
+        public void ReleaseOrderForRetry(string orderNumber, DateTime? createdAt = null, DateTime? updatedAt = null) =>
+            _released.Add(orderNumber);
 
         public void Emit(Order order) =>
             OrderReceived?.Invoke(this, new OrderEvent
@@ -431,15 +533,29 @@ public sealed class OrderPipelinePrintOutcomeTests : IDisposable
     private sealed class RecordingOutbox : IPrintAckOutbox
     {
         public List<PrintAck> Enqueued { get; } = new();
+        public Exception? EnqueueFailure { get; set; }
+        public Action? DuringEnqueue { get; set; }
 
         public Task EnqueueAsync(IEnumerable<PrintAck> acks, CancellationToken cancellationToken = default)
         {
+            DuringEnqueue?.Invoke();
+            if (EnqueueFailure is not null)
+                throw EnqueueFailure;
+
             Enqueued.AddRange(acks);
             return Task.CompletedTask;
         }
 
         public Task FlushAsync(Func<IReadOnlyList<PrintAck>, Task<bool>> sender, CancellationToken cancellationToken = default) =>
             Task.CompletedTask;
+    }
+
+    private sealed class RecordingRequestLog : NoopRequestLogService
+    {
+        public List<string> Errors { get; } = new();
+
+        public override void LogError(string operation, string message, string? details = null) =>
+            Errors.Add($"{operation}: {message} {details}");
     }
 
     private sealed class StubTelemetryScheduler : ITelemetryScheduler
