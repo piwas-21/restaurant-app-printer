@@ -13,30 +13,6 @@ public class OrderPrintService : IOrderPrintService
     private readonly PrintStyleSettingsService _styleService;
     private readonly IDeviceIdentityService? _deviceIdentity;
 
-    // ESC/POS Commands for MAXIMUM darkness printing
-    private const string ESC_INIT = "\x1B\x40"; // Initialize printer
-    private const string ESC_BOLD_ON = "\x1B\x45\x01"; // Bold on
-    private const string ESC_BOLD_OFF = "\x1B\x45\x00"; // Bold off
-    private const string ESC_EMPHASIZED_ON = "\x1B\x47\x01"; // Emphasized/Double-strike on
-    private const string ESC_EMPHASIZED_OFF = "\x1B\x47\x00"; // Emphasized off
-    private const string ESC_SIZE_NORMAL = "\x1D\x21\x00"; // Normal size (1x width, 1x height)
-    private const string ESC_SIZE_TALL = "\x1D\x21\x01"; // Tall only (1x width, 2x height)
-    private const string ESC_SIZE_WIDE = "\x1D\x21\x10"; // Wide only (2x width, 1x height)
-    private const string ESC_DOUBLE_ON = "\x1D\x21\x11"; // Double width and height (2x, 2x)
-    private const string ESC_DOUBLE_OFF = "\x1D\x21\x00"; // Normal size
-    private const string ESC_LARGE_ON = "\x1D\x21\x22"; // 2x width, 3x height (larger size for kitchen)
-    private const string ESC_ALIGN_CENTER = "\x1B\x61\x01"; // Center align
-    private const string ESC_ALIGN_LEFT = "\x1B\x61\x00"; // Left align
-    private const string ESC_CUT = "\x1D\x56\x00"; // Full cut
-    private const string ESC_PARTIAL_CUT = "\x1D\x56\x01"; // Partial cut
-    private const string ESC_FEED_AND_CUT = "\x1B\x64\x03"; // Feed 3 lines and cut
-    private const string ESC_CODEPAGE_TURKISH = "\x1B\x74\x09"; // Set PC857 code page (Turkish MS-DOS - supports Turkish + Western European)
-
-    // Combined commands for MAXIMUM darkness
-    private const string EXTRA_DARK_ON = ESC_BOLD_ON + ESC_EMPHASIZED_ON; // Bold + Emphasized for maximum darkness
-    private const string EXTRA_DARK_OFF = ESC_BOLD_OFF + ESC_EMPHASIZED_OFF; // Turn off all emphasis
-    private const string ESC_FEED_LINES = "\x1B\x64\x05"; // Feed 5 lines before cut
-
     // KitchenType values as the backend emits them (OrderItemDto.KitchenType).
     private const string FRONT_KITCHEN = "FrontKitchen";
     private const string BACK_KITCHEN = "BackKitchen";
@@ -553,8 +529,8 @@ public class OrderPrintService : IOrderPrintService
         var styles = CurrentStyles();
 
         // Initialize printer and set Turkish code page for character support
-        sb.Append(ESC_INIT);
-        sb.Append(ESC_CODEPAGE_TURKISH);
+        sb.Append(EscPosCommands.Initialize);
+        sb.Append(EscPosCommands.CodepageTurkish);
 
         // KITCHEN NAME HEADER — styled by the settings page (Kitchen Header section)
         if (!string.IsNullOrEmpty(kitchenName))
@@ -618,8 +594,8 @@ public class OrderPrintService : IOrderPrintService
         sb.AppendLine();
 
         // Feed extra lines before cut to prevent text cutoff
-        sb.Append(ESC_FEED_LINES);
-        sb.Append(ESC_CUT);
+        sb.Append(EscPosCommands.Feed5Lines);
+        sb.Append(EscPosCommands.FullCut);
 
         return sb.ToString();
     }
@@ -632,9 +608,9 @@ public class OrderPrintService : IOrderPrintService
 
         // Initialize printer and set Turkish code page for character support
         // Some printers need the code page command repeated to properly switch encoding
-        sb.Append(ESC_INIT);
-        sb.Append(ESC_CODEPAGE_TURKISH);
-        sb.Append(ESC_CODEPAGE_TURKISH); // Send twice for stubborn printers
+        sb.Append(EscPosCommands.Initialize);
+        sb.Append(EscPosCommands.CodepageTurkish);
+        sb.Append(EscPosCommands.CodepageTurkish); // Send twice for stubborn printers
 
         // Header (Cashier Header section — defaults: double size, bold, emphasized, centered)
         sb.Append(ApplyStyle(styles.CashierHeader));
@@ -681,9 +657,9 @@ public class OrderPrintService : IOrderPrintService
 
         // Order-level notes (e.g. "ring the doorbell") — printed before the items so they are not
         // lost below a long list.
-        sb.Append(EXTRA_DARK_ON);
+        sb.Append(EscPosCommands.ExtraDarkOn);
         ReceiptComposer.AppendOrderNotesLine(sb, order, labels);
-        sb.Append(EXTRA_DARK_OFF);
+        sb.Append(EscPosCommands.ExtraDarkOff);
 
         sb.AppendLine(new string('-', paperWidth == 80 ? 48 : 32));
 
@@ -762,9 +738,9 @@ public class OrderPrintService : IOrderPrintService
 
         if (order.RemainingAmount > 0)
         {
-            sb.Append(EXTRA_DARK_ON);
+            sb.Append(EscPosCommands.ExtraDarkOn);
             sb.AppendLine($"{labels.Due}: {ReceiptComposer.Money(order.RemainingAmount, order.Currency)}");
-            sb.Append(EXTRA_DARK_OFF);
+            sb.Append(EscPosCommands.ExtraDarkOff);
         }
 
         sb.AppendLine();
@@ -772,7 +748,7 @@ public class OrderPrintService : IOrderPrintService
         // Payment information
         if (order.Payments != null && order.Payments.Any())
         {
-            sb.Append(EXTRA_DARK_ON);
+            sb.Append(EscPosCommands.ExtraDarkOn);
             sb.AppendLine($"{labels.Payment}:");
             foreach (var payment in order.Payments)
             {
@@ -782,7 +758,7 @@ public class OrderPrintService : IOrderPrintService
                     : $"{paymentLabel} *{payment.CardLastFourDigits}";
                 sb.AppendLine($"{method}: {ReceiptComposer.Money(payment.Amount, order.Currency ?? payment.Currency)}");
             }
-            sb.Append(EXTRA_DARK_OFF);
+            sb.Append(EscPosCommands.ExtraDarkOff);
             sb.AppendLine();
         }
 
@@ -791,20 +767,20 @@ public class OrderPrintService : IOrderPrintService
         if (order.Type == "Delivery" && address is not null && !string.IsNullOrWhiteSpace(address.FullAddress))
         {
             sb.AppendLine(new string('-', paperWidth == 80 ? 48 : 32));
-            sb.Append(EXTRA_DARK_ON);
+            sb.Append(EscPosCommands.ExtraDarkOn);
             sb.AppendLine(labels.DeliveryTo);
             sb.AppendLine(address.FullAddress);
             if (!string.IsNullOrWhiteSpace(address.DeliveryInstructions))
             {
                 sb.AppendLine($"{labels.Instructions}: {address.DeliveryInstructions}");
             }
-            sb.Append(EXTRA_DARK_OFF);
+            sb.Append(EscPosCommands.ExtraDarkOff);
             sb.AppendLine();
         }
 
         // Footer
         sb.AppendLine(new string('=', paperWidth == 80 ? 48 : 32));
-        sb.Append(ESC_ALIGN_CENTER);
+        sb.Append(EscPosCommands.AlignCenter);
         sb.AppendLine(labels.ThankYou);
         sb.AppendLine();
         sb.AppendLine();
@@ -813,8 +789,8 @@ public class OrderPrintService : IOrderPrintService
         sb.AppendLine();
 
         // Feed extra lines before cut to prevent text cutoff
-        sb.Append(ESC_FEED_LINES);
-        sb.Append(ESC_CUT);
+        sb.Append(EscPosCommands.Feed5Lines);
+        sb.Append(EscPosCommands.FullCut);
 
         return sb.ToString();
     }

@@ -434,7 +434,7 @@ public class EventStreamingService : IEventStreamingService
             HandleOrder(orderEvent, data, sourceEndpoint, includeItemDiagnostics: true);
             return;
         }
-        catch
+        catch (JsonException)
         {
             // The direct Order shape is the legacy feed contract.
         }
