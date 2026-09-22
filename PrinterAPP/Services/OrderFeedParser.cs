@@ -115,19 +115,26 @@ public static class OrderFeedParser
     }
     private static OrderFeedParseResult ToResult(ParsedData parsed) => new(parsed.Orders, parsed.Errors)
     {
-        Updates = parsed.Updates, UpdateErrors = parsed.UpdateErrors, NextUpdateCursor = parsed.NextUpdateCursor,
-        HasMoreUpdates = parsed.HasMoreUpdates, IsSuccess = parsed.IsSuccess, HasDataEnvelope = true,
+        Updates = parsed.Updates,
+        UpdateErrors = parsed.UpdateErrors,
+        NextUpdateCursor = parsed.NextUpdateCursor,
+        HasMoreUpdates = parsed.HasMoreUpdates,
+        IsSuccess = parsed.IsSuccess,
+        HasDataEnvelope = true,
         FailureMessage = parsed.FailureMessage,
     };
     private static OrderFeedParseResult InvalidBody(Exception ex) => new(
         Array.Empty<Order>(), new[] { new OrderFeedParseError(-1, null, $"Response body was not valid JSON: {ex.Message}") })
     {
-        IsSuccess = false, HasDataEnvelope = false,
+        IsSuccess = false,
+        HasDataEnvelope = false,
     };
     private static OrderFeedParseResult InvalidEnvelope(string? failureMessage) => new(
         Array.Empty<Order>(), Array.Empty<OrderFeedParseError>())
     {
-        IsSuccess = false, HasDataEnvelope = false, FailureMessage = failureMessage,
+        IsSuccess = false,
+        HasDataEnvelope = false,
+        FailureMessage = failureMessage,
     };
     private static void ParseOrders(JsonElement items, ParsedData parsed)
     {
@@ -141,7 +148,8 @@ public static class OrderFeedParser
                     parsed.Errors.Add(new OrderFeedParseError(index, TryReadOrderNumber(element), "Order element deserialised to null."));
                 else if (!OrderRoutingStateValidation.TryValidate(order, out var routeError))
                 {
-                    parsed.Errors.Add(new OrderFeedParseError(index, order.OrderNumber, routeError!));
+                    parsed.Errors.Add(new OrderFeedParseError(index, order.OrderNumber,
+                        routeError ?? "Invalid printer routing state."));
                     parsed.Fail($"Malformed printer routing state for order {order.OrderNumber}: {routeError}");
                 }
                 else
@@ -218,7 +226,9 @@ public static class OrderFeedParser
             return null;
         return value.ValueKind switch
         {
-            JsonValueKind.String => value.GetString(), JsonValueKind.Number => value.ToString(), _ => null,
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.Number => value.ToString(),
+            _ => null,
         };
     }
     private static bool TryGetPropertyIgnoreCase(JsonElement element, string name, out JsonElement value)

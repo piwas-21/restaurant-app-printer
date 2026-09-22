@@ -140,8 +140,8 @@ public class TelemetryPayloadsPrintAcksTests
         };
 
         var acks = TelemetryPayloads.PrintAcks(
-            order, cashier: true, KitchenPrintOutcome.Sent, KitchenPrintOutcome.Sent,
-            KitchenPrintOutcome.Sent,
+            order, new TelemetryPayloads.PrintAckOutcomes(
+                true, KitchenPrintOutcome.Sent, KitchenPrintOutcome.Sent, KitchenPrintOutcome.Sent),
             new PrinterConfiguration { CashierPrinterName = "cashier", FrontKitchenPrinterName = "front" },
             DateTime.UtcNow,
             "front-device");
@@ -170,21 +170,24 @@ public class TelemetryPayloadsPrintAcksTests
         ];
 
         var acks = TelemetryPayloads.PrintAcks(
-            order, true, KitchenPrintOutcome.Sent, KitchenPrintOutcome.Sent,
-            KitchenPrintOutcome.Sent, new PrinterConfiguration { FrontKitchenPrinterName = "front" },
+            order, new TelemetryPayloads.PrintAckOutcomes(
+                true, KitchenPrintOutcome.Sent, KitchenPrintOutcome.Sent, KitchenPrintOutcome.Sent),
+            new PrinterConfiguration { FrontKitchenPrinterName = "front" },
             DateTime.UtcNow, "front-device");
 
         Assert.Empty(acks);
 
         order.RoutingStates[0].Status = DevicePrintStatus.Sent;
         Assert.Empty(TelemetryPayloads.PrintAcks(
-            order, true, KitchenPrintOutcome.Sent, KitchenPrintOutcome.Sent,
-            KitchenPrintOutcome.Sent, new PrinterConfiguration { FrontKitchenPrinterName = "front" },
+            order, new TelemetryPayloads.PrintAckOutcomes(
+                true, KitchenPrintOutcome.Sent, KitchenPrintOutcome.Sent, KitchenPrintOutcome.Sent),
+            new PrinterConfiguration { FrontKitchenPrinterName = "front" },
             DateTime.UtcNow, "front-device"));
 
         order.RoutingStates[0].JobId = Guid.Empty;
         Assert.Empty(TelemetryPayloads.PrintAcks(
-            order, true, KitchenPrintOutcome.Sent, KitchenPrintOutcome.Sent,
-            KitchenPrintOutcome.Sent, new PrinterConfiguration(), DateTime.UtcNow, "front-device"));
+            order, new TelemetryPayloads.PrintAckOutcomes(
+                true, KitchenPrintOutcome.Sent, KitchenPrintOutcome.Sent, KitchenPrintOutcome.Sent),
+            new PrinterConfiguration(), DateTime.UtcNow, "front-device"));
     }
 }

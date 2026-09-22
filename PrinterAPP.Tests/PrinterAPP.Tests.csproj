@@ -111,6 +111,7 @@
     <Compile Include="..\PrinterAPP\Services\IOrderPipeline.cs" Link="Linked\IOrderPipeline.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderPipeline.cs" Link="Linked\OrderPipeline.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderPipeline.Processing.cs" Link="Linked\OrderPipeline.Processing.cs" />
+    <Compile Include="..\PrinterAPP\Services\OrderPipeline.Printing.cs" Link="Linked\OrderPipeline.Printing.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderPipeline.Events.cs" Link="Linked\OrderPipeline.Events.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderPipeline.Routing.cs" Link="Linked\OrderPipeline.Routing.cs" />
     <Compile Include="..\PrinterAPP\Services\IOrderHistoryService.cs" Link="Linked\IOrderHistoryService.cs" />

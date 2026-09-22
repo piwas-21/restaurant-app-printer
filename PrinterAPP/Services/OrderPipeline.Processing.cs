@@ -178,93 +178,30 @@ public partial class OrderPipeline
     {
         var order = orderEvent.Order;
         if (order is null)
-        {
             return;
-        }
 
-        bool cashier;
-        KitchenPrintOutcome frontKitchen, backKitchen, generalDefault;
-        var routedOrder = order.RoutingStates is { Count: > 0 };
-        var routedAckPersistenceAttempted = false;
-        var routedAcksDurablyStored = false;
-
-        try
-        {
-            _logger.LogInformation("Order received: #{OrderNumber} — {EventType}",
-                order.OrderNumber, orderEvent.EventType);
-
-            _orderHistoryService.AddOrder(orderEvent);
-
-            (cashier, frontKitchen, backKitchen, generalDefault) =
-                await _orderPrintService.PrintOrderToAllPrintersAsync(
-                    order, cancellationToken: CancellationToken.None);
-
-            // Routed confirmation requires durable final acks before advancing feed cursor/dedup.
-            var canConfirm = OrderRoutingStateValidation.CanConfirm(
-                order, _deviceIdentity.DeviceId, cashier, frontKitchen, backKitchen, generalDefault);
-            if (canConfirm && routedOrder)
-            {
-                routedAckPersistenceAttempted = true;
-                var finalAcks = await BuildPrintAcksAsync(
-                    order, cashier, frontKitchen, backKitchen, generalDefault, orderEvent.Timestamp);
-                if (finalAcks.Count == 0)
-                {
-                    throw new InvalidDataException(
-                        $"Routed order {order.OrderNumber} produced no final printer acknowledgements.");
-                }
-
-                await _printAckOutbox.EnqueueAsync(finalAcks, CancellationToken.None);
-                routedAcksDurablyStored = true;
-            }
-
-            if (canConfirm)
-            {
-                _feed.ConfirmOrderHandled(order.OrderNumber);
-            }
-            else
-            {
-                _feed.ReleaseOrderForRetry(order.OrderNumber, order.CreatedAt, order.UpdatedAt);
-            }
-        }
-        catch (Exception ex)
-        {
-            var failureMessage = routedAckPersistenceAttempted
-                ? $"Order {order.OrderNumber} printed, but durable routed acknowledgement persistence failed; "
-                    + "physical output may have occurred and a retry may print duplicate paper."
-                : $"Failed to process order {order.OrderNumber}";
-            _logger.LogError(ex, "{FailureMessage}", failureMessage);
-            _requestLogService.LogError(
-                "Order Pipeline", failureMessage, ex.Message);
-            SentrySdk.CaptureException(ex);
-            _feed.ReleaseOrderForRetry(order.OrderNumber, order.CreatedAt, order.UpdatedAt);
-
-            RaiseOrderProcessed(new OrderProcessedEventArgs
-            {
-                Order = order,
-                Cashier = false,
-                FrontKitchen = false,
-                BackKitchen = false,
-                GeneralDefault = KitchenPrintOutcome.Failed,
-                Error = ex,
-                AckPersistenceAmbiguous = routedAckPersistenceAttempted,
-            });
+        var result = await TryPrintAndConfirmAsync(order, orderEvent);
+        if (result is null)
             return;
-        }
+
+        var routedAckPersistenceAttempted = result.RoutedAckPersistenceAttempted;
+        var routedAcksDurablyStored = result.RoutedAcksDurablyStored;
 
         try
         {
             _orderHistoryService.UpdatePrintStatus(
                 order.Id,
-                frontKitchen.IsSuccess && backKitchen.IsSuccess && generalDefault.IsSuccess,
-                cashier);
+                result.FrontKitchen.IsSuccess && result.BackKitchen.IsSuccess && result.GeneralDefault.IsSuccess,
+                result.Cashier);
 
             if (!routedAcksDurablyStored)
             {
-                routedAckPersistenceAttempted |= routedOrder;
+                routedAckPersistenceAttempted |= result.RoutedOrder;
                 await _printAckOutbox.EnqueueAsync(
-                    await BuildPrintAcksAsync(order, cashier, frontKitchen, backKitchen, generalDefault,
+                    await BuildPrintAcksAsync(order, result.Cashier, result.FrontKitchen, result.BackKitchen,
+                        result.GeneralDefault,
                         orderEvent.Timestamp), CancellationToken.None);
-                routedAcksDurablyStored = routedOrder;
+                routedAcksDurablyStored = result.RoutedOrder;
             }
         }
         catch (Exception ex)
@@ -286,10 +223,10 @@ public partial class OrderPipeline
         RaiseOrderProcessed(new OrderProcessedEventArgs
         {
             Order = order,
-            Cashier = cashier,
-            FrontKitchen = frontKitchen,
-            BackKitchen = backKitchen,
-            GeneralDefault = generalDefault,
+            Cashier = result.Cashier,
+            FrontKitchen = result.FrontKitchen,
+            BackKitchen = result.BackKitchen,
+            GeneralDefault = result.GeneralDefault,
             AckPersistenceAmbiguous = routedAckPersistenceAttempted && !routedAcksDurablyStored,
         });
     }

@@ -217,144 +217,10 @@ public class EventStreamingService : IEventStreamingService
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            HttpClient? httpClient = null;
-            DateTime lastMessageReceived = DateTime.UtcNow;
-
             try
             {
-                _logger.LogInformation("Connecting to SSE stream: {Url}", url);
-                OnConnectionStatusChanged($"Connecting to {endpoint}...");
-
-                // Create new HttpClient for each connection attempt with TCP keep-alive
-                var handler = new SocketsHttpHandler
-                {
-                    PooledConnectionLifetime = TimeSpan.FromMinutes(10),
-                    PooledConnectionIdleTimeout = TimeSpan.FromMinutes(5),
-                    KeepAlivePingPolicy = HttpKeepAlivePingPolicy.Always,
-                    KeepAlivePingDelay = TimeSpan.FromSeconds(15),
-                    KeepAlivePingTimeout = TimeSpan.FromSeconds(10)
-                };
-                httpClient = new HttpClient(handler)
-                {
-                    Timeout = Timeout.InfiniteTimeSpan
-                };
-
-                using var request = new HttpRequestMessage(HttpMethod.Get, url);
-                request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
-                request.Headers.Connection.Add("keep-alive");
-                request.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true };
-
-                // Capture request details
-                var requestHeaders = new Dictionary<string, string>();
-                foreach (var header in request.Headers)
-                {
-                    requestHeaders[header.Key] = string.Join(", ", header.Value);
-                }
-
-                // Log SSE connection with full request details
-                _requestLogService.LogSSEConnection(endpoint, "Connecting...", url, requestHeaders);
-
-                using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                response.EnsureSuccessStatusCode();
-
-                // Capture response details
-                var responseHeaders = new Dictionary<string, string>();
-                foreach (var header in response.Headers)
-                {
-                    responseHeaders[header.Key] = string.Join(", ", header.Value);
-                }
-                foreach (var header in response.Content.Headers)
-                {
-                    responseHeaders[header.Key] = string.Join(", ", header.Value);
-                }
-
-                // Log SSE response with full details
-                _requestLogService.LogSSEResponse(endpoint, (int)response.StatusCode, responseHeaders);
-
-                OnConnectionStatusChanged($"Connected to {endpoint} stream");
-                _logger.LogInformation("Connected to SSE stream: {Endpoint}", endpoint);
-
-                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-                using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 256, leaveOpen: true);
-
-                string? eventType = null;
-                var dataBuilder = new StringBuilder();
-
-                // Reset retry delay and last message time on successful connection
+                await ListenToStreamConnectionAsync(url, endpoint, cancellationToken);
                 retryDelay = TimeSpan.FromSeconds(5);
-                lastMessageReceived = DateTime.UtcNow;
-
-                // Start background task to check for connection timeout
-                var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                _ = Task.Run(async () =>
-                {
-                    while (!timeoutCts.Token.IsCancellationRequested)
-                    {
-                        await Task.Delay(5000, timeoutCts.Token).ConfigureAwait(false);
-                        var timeSinceLastMessage = DateTime.UtcNow - lastMessageReceived;
-                        if (timeSinceLastMessage.TotalSeconds > 35)
-                        {
-                            _logger.LogWarning("Connection timeout - no messages for {Seconds}s, cancelling...", timeSinceLastMessage.TotalSeconds);
-                            timeoutCts.Cancel();
-                        }
-                    }
-                }, timeoutCts.Token);
-
-                try
-                {
-                    string? line;
-                    while ((line = await reader.ReadLineAsync(timeoutCts.Token)) != null)
-                    {
-                        // Update last message time for any data received
-                        lastMessageReceived = DateTime.UtcNow;
-
-                        if (line.StartsWith("event:"))
-                        {
-                            eventType = line.Substring(6).Trim();
-
-                            // Log heartbeat events but don't process them further
-                            if (eventType == "heartbeat")
-                            {
-                                _logger.LogDebug("Heartbeat received from {Endpoint}", endpoint);
-                            }
-                        }
-                        else if (line.StartsWith("data:"))
-                        {
-                            // Only collect data if it's not a heartbeat
-                            if (eventType != "heartbeat")
-                            {
-                                dataBuilder.AppendLine(line.Substring(5).Trim());
-                            }
-                        }
-                        else if (line.StartsWith(":"))
-                        {
-                            // SSE comment line - also a form of heartbeat
-                            _logger.LogDebug("Comment/heartbeat received from {Endpoint}", endpoint);
-                        }
-                        else if (string.IsNullOrEmpty(line))
-                        {
-                            // Empty line indicates end of message - process event
-                            if (dataBuilder.Length > 0 && eventType != "heartbeat")
-                            {
-                                var data = dataBuilder.ToString().Trim();
-                                _logger.LogInformation("Processing SSE event: {EventType}", eventType);
-                                await ProcessEventAsync(eventType ?? "message", data, endpoint, cancellationToken);
-                            }
-
-                            // Reset for next message
-                            dataBuilder.Clear();
-                            eventType = null;
-                        }
-                    }
-
-                }
-                finally
-                {
-                    timeoutCts.Cancel();
-                    timeoutCts.Dispose();
-                }
-
-                _logger.LogWarning("SSE stream ended for {Endpoint}", endpoint);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -375,197 +241,168 @@ public class EventStreamingService : IEventStreamingService
                     retryDelay = TimeSpan.FromSeconds(Math.Min(retryDelay.TotalSeconds * 2, maxRetryDelay));
                 }
             }
-            finally
+        }
+    }
+
+    private async Task ListenToStreamConnectionAsync(
+        string url,
+        string endpoint,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Connecting to SSE stream: {Url}", url);
+        OnConnectionStatusChanged($"Connecting to {endpoint}...");
+
+        using var httpClient = CreateSseHttpClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+        request.Headers.Connection.Add("keep-alive");
+        request.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true };
+        _requestLogService.LogSSEConnection(endpoint, "Connecting...", url, HeaderSnapshot(request.Headers));
+
+        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        _requestLogService.LogSSEResponse(
+            endpoint, (int)response.StatusCode,
+            HeaderSnapshot(response.Headers, response.Content.Headers));
+
+        OnConnectionStatusChanged($"Connected to {endpoint} stream");
+        _logger.LogInformation("Connected to SSE stream: {Endpoint}", endpoint);
+        await ConsumeSseStreamAsync(response, endpoint, cancellationToken);
+        _logger.LogWarning("SSE stream ended for {Endpoint}", endpoint);
+    }
+
+    private static HttpClient CreateSseHttpClient()
+    {
+        var handler = new SocketsHttpHandler
+        {
+            PooledConnectionLifetime = TimeSpan.FromMinutes(10),
+            PooledConnectionIdleTimeout = TimeSpan.FromMinutes(5),
+            KeepAlivePingPolicy = HttpKeepAlivePingPolicy.Always,
+            KeepAlivePingDelay = TimeSpan.FromSeconds(15),
+            KeepAlivePingTimeout = TimeSpan.FromSeconds(10),
+        };
+        return new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
+    }
+
+    private static Dictionary<string, string> HeaderSnapshot(
+        params System.Net.Http.Headers.HttpHeaders[] headers)
+    {
+        var snapshot = new Dictionary<string, string>();
+        foreach (var collection in headers)
+        {
+            foreach (var header in collection)
+                snapshot[header.Key] = string.Join(", ", header.Value);
+        }
+        return snapshot;
+    }
+
+    private async Task ConsumeSseStreamAsync(
+        HttpResponseMessage response,
+        string endpoint,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false,
+            bufferSize: 256, leaveOpen: true);
+        var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var state = new SseMessageState();
+        var lastMessageReceived = DateTime.UtcNow;
+        _ = MonitorSseTimeoutAsync(timeoutCts, () => lastMessageReceived);
+
+        try
+        {
+            string? line;
+            while ((line = await reader.ReadLineAsync(timeoutCts.Token)) is not null)
             {
-                httpClient?.Dispose();
+                lastMessageReceived = DateTime.UtcNow;
+                await ProcessSseLineAsync(line, state, endpoint, cancellationToken);
+            }
+        }
+        finally
+        {
+            timeoutCts.Cancel();
+            timeoutCts.Dispose();
+        }
+    }
+
+    private async Task ProcessSseLineAsync(
+        string line,
+        SseMessageState state,
+        string endpoint,
+        CancellationToken cancellationToken)
+    {
+        if (line.StartsWith("event:"))
+        {
+            state.EventType = line.Substring(6).Trim();
+            if (state.EventType == "heartbeat")
+                _logger.LogDebug("Heartbeat received from {Endpoint}", endpoint);
+            return;
+        }
+
+        if (line.StartsWith("data:"))
+        {
+            if (state.EventType != "heartbeat")
+                state.Data.AppendLine(line.Substring(5).Trim());
+            return;
+        }
+
+        if (line.StartsWith(":"))
+        {
+            _logger.LogDebug("Comment/heartbeat received from {Endpoint}", endpoint);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(line))
+        {
+            if (state.Data.Length > 0 && state.EventType != "heartbeat")
+            {
+                var data = state.Data.ToString().Trim();
+                _logger.LogInformation("Processing SSE event: {EventType}", state.EventType);
+                await ProcessEventAsync(state.EventType ?? "message", data, endpoint, cancellationToken);
+            }
+            state.Data.Clear();
+            state.EventType = null;
+        }
+    }
+
+    private async Task MonitorSseTimeoutAsync(
+        CancellationTokenSource timeoutCts,
+        Func<DateTime> lastMessage)
+    {
+        while (!timeoutCts.Token.IsCancellationRequested)
+        {
+            await Task.Delay(5000, timeoutCts.Token).ConfigureAwait(false);
+            var elapsed = DateTime.UtcNow - lastMessage();
+            if (elapsed.TotalSeconds > 35)
+            {
+                _logger.LogWarning("Connection timeout - no messages for {Seconds}s, cancelling...",
+                    elapsed.TotalSeconds);
+                timeoutCts.Cancel();
             }
         }
     }
 
-    internal async Task ProcessEventAsync(string eventType, string data, string sourceEndpoint, CancellationToken cancellationToken)
+    private sealed class SseMessageState
+    {
+        public string? EventType { get; set; }
+        public StringBuilder Data { get; } = new();
+    }
+
+    internal Task ProcessEventAsync(string eventType, string data, string sourceEndpoint, CancellationToken cancellationToken)
     {
         try
         {
             _logger.LogDebug("Processing SSE event - Type: {EventType}, Source: {Source}, Data: {Data}",
                 eventType, sourceEndpoint, data);
 
-            // Handle connection event
             if (eventType == "connected")
             {
                 _logger.LogInformation("Received connection confirmation from {Source}", sourceEndpoint);
                 _requestLogService.LogSSEEvent("connected", $"Connection confirmed from {sourceEndpoint}", data, "Service");
-                return;
             }
-
-            // Parse order event - handle both old format and new format
-            if (eventType == "order-created" || eventType == "order-updated" || eventType == "order_created" ||
-                eventType == "order_updated" || eventType == "order" || eventType == "message" ||
-                eventType == "order-status-changed" || eventType == "order-ready" || eventType == "order-completed")
+            else if (IsOrderEventType(eventType))
             {
-                // Log raw event with truncated data for display
-                var truncatedData = data.Length > 100 ? data.Substring(0, 100) + "..." : data;
-
-                try
-                {
-                    // Try to parse as OrderEvent wrapper first (new format)
-                    var orderEvent = JsonSerializer.Deserialize<OrderEvent>(
-                        data, PrinterJsonSerialization.Options);
-
-                    // A valid direct-order payload deserialises to a wrapper with no Order. Force
-                    // the legacy fallback below instead of silently dropping that SSE shape.
-                    if (orderEvent?.Order is null)
-                        throw new JsonException("The SSE payload did not contain an Order wrapper.");
-
-                    // Pattern match (not `orderEvent?.Order != null`) so the compiler narrows orderEvent
-                    // to non-null in this block — clears CS8604 at OnOrderReceived(orderEvent) below.
-                    if (orderEvent is { Order: not null })
-                    {
-                        var order = orderEvent.Order;
-
-                        if (!OrderRoutingStateValidation.TryValidate(order, out var routeError))
-                        {
-                            LogMalformedRoute(order.OrderNumber, routeError!, data);
-                            return;
-                        }
-
-                        // FILTER: Only process orders with Confirmed status
-                        if (!string.Equals(order.Status, "Confirmed", StringComparison.OrdinalIgnoreCase))
-                        {
-                            _logger.LogDebug("Skipping order {OrderNumber} - status is {Status}, not Confirmed",
-                                order.OrderNumber, order.Status);
-                            return;
-                        }
-
-                        // DEDUPLICATION: Check if we've already processed this order
-                        var orderKey = order.OrderNumber;
-                        if (IsOrderAlreadyProcessed(orderKey))
-                        {
-                            _logger.LogInformation("Skipping duplicate order {OrderNumber}", order.OrderNumber);
-                            return;
-                        }
-
-                        // Mark order as processed
-                        MarkOrderAsProcessed(orderKey);
-
-                        // Log order details for debugging
-                        _logger.LogInformation("Received order {OrderNumber} with {ItemCount} items (Status: {Status})",
-                            order.OrderNumber,
-                            order.Items?.Count ?? 0,
-                            order.Status);
-
-                        if (order.Items != null && order.Items.Any())
-                        {
-                            foreach (var item in order.Items)
-                            {
-                                _logger.LogInformation("  - Item: {Quantity}x {ProductName}",
-                                    item.Quantity, item.ProductName);
-                            }
-                        }
-                        else
-                        {
-                            // There used to be an "enrich it from /api/orders/{id}" fallback here. It
-                            // never ran once, for three independent reasons, and its comment claimed
-                            // the opposite — so it is gone rather than repaired:
-                            //
-                            //  1. It derived the id with int.TryParse(order.OrderNumber). Order numbers
-                            //     are yyyyMMdd + a 4-digit sequence (OrderNumberGenerator), i.e. a
-                            //     12-digit string like 202607290001 — larger than int.MaxValue, so the
-                            //     parse failed on every real order and the request was never issued.
-                            //  2. /api/orders/{id} binds a Guid, so an int could not address an order
-                            //     there even if the parse had succeeded.
-                            //  3. It sent X-Api-Key to that endpoint, which is JWT-only and (since the
-                            //     2026-07 order IDOR fix) scoped to staff or the order's owner. A device
-                            //     key authenticates neither, so it would 401.
-                            //
-                            // Reviving it would need a device-facing detail endpoint — but NOT any new
-                            // plumbing for the id: the feed already carries it as order.Id. Nothing has
-                            // asked for that, and the feed includes the line graph, so an item-less
-                            // order is a never-observed edge rather than a gap being papered over.
-                            //
-                            // Note what happens next, because this branch does NOT stop it: control
-                            // falls through and the order is dispatched, and the cashier receipt is
-                            // printed unconditionally (kitchen tickets are gated on item count). So a
-                            // blank receipt does come out of the cashier printer. Say that plainly.
-                            _logger.LogWarning(
-                                "Order {OrderNumber} arrived from {Endpoint} with no items",
-                                order.OrderNumber, sourceEndpoint);
-                            _requestLogService.LogWarning(
-                                PollingLogOperation,
-                                $"Order {order.OrderNumber} arrived with no line items — its cashier receipt will print blank",
-                                "The device cannot recover the missing lines; it prints what the feed sent. " +
-                                "Check this order in the dashboard and reprint it from the Orders tab if the ticket is wrong.",
-                                sourceEndpoint);
-                        }
-
-                        // Log parsed order with full JSON data, keyed by the same order number the
-                        // dedup path above uses as orderKey.
-                        _requestLogService.LogOrderReceived(
-                            order.OrderNumber,
-                            order.TableId,
-                            order.TableLabel,
-                            order.TableNumber,
-                            order.Total,
-                            data,
-                            "Service");
-
-                        // Notify subscribers
-                        OnOrderReceived(orderEvent);
-                        return;
-                    }
-                }
-                catch
-                {
-                    // If that fails, try to parse as Order directly (old format fallback)
-                    var order = JsonSerializer.Deserialize<Order>(data, PrinterJsonSerialization.Options);
-
-                    if (order != null)
-                    {
-                        if (!OrderRoutingStateValidation.TryValidate(order, out var routeError))
-                        {
-                            LogMalformedRoute(order.OrderNumber, routeError!, data);
-                            return;
-                        }
-                        // FILTER: Only process orders with Confirmed status
-                        if (!string.Equals(order.Status, "Confirmed", StringComparison.OrdinalIgnoreCase))
-                        {
-                            _logger.LogDebug("Skipping order {OrderNumber} - status is {Status}, not Confirmed",
-                                order.OrderNumber, order.Status);
-                            return;
-                        }
-
-                        // DEDUPLICATION: Check if we've already processed this order
-                        var orderKey = order.OrderNumber;
-                        if (IsOrderAlreadyProcessed(orderKey))
-                        {
-                            _logger.LogInformation("Skipping duplicate order {OrderNumber}", order.OrderNumber);
-                            return;
-                        }
-
-                        // Mark order as processed
-                        MarkOrderAsProcessed(orderKey);
-
-                        // Log parsed order with full JSON data, keyed by the same order number the
-                        // dedup path above uses as orderKey.
-                        _requestLogService.LogOrderReceived(
-                            order.OrderNumber,
-                            order.TableId,
-                            order.TableLabel,
-                            order.TableNumber,
-                            order.Total,
-                            data,
-                            "Service");
-
-                        var orderEvent = new OrderEvent
-                        {
-                            EventType = eventType,
-                            Order = order,
-                            Timestamp = DateTime.UtcNow
-                        };
-
-                        // Notify subscribers
-                        OnOrderReceived(orderEvent);
-                    }
-                }
+                ProcessOrderPayload(eventType, data, sourceEndpoint);
             }
         }
         catch (JsonException ex)
@@ -578,6 +415,98 @@ public class EventStreamingService : IEventStreamingService
             _logger.LogError(ex, "Error processing SSE event");
             _requestLogService.LogError("Event Processing Error", ex.Message, ex.StackTrace);
         }
+
+        return Task.CompletedTask;
+    }
+
+    private static bool IsOrderEventType(string eventType) =>
+        eventType is "order-created" or "order-updated" or "order_created" or "order_updated"
+            or "order" or "message" or "order-status-changed" or "order-ready" or "order-completed";
+
+    private void ProcessOrderPayload(string eventType, string data, string sourceEndpoint)
+    {
+        try
+        {
+            var orderEvent = JsonSerializer.Deserialize<OrderEvent>(data, PrinterJsonSerialization.Options);
+            if (orderEvent?.Order is null)
+                throw new JsonException("The SSE payload did not contain an Order wrapper.");
+
+            HandleOrder(orderEvent, data, sourceEndpoint, includeItemDiagnostics: true);
+            return;
+        }
+        catch
+        {
+            // The direct Order shape is the legacy feed contract.
+        }
+
+        var order = JsonSerializer.Deserialize<Order>(data, PrinterJsonSerialization.Options);
+        if (order is not null)
+        {
+            HandleOrder(new OrderEvent
+            {
+                EventType = eventType,
+                Order = order,
+                Timestamp = DateTime.UtcNow,
+            }, data, sourceEndpoint, includeItemDiagnostics: false);
+        }
+    }
+
+    private void HandleOrder(
+        OrderEvent orderEvent,
+        string data,
+        string sourceEndpoint,
+        bool includeItemDiagnostics)
+    {
+        if (orderEvent.Order is not { } order)
+            return;
+        if (!OrderRoutingStateValidation.TryValidate(order, out var routeError))
+        {
+            LogMalformedRoute(order.OrderNumber, routeError);
+            return;
+        }
+
+        if (!string.Equals(order.Status, "Confirmed", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogDebug("Skipping order {OrderNumber} - status is {Status}, not Confirmed",
+                order.OrderNumber, order.Status);
+            return;
+        }
+
+        if (IsOrderAlreadyProcessed(order.OrderNumber))
+        {
+            _logger.LogInformation("Skipping duplicate order {OrderNumber}", order.OrderNumber);
+            return;
+        }
+
+        MarkOrderAsProcessed(order.OrderNumber);
+        if (includeItemDiagnostics)
+            LogOrderItemDiagnostics(order, sourceEndpoint);
+
+        _requestLogService.LogOrderReceived(
+            order.OrderNumber, order.TableId, order.TableLabel, order.TableNumber,
+            order.Total, data, "Service");
+        OnOrderReceived(orderEvent);
+    }
+
+    private void LogOrderItemDiagnostics(Order order, string sourceEndpoint)
+    {
+        _logger.LogInformation("Received order {OrderNumber} with {ItemCount} items (Status: {Status})",
+            order.OrderNumber, order.Items?.Count ?? 0, order.Status);
+        if (order.Items is { Count: > 0 })
+        {
+            foreach (var item in order.Items)
+                _logger.LogInformation("  - Item: {Quantity}x {ProductName}", item.Quantity, item.ProductName);
+            return;
+        }
+
+        _logger.LogWarning("Order {OrderNumber} arrived from {Endpoint} with no items",
+            order.OrderNumber, sourceEndpoint);
+        _requestLogService.LogWarning(
+            PollingLogOperation,
+            $"Order {order.OrderNumber} arrived with no line items — its cashier receipt will print blank",
+            "The device cannot recover the missing lines; it prints what the feed sent. " +
+            "Check this order in the dashboard and reprint it from the Orders tab if the ticket is wrong.",
+            sourceEndpoint);
     }
 
     protected virtual void OnOrderReceived(OrderEvent orderEvent)
@@ -585,11 +514,12 @@ public class EventStreamingService : IEventStreamingService
         OrderReceived?.Invoke(this, orderEvent);
     }
 
-    private void LogMalformedRoute(string orderNumber, string reason, string rawPayload)
+    private void LogMalformedRoute(string orderNumber, string? reason)
     {
-        _logger.LogError("Rejected routed SSE order {OrderNumber}: {Reason}", orderNumber, reason);
+        var message = reason ?? "Invalid printer routing state.";
+        _logger.LogError("Rejected routed SSE order {OrderNumber}: {Reason}", orderNumber, message);
         _requestLogService.LogError(
-            "Printer Routing", $"Rejected routed order {orderNumber}", reason + " Retry will be attempted.");
+            "Printer Routing", $"Rejected routed order {orderNumber}", message + " Retry will be attempted.");
     }
 
     protected virtual void OnConnectionStatusChanged(string status)

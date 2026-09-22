@@ -7,10 +7,7 @@ public static partial class TelemetryPayloads
     private static List<PrintAck> RoutedPrintAcks(
         Order order,
         Guid orderId,
-        KitchenPrintOutcome cashier,
-        KitchenPrintOutcome frontKitchen,
-        KitchenPrintOutcome backKitchen,
-        KitchenPrintOutcome generalDefault,
+        PrintAckOutcomes outcomes,
         PrinterConfiguration config,
         DateTime receivedAt,
         string deviceId)
@@ -18,17 +15,21 @@ public static partial class TelemetryPayloads
         if (!OrderRoutingStateValidation.TryValidate(order, out _))
             return new List<PrintAck>();
 
+        var routes = order.RoutingStates;
+        if (routes is not { Count: > 0 })
+            return new List<PrintAck>();
+
         var acks = new List<PrintAck>();
-        foreach (var route in order.RoutingStates!
+        foreach (var route in routes
                      .Where(route => route.Status == DevicePrintStatus.Queued
                          && string.Equals(route.DeviceId, deviceId, StringComparison.Ordinal)))
         {
             KitchenPrintOutcome? outcome = route.Target switch
             {
-                DevicePrintTarget.Cashier => cashier,
-                DevicePrintTarget.FrontKitchen => frontKitchen,
-                DevicePrintTarget.BackKitchen => backKitchen,
-                DevicePrintTarget.General or DevicePrintTarget.Default => generalDefault,
+                DevicePrintTarget.Cashier => outcomes.Cashier,
+                DevicePrintTarget.FrontKitchen => outcomes.FrontKitchen,
+                DevicePrintTarget.BackKitchen => outcomes.BackKitchen,
+                DevicePrintTarget.General or DevicePrintTarget.Default => outcomes.GeneralDefault,
                 _ => null,
             };
             if (outcome is null || outcome.Value.Status == KitchenPrintStatus.NoWork)

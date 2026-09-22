@@ -18,58 +18,45 @@ public static class OrderRoutingStateValidation
         var jobIds = new HashSet<Guid>();
         foreach (var route in order.RoutingStates)
         {
-            if (route is null)
-            {
-                error = "The order contains a null printer route.";
+            if (!TryValidateRoute(route, targets, jobIds, out error))
                 return false;
-            }
-
-            if (route.JobId == Guid.Empty)
-            {
-                error = $"The {route.Target} printer route has no job id.";
-                return false;
-            }
-
-            if (route.Revision <= 0)
-            {
-                error = $"The {route.Target} printer route has an invalid revision.";
-                return false;
-            }
-
-            if (!Enum.IsDefined(route.Target))
-            {
-                error = "The order contains an unknown printer route target.";
-                return false;
-            }
-
-            if (!Enum.IsDefined(route.Status))
-            {
-                error = $"The {route.Target} printer route has an unknown status.";
-                return false;
-            }
-
-            if (!targets.Add(route.Target))
-            {
-                error = $"The order contains duplicate {route.Target} printer routes.";
-                return false;
-            }
-
-            if (!jobIds.Add(route.JobId))
-            {
-                error = $"The order contains duplicate printer job id {route.JobId}.";
-                return false;
-            }
-
-            if (route.Status == DevicePrintStatus.Queued
-                && string.IsNullOrWhiteSpace(route.DeviceId))
-            {
-                error = $"The queued {route.Target} printer route has no device id.";
-                return false;
-            }
         }
 
         error = null;
         return true;
+    }
+
+    private static bool TryValidateRoute(
+        OrderRoutingState? route,
+        ISet<DevicePrintTarget> targets,
+        ISet<Guid> jobIds,
+        out string? error)
+    {
+        if (route is null)
+            return Fail("The order contains a null printer route.", out error);
+        if (route.JobId == Guid.Empty)
+            return Fail($"The {route.Target} printer route has no job id.", out error);
+        if (route.Revision <= 0)
+            return Fail($"The {route.Target} printer route has an invalid revision.", out error);
+        if (!Enum.IsDefined(route.Target))
+            return Fail("The order contains an unknown printer route target.", out error);
+        if (!Enum.IsDefined(route.Status))
+            return Fail($"The {route.Target} printer route has an unknown status.", out error);
+        if (!targets.Add(route.Target))
+            return Fail($"The order contains duplicate {route.Target} printer routes.", out error);
+        if (!jobIds.Add(route.JobId))
+            return Fail($"The order contains duplicate printer job id {route.JobId}.", out error);
+        if (route.Status == DevicePrintStatus.Queued && string.IsNullOrWhiteSpace(route.DeviceId))
+            return Fail($"The queued {route.Target} printer route has no device id.", out error);
+
+        error = null;
+        return true;
+    }
+
+    private static bool Fail(string message, out string? error)
+    {
+        error = message;
+        return false;
     }
 
     public static RoutingSelection Select(Order order, string? deviceId)

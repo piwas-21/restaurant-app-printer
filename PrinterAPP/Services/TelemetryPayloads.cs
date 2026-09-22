@@ -8,6 +8,13 @@ namespace PrinterAPP.Services;
 /// </summary>
 public static partial class TelemetryPayloads
 {
+    /// <summary>Per-destination outcomes captured for one order acknowledgement.</summary>
+    public sealed record PrintAckOutcomes(
+        bool Cashier,
+        KitchenPrintOutcome FrontKitchen,
+        KitchenPrintOutcome BackKitchen,
+        KitchenPrintOutcome GeneralDefault);
+
     public static HeartbeatRequest Heartbeat(
         PrinterConfiguration config, string platform, string appVersion,
         bool feedRunning, DateTime? lastSuccessfulPollAt)
@@ -64,11 +71,11 @@ public static partial class TelemetryPayloads
 
         if (!string.IsNullOrWhiteSpace(deviceId) && order.RoutingStates is { Count: > 0 })
         {
-            return RoutedPrintAcks(order, orderId,
+            return RoutedPrintAcks(order, orderId, new PrintAckOutcomes(
                 cashier ? KitchenPrintOutcome.Sent : KitchenPrintOutcome.Failed,
                 frontKitchen ? KitchenPrintOutcome.Sent : KitchenPrintOutcome.Failed,
                 backKitchen ? KitchenPrintOutcome.Sent : KitchenPrintOutcome.Failed,
-                KitchenPrintOutcome.Sent, config, receivedAt, deviceId);
+                KitchenPrintOutcome.Sent), config, receivedAt, deviceId);
         }
 
         return new List<PrintAck>
@@ -84,49 +91,10 @@ public static partial class TelemetryPayloads
         };
     }
 
-    /// <summary>
-    /// Adds the typed General/Default acknowledgement to the legacy order acknowledgements. This
-    /// overload is opt-in so old callers retain their exact three-ack wire shape.
-    /// </summary>
-    public static List<PrintAck> PrintAcks(
-        Order order,
-        bool cashier,
-        bool frontKitchen,
-        bool backKitchen,
-        KitchenPrintOutcome generalDefault,
-        PrinterConfiguration config,
-        DateTime receivedAt,
-        string? deviceId = null)
-    {
-        if (Guid.TryParse(order.Id, out var orderId)
-            && !string.IsNullOrWhiteSpace(deviceId)
-            && order.RoutingStates is { Count: > 0 })
-        {
-            return RoutedPrintAcks(order, orderId,
-                cashier ? KitchenPrintOutcome.Sent : KitchenPrintOutcome.Failed,
-                frontKitchen ? KitchenPrintOutcome.Sent : KitchenPrintOutcome.Failed,
-                backKitchen ? KitchenPrintOutcome.Sent : KitchenPrintOutcome.Failed,
-                generalDefault, config, receivedAt, deviceId);
-        }
-
-        var acks = PrintAcks(order, cashier, frontKitchen, backKitchen, config, receivedAt);
-        if (!Guid.TryParse(order.Id, out var legacyOrderId))
-            return acks;
-
-        var target = config.KitchenRoutingMode == KitchenRoutingMode.SingleKitchen
-            ? DevicePrintTarget.General
-            : DevicePrintTarget.Default;
-        acks.Add(BuildOutcomeAck(legacyOrderId, target, generalDefault, receivedAt));
-        return acks;
-    }
-
     /// <summary>Typed variant used by the routed pipeline so no-work is never reported as Printed.</summary>
     public static List<PrintAck> PrintAcks(
         Order order,
-        bool cashier,
-        KitchenPrintOutcome frontKitchen,
-        KitchenPrintOutcome backKitchen,
-        KitchenPrintOutcome generalDefault,
+        PrintAckOutcomes outcomes,
         PrinterConfiguration config,
         DateTime receivedAt,
         string? deviceId = null)
@@ -135,19 +103,18 @@ public static partial class TelemetryPayloads
             && !string.IsNullOrWhiteSpace(deviceId)
             && order.RoutingStates is { Count: > 0 })
         {
-            return RoutedPrintAcks(order, orderId,
-                cashier ? KitchenPrintOutcome.Sent : KitchenPrintOutcome.Failed,
-                frontKitchen, backKitchen, generalDefault, config, receivedAt, deviceId);
+            return RoutedPrintAcks(order, orderId, outcomes, config, receivedAt, deviceId);
         }
 
-        var acks = PrintAcks(order, cashier, frontKitchen.IsSuccess, backKitchen.IsSuccess,
+        var acks = PrintAcks(order, outcomes.Cashier, outcomes.FrontKitchen.IsSuccess,
+            outcomes.BackKitchen.IsSuccess,
             config, receivedAt);
         if (Guid.TryParse(order.Id, out var legacyOrderId))
         {
             var target = config.KitchenRoutingMode == KitchenRoutingMode.SingleKitchen
                 ? DevicePrintTarget.General
                 : DevicePrintTarget.Default;
-            acks.Add(BuildOutcomeAck(legacyOrderId, target, generalDefault, receivedAt));
+            acks.Add(BuildOutcomeAck(legacyOrderId, target, outcomes.GeneralDefault, receivedAt));
         }
         return acks;
     }
