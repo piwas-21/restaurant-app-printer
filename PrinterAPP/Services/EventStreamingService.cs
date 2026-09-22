@@ -346,7 +346,7 @@ public class EventStreamingService : IEventStreamingService
             return;
         }
 
-        if (line.StartsWith(":"))
+        if (line.StartsWith(':'))
         {
             _logger.LogDebug("Comment/heartbeat received from {Endpoint}", endpoint);
             return;
@@ -750,9 +750,10 @@ public class EventStreamingService : IEventStreamingService
         var earliest = now - FeedCursorStore.MaxLookBack;
         var candidates = new[] { createdAt, updatedAt }
             .Where(value => value is { } timestamp && timestamp != default)
-            .Select(value => value!.Value.Kind == DateTimeKind.Utc
-                ? value.Value
-                : value.Value.ToUniversalTime())
+            .Select(value => value.GetValueOrDefault())
+            .Select(timestamp => timestamp.Kind == DateTimeKind.Utc
+                ? timestamp
+                : timestamp.ToUniversalTime())
             .Where(timestamp => timestamp <= now)
             .ToList();
         if (candidates.Count == 0)
