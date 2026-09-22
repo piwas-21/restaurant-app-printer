@@ -97,7 +97,9 @@ public sealed class EventStreamingServiceRoutingTests
             await stream.FlushAsync(cts.Token);
         }, cts.Token);
 
-        var listenTask = service.ListenToStreamAsync($"http://127.0.0.1:{port}", "kitchen", cts.Token);
+        var baseUri = new UriBuilder(Uri.UriSchemeHttp, IPAddress.Loopback.ToString(), port).Uri;
+        var listenTask = service.ListenToStreamAsync(
+            baseUri.GetLeftPart(UriPartial.Authority), "kitchen", cts.Token);
         var dispatched = await received.Task.WaitAsync(cts.Token);
         await cts.CancelAsync();
         await listenTask;
