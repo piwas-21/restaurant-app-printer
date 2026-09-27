@@ -401,6 +401,46 @@ public class OrderPrintToSinkTests
         Assert.Contains("+ 1x Boisson", ticket);
     }
 
+    /// <summary>
+    /// Replays a sanitized current-contract Menu Tacos feed response through the real feed parser,
+    /// then through cashier and kitchen composition into loopback printer sinks. The two zero-price
+    /// meat components remain visible while the cashier receipt keeps the €14.00 menu total.
+    /// </summary>
+    [Fact]
+    public async Task PrintOrderToAllPrinters_MenuTacosFeedJson_RendersChoicesRoutesAndTotal()
+    {
+        var feed = OrderFeedParser.Parse(TacosMenuFeedFixture.Json);
+
+        Assert.True(feed.IsSuccess, feed.FailureMessage);
+        Assert.True(feed.HasDataEnvelope);
+        Assert.Empty(feed.Errors);
+        var order = Assert.Single(feed.Orders);
+        Assert.Equal("TEST-TACOS-FEED-0001", order.OrderNumber);
+
+        using var cashier = new Sink();
+        using var front = new Sink();
+        using var back = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        var result = await PrintToSinksAsync(order, cashier, front, back, cts.Token);
+
+        Assert.True(result.Cashier, "cashier print reported failure");
+        Assert.Equal(KitchenPrintStatus.Sent, result.FrontKitchen.Status);
+        Assert.False(back.ReceivedAnything, "back kitchen was sent a ticket it has nothing to make");
+
+        var cashierTicket = await cashier.ReadTicketAsync(cts.Token);
+        var kitchenTicket = await front.ReadTicketAsync(cts.Token);
+
+        Assert.Contains("EUR 14.00", cashierTicket);
+        Assert.Contains("Menu Tacos 2 Viande", cashierTicket);
+        Assert.Contains("+ 1x Poulet", kitchenTicket);
+        Assert.Contains("+ 1x Kebab", kitchenTicket);
+        Assert.Contains("+ Sauce Algérienne", kitchenTicket);
+        Assert.Contains("+ EXTRA Cheddar x1", kitchenTicket);
+        Assert.Contains("+ 1x Frites", kitchenTicket);
+        Assert.Contains("+ 1x Cola", kitchenTicket);
+    }
+
     /// <summary>A fixed venue language choice must localize the receipt labels on the wire.</summary>
     [Fact]
     public async Task PrintOrderAsync_Cashier_LocalizesLabels_ToTheConfiguredLanguage()
@@ -710,12 +750,13 @@ public class OrderPrintToSinkTests
         /// <summary>
         /// The ticket as text. The sender connects, writes and closes per print, so the connection
         /// sits in the accept backlog until read — no need to race an accept against the print.
-        /// Decoded as Latin1: the assertions are ASCII, which PC857 leaves unchanged.
+        /// Decoded with the PC857 codepage selected in the ESC/POS stream.
         /// </summary>
         public async Task<string> ReadTicketAsync(CancellationToken ct)
         {
             var bytes = await AcceptAndReadAllAsync(_listener, ct);
-            return Encoding.Latin1.GetString(bytes);
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            return Encoding.GetEncoding(857).GetString(bytes);
         }
 
         public void Dispose() => _listener.Stop();
