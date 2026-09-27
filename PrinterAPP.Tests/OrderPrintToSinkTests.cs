@@ -213,6 +213,59 @@ public class OrderPrintToSinkTests
     }
 
     /// <summary>
+    /// Synthetic checkout shape for the taco menu: each menu item has its selected meats as
+    /// nested order rows. The loopback sink must retain each selected row and its quantity on the
+    /// kitchen ticket, including one-choice and multi-choice cases.
+    /// </summary>
+    [Fact]
+    public async Task PrintOrderToAllPrinters_TacosOneTwoThree_RoutesEverySelectedMeatOnce()
+    {
+        using var cashier = new Sink();
+        using var front = new Sink();
+        using var back = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        var order = BundleOrder(
+            Item("Menu Tacos 1", "FrontKitchen", children:
+            [
+                Item("Meat Choice 1A", "FrontKitchen"),
+            ]),
+            Item("Menu Tacos 2", "FrontKitchen", children:
+            [
+                Item("Meat Choice 2A", "FrontKitchen"),
+                Item("Meat Choice 2B", "FrontKitchen"),
+            ]),
+            Item("Menu Tacos 3", "FrontKitchen", children:
+            [
+                Item("Meat Choice 3A", "FrontKitchen"),
+                Item("Meat Choice 3B", "FrontKitchen"),
+                Item("Meat Choice 3C", "FrontKitchen"),
+            ]));
+
+        var result = await PrintToSinksAsync(order, cashier, front, back, cts.Token);
+
+        Assert.True(result.FrontKitchen, "front kitchen print reported failure");
+        var frontTicket = await front.ReadTicketAsync(cts.Token);
+
+        Assert.Equal(1, Occurrences(frontTicket, "1x Menu Tacos 1"));
+        Assert.Equal(1, Occurrences(frontTicket, "1x Menu Tacos 2"));
+        Assert.Equal(1, Occurrences(frontTicket, "1x Menu Tacos 3"));
+
+        foreach (var selectedMeat in new[]
+                 {
+                     "Meat Choice 1A",
+                     "Meat Choice 2A", "Meat Choice 2B",
+                     "Meat Choice 3A", "Meat Choice 3B", "Meat Choice 3C",
+                 })
+        {
+            Assert.Equal(1, Occurrences(frontTicket, $"+ 1x {selectedMeat}"));
+        }
+
+        Assert.Equal(6, Occurrences(frontTicket, "+ 1x Meat Choice"));
+        Assert.False(back.ReceivedAnything, "back kitchen was sent a ticket it has nothing to make");
+    }
+
+    /// <summary>
     /// The partner complaint, end to end: a cashier receipt must carry the ingredient rows the
     /// backend froze at checkout (a quantity-one selection is an explicit choice, not a default to
     /// hide) and the bundle components hanging under an item — through the real compose→send path.
