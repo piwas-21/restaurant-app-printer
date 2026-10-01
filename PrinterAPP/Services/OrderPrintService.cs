@@ -147,6 +147,9 @@ public class OrderPrintService : IOrderPrintService
             bool isManualPrint,
             IReadOnlySet<DevicePrintTarget>? routedTargets)
     {
+        if (!MarketplaceReceiptComposer.CanPrint(order, PrinterType.Kitchen))
+            return (KitchenPrintOutcome.Unknown, KitchenPrintOutcome.Unknown, KitchenPrintOutcome.Unknown);
+
         var front = KitchenPrintOutcome.Sent;
         var back = KitchenPrintOutcome.Sent;
         var general = KitchenPrintOutcome.Sent;
@@ -412,6 +415,7 @@ public class OrderPrintService : IOrderPrintService
 
     public async Task<bool> PrintOrderAsync(Order order, PrinterType printerType, bool isManualPrint = false, CancellationToken cancellationToken = default)
     {
+        if (!MarketplaceReceiptComposer.CanPrint(order, printerType)) return false;
         try
         {
             var config = await _printerService.LoadConfigurationAsync();
@@ -525,7 +529,8 @@ public class OrderPrintService : IOrderPrintService
     private string FormatKitchenReceipt(Order order, PrinterConfiguration config, int paperWidth, string? kitchenName = null)
     {
         var sb = new StringBuilder();
-        var labels = PrintLabelCatalog.For(PrintLanguagePolicy.Resolve(config.PrintLanguage, order.PreferredLanguage));
+        var language = PrintLanguagePolicy.Resolve(config.PrintLanguage, order.PreferredLanguage);
+        var labels = PrintLabelCatalog.For(language);
         var styles = CurrentStyles();
 
         // Initialize printer and set Turkish code page for character support
@@ -552,6 +557,7 @@ public class OrderPrintService : IOrderPrintService
         // Type + Table (Kitchen Order Type section; defaults to Tall)
         sb.Append(ApplyStyle(styles.KitchenOrderType));
         ReceiptComposer.AppendTypeAndTableLine(sb, order, labels);
+        MarketplaceReceiptComposer.AppendIdentity(sb, order, language, showPayment: false);
         sb.Append(ResetStyle(styles.KitchenOrderType));
 
         // Customer name only (no phone) — styled as part of the order info block
@@ -603,8 +609,10 @@ public class OrderPrintService : IOrderPrintService
     private string FormatCashierReceipt(Order order, PrinterConfiguration config, int paperWidth)
     {
         var sb = new StringBuilder();
-        var labels = PrintLabelCatalog.For(PrintLanguagePolicy.Resolve(config.PrintLanguage, order.PreferredLanguage));
+        var language = PrintLanguagePolicy.Resolve(config.PrintLanguage, order.PreferredLanguage);
+        var labels = PrintLabelCatalog.For(language);
         var styles = CurrentStyles();
+        var currency = MarketplaceReceiptComposer.Currency(order);
 
         // Initialize printer and set Turkish code page for character support
         // Some printers need the code page command repeated to properly switch encoding
@@ -632,6 +640,7 @@ public class OrderPrintService : IOrderPrintService
         // Type + Table on one line
         sb.Append(ApplyStyle(styles.CashierOrderInfo));
         ReceiptComposer.AppendTypeAndTableLine(sb, order, labels);
+        MarketplaceReceiptComposer.AppendIdentity(sb, order, language, showPayment: true);
         sb.Append(ResetStyle(styles.CashierOrderInfo));
 
         // Customer name, plus a phone number for orders someone may need to call about
@@ -672,7 +681,7 @@ public class OrderPrintService : IOrderPrintService
             foreach (var item in order.Items)
             {
                 sb.Append(ApplyStyle(styles.CashierItemLine));
-                ReceiptComposer.AppendCashierItemLines(sb, item, depth: 0, spacing, labels, currency: order.Currency);
+                ReceiptComposer.AppendCashierItemLines(sb, item, depth: 0, spacing, labels, currency: currency);
                 sb.Append(ResetStyle(styles.CashierItemLine));
             }
         }
@@ -686,16 +695,13 @@ public class OrderPrintService : IOrderPrintService
 
         // Subtotal, Tax, Discounts, Delivery Fee, Tip (Cashier Totals section)
         sb.Append(ApplyStyle(styles.CashierTotals));
-        sb.AppendLine($"{labels.Subtotal}: {ReceiptComposer.Money(order.SubTotal, order.Currency)}");
+        sb.AppendLine($"{labels.Subtotal}: {ReceiptComposer.Money(order.SubTotal, currency)}");
 
-        if (order.Tax > 0)
-        {
-            sb.AppendLine($"{labels.Tax}: {ReceiptComposer.Money(order.Tax, order.Currency)}");
-        }
+        MarketplaceReceiptComposer.AppendTax(sb, order, labels, language);
 
         if (order.Discount > 0)
         {
-            sb.AppendLine($"{labels.Discount} ({order.DiscountPercentage.ToString(CultureInfo.InvariantCulture)}%): -{ReceiptComposer.Money(order.Discount, order.Currency)}");
+            sb.AppendLine($"{labels.Discount} ({order.DiscountPercentage.ToString(CultureInfo.InvariantCulture)}%): -{ReceiptComposer.Money(order.Discount, currency)}");
         }
 
         // Customer-specific discount money is SEPARATE from Discount (backend OrderPricingService:
@@ -703,7 +709,7 @@ public class OrderPrintService : IOrderPrintService
         // breakdown does not reconcile against the total whenever it applied.
         if (order.CustomerDiscountAmount > 0)
         {
-            sb.AppendLine($"{labels.CustomerDiscount}: -{ReceiptComposer.Money(order.CustomerDiscountAmount, order.Currency)}");
+            sb.AppendLine($"{labels.CustomerDiscount}: -{ReceiptComposer.Money(order.CustomerDiscountAmount, currency)}");
         }
 
         if (!string.IsNullOrWhiteSpace(order.PromoCode))
@@ -713,12 +719,12 @@ public class OrderPrintService : IOrderPrintService
 
         if (order.DeliveryFee > 0)
         {
-            sb.AppendLine($"{labels.DeliveryFee}: {ReceiptComposer.Money(order.DeliveryFee, order.Currency)}");
+            sb.AppendLine($"{labels.DeliveryFee}: {ReceiptComposer.Money(order.DeliveryFee, currency)}");
         }
 
         if (order.Tip > 0)
         {
-            sb.AppendLine($"{labels.Tip}: {ReceiptComposer.Money(order.Tip, order.Currency)}");
+            sb.AppendLine($"{labels.Tip}: {ReceiptComposer.Money(order.Tip, currency)}");
         }
 
         sb.Append(ResetStyle(styles.CashierTotals));
@@ -726,20 +732,20 @@ public class OrderPrintService : IOrderPrintService
 
         // Total (Cashier Grand Total section — defaults: double size, bold, emphasized)
         sb.Append(ApplyStyle(styles.CashierGrandTotal));
-        sb.AppendLine($"{labels.Total}: {ReceiptComposer.Money(order.Total, order.Currency)}");
+        sb.AppendLine($"{labels.Total}: {ReceiptComposer.Money(order.Total, currency)}");
         sb.Append(ResetStyle(styles.CashierGrandTotal));
         sb.AppendLine();
 
         // What has already been paid, and what the till still has to collect.
         if (order.TotalPaid > 0)
         {
-            sb.AppendLine($"{labels.Paid}: {ReceiptComposer.Money(order.TotalPaid, order.Currency)}");
+            sb.AppendLine($"{labels.Paid}: {ReceiptComposer.Money(order.TotalPaid, currency)}");
         }
 
-        if (order.RemainingAmount > 0)
+        if (order.ExternalOrder is null && order.RemainingAmount > 0)
         {
             sb.Append(EscPosCommands.ExtraDarkOn);
-            sb.AppendLine($"{labels.Due}: {ReceiptComposer.Money(order.RemainingAmount, order.Currency)}");
+            sb.AppendLine($"{labels.Due}: {ReceiptComposer.Money(order.RemainingAmount, currency)}");
             sb.Append(EscPosCommands.ExtraDarkOff);
         }
 
@@ -752,11 +758,13 @@ public class OrderPrintService : IOrderPrintService
             sb.AppendLine($"{labels.Payment}:");
             foreach (var payment in order.Payments)
             {
-                var paymentLabel = labels.PaymentMethodLabel(payment.PaymentMethod);
+                var paymentLabel = order.ExternalOrder is { } source
+                    ? MarketplaceReceiptComposer.ProviderName(source)
+                    : labels.PaymentMethodLabel(payment.PaymentMethod);
                 var method = string.IsNullOrWhiteSpace(payment.CardLastFourDigits)
                     ? paymentLabel
                     : $"{paymentLabel} *{payment.CardLastFourDigits}";
-                sb.AppendLine($"{method}: {ReceiptComposer.Money(payment.Amount, order.Currency ?? payment.Currency)}");
+                sb.AppendLine($"{method}: {ReceiptComposer.Money(payment.Amount, order.ExternalOrder is null ? currency ?? payment.Currency : currency)}");
             }
             sb.Append(EscPosCommands.ExtraDarkOff);
             sb.AppendLine();
