@@ -35,6 +35,14 @@ and an older backend that omits external permissions produces no external ticket
 in PR CI; TCP sink tests verify the actual composition/transport path. Device output and release packaging
 remain separate acceptance checks. The labels follow the seven existing PC857 print languages and fallback.
 
+## Security boundary
+
+- Source display references are text; control characters are removed before ESC/POS composition.
+- External currency labels accept only three uppercase ASCII letters and never use tender fallback.
+- Missing external print permissions deny output; manual printing enforces the same rules.
+- A held order cannot generate a kitchen ticket or a successful kitchen acknowledgement.
+- The additive model contains display/payment evidence only, with no provider credentials or internal IDs.
+
 ## Alternatives considered
 
 Using the ordinary payment label/tax field would misrepresent provider custody or unknown tax. Allowing
