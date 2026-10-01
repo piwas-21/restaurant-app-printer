@@ -1,6 +1,6 @@
 # ADR-008 — Marketplace source and permission-aware receipts
 
-**Status:** Proposed
+**Status:** Accepted
 **Date:** 2026-10-01
 **Implements:** Sofra delivery-channels integration
 **References:**
