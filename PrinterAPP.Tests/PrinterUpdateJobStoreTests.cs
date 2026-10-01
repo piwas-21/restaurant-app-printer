@@ -256,25 +256,25 @@ public sealed class PrinterUpdateJobStoreTests
         using var paths = new FakeAppDataPathProvider();
         var update = PrinterUpdateTestData.Update();
 
-        var unknown = new OrderPrintService(
+        var unknown = new OrderPrintService(new MarketplaceReceiptComposer(),
             new ConfigPrinter(new PrinterConfiguration()), new NoopRequestLogService(),
             NullLogger<OrderPrintService>.Instance, paths);
         Assert.Equal(
             KitchenPrintStatus.Unknown,
             (await unknown.PrintUpdateAsync(update with { Audience = "Staff" })).Status);
 
-        var notConfigured = new OrderPrintService(
+        var notConfigured = new OrderPrintService(new MarketplaceReceiptComposer(),
             new ConfigPrinter(new PrinterConfiguration { KitchenAutoPrint = true }),
             new NoopRequestLogService(), NullLogger<OrderPrintService>.Instance, paths);
         Assert.Equal(KitchenPrintStatus.NotConfigured, (await notConfigured.PrintUpdateAsync(update)).Status);
 
-        var skipped = new OrderPrintService(
+        var skipped = new OrderPrintService(new MarketplaceReceiptComposer(),
             new ConfigPrinter(new PrinterConfiguration { KitchenAutoPrint = false }),
             new NoopRequestLogService(), NullLogger<OrderPrintService>.Instance, paths);
         Assert.Equal(KitchenPrintStatus.Skipped, (await skipped.PrintUpdateAsync(update)).Status);
 
         var unusedPort = ReserveUnusedPort();
-        var failed = new OrderPrintService(
+        var failed = new OrderPrintService(new MarketplaceReceiptComposer(),
             new ConfigPrinter(new PrinterConfiguration
             {
                 KitchenAutoPrint = true,

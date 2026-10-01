@@ -8,6 +8,7 @@ namespace PrinterAPP.Tests;
 
 public sealed class MarketplaceReceiptComposerTests
 {
+    private static readonly IMarketplaceReceiptComposer Composer = new MarketplaceReceiptComposer();
     private static Order SourceOrder() => new()
     {
         Currency = "CHF", Tax = 0,
@@ -23,7 +24,7 @@ public sealed class MarketplaceReceiptComposerTests
             "externalState":"CREATED","lastEventAt":"2026-10-01T17:25:07Z","currency":"EUR",
             "merchantTotal":5,"reportedTax":null,"fulfillmentType":"DELIVERY_BY_UBER","isSandbox":true}}
             """, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })!;
-        Assert.Equal("EUR", MarketplaceReceiptComposer.Currency(order));
+        Assert.Equal("EUR", Composer.Currency(order));
         Assert.Equal(5, order.ExternalOrder!.MerchantTotal);
         Assert.Null(order.ExternalOrder.ReportedTax);
         Assert.Equal("9116D", order.WithItems([]).ExternalOrder!.ExternalDisplayId);
@@ -33,10 +34,10 @@ public sealed class MarketplaceReceiptComposerTests
     public void MissingTaxRemainsUnknown_ExplicitZeroIsMoney()
     {
         var order = SourceOrder(); var builder = new StringBuilder();
-        MarketplaceReceiptComposer.AppendTax(builder, order, PrintLabelCatalog.English, "en");
+        Composer.AppendTax(builder, order, PrintLabelCatalog.English, "en");
         Assert.Equal("Tax: Not reported by provider" + Environment.NewLine, builder.ToString());
         order.ExternalOrder!.ReportedTax = 0; builder.Clear();
-        MarketplaceReceiptComposer.AppendTax(builder, order, PrintLabelCatalog.English, "en");
+        Composer.AppendTax(builder, order, PrintLabelCatalog.English, "en");
         Assert.Equal("Tax: EUR 0.00" + Environment.NewLine, builder.ToString());
     }
 
@@ -44,15 +45,15 @@ public sealed class MarketplaceReceiptComposerTests
     public void HeldOrUnpermittedSourceCannotPrint_OrdinaryBehaviorRemains()
     {
         var order = SourceOrder();
-        Assert.False(MarketplaceReceiptComposer.CanPrint(order, PrinterType.Cashier));
-        Assert.False(MarketplaceReceiptComposer.CanPrint(order, PrinterType.Kitchen));
+        Assert.False(Composer.CanPrint(order, PrinterType.Cashier));
+        Assert.False(Composer.CanPrint(order, PrinterType.Kitchen));
         order.PermittedActions = [new() { Action = "PrintKitchen", Allowed = true }];
-        Assert.False(MarketplaceReceiptComposer.CanPrint(order, PrinterType.Kitchen));
+        Assert.False(Composer.CanPrint(order, PrinterType.Kitchen));
         order.IsKitchenReleased = true;
-        Assert.True(MarketplaceReceiptComposer.CanPrint(order, PrinterType.Kitchen));
-        Assert.False(MarketplaceReceiptComposer.CanPrint(order, PrinterType.Cashier));
+        Assert.True(Composer.CanPrint(order, PrinterType.Kitchen));
+        Assert.False(Composer.CanPrint(order, PrinterType.Cashier));
         order.ExternalOrder = null;
-        Assert.True(MarketplaceReceiptComposer.CanPrint(order, PrinterType.Cashier));
+        Assert.True(Composer.CanPrint(order, PrinterType.Cashier));
     }
 
     [Theory]
@@ -71,9 +72,9 @@ public sealed class MarketplaceReceiptComposerTests
     {
         var order = SourceOrder(); order.ExternalOrder!.ExternalDisplayId = "9116D\u001b@\nFORGED";
         order.ExternalOrder.Currency = "\u001b@";
-        var builder = new StringBuilder(); MarketplaceReceiptComposer.AppendIdentity(builder, order, "en", false);
+        var builder = new StringBuilder(); Composer.AppendIdentity(builder, order, "en", false);
         Assert.DoesNotContain('\u001b', builder.ToString());
         Assert.DoesNotContain(Environment.NewLine + "FORGED", builder.ToString(), StringComparison.Ordinal);
-        Assert.Null(MarketplaceReceiptComposer.Currency(order));
+        Assert.Null(Composer.Currency(order));
     }
 }

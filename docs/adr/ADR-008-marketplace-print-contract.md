@@ -26,7 +26,7 @@ Kitchen tickets retain instructions and identity while omitting payment and mone
 External cashier output requires explicit `PrintReceipt` permission. External kitchen output requires
 both `IsKitchenReleased` and explicit `PrintKitchen` permission. A blocked kitchen destination reports
 `Unknown`, preventing a false successful print acknowledgement. Orders without source metadata preserve
-the existing print behavior. These pure helpers follow the existing source-linked composition pattern.
+the existing print behavior. The stateless composer is registered through its interface in `MauiProgram`; source-linked tests inject the same implementation.
 
 ## Consequences
 

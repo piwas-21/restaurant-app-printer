@@ -46,6 +46,7 @@
          backend-DTO mirror after a string-vs-object drift on deliveryAddress wedged the prod poll. -->
     <Compile Include="..\PrinterAPP\Models\Order.cs" Link="Linked\Order.cs" />
     <Compile Include="..\PrinterAPP\Models\ExternalOrder.cs" Link="Linked\ExternalOrder.cs" />
+    <Compile Include="..\PrinterAPP\Services\IMarketplaceReceiptComposer.cs" Link="Linked\IMarketplaceReceiptComposer.cs" />
     <Compile Include="..\PrinterAPP\Services\MarketplaceReceiptComposer.cs" Link="Linked\MarketplaceReceiptComposer.cs" />
     <Compile Include="..\PrinterAPP\Services\MarketplacePrintLabels.cs" Link="Linked\MarketplacePrintLabels.cs" />
     <Compile Include="..\PrinterAPP\Models\TableDisplay.cs" Link="Linked\TableDisplay.cs" />

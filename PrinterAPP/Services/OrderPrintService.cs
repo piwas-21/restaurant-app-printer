@@ -7,6 +7,7 @@ namespace PrinterAPP.Services;
 
 public class OrderPrintService : IOrderPrintService
 {
+    private readonly IMarketplaceReceiptComposer _marketplace;
     private readonly IPrinterService _printerService;
     private readonly IRequestLogService _requestLogService;
     private readonly ILogger<OrderPrintService> _logger;
@@ -18,12 +19,14 @@ public class OrderPrintService : IOrderPrintService
     private const string BACK_KITCHEN = "BackKitchen";
 
     public OrderPrintService(
+        IMarketplaceReceiptComposer marketplace,
         IPrinterService printerService,
         IRequestLogService requestLogService,
         ILogger<OrderPrintService> logger,
         IAppDataPathProvider pathProvider,
         IDeviceIdentityService? deviceIdentity = null)
     {
+        _marketplace = marketplace;
         _printerService = printerService;
         _requestLogService = requestLogService;
         _deviceIdentity = deviceIdentity;
@@ -147,7 +150,7 @@ public class OrderPrintService : IOrderPrintService
             bool isManualPrint,
             IReadOnlySet<DevicePrintTarget>? routedTargets)
     {
-        if (!MarketplaceReceiptComposer.CanPrint(order, PrinterType.Kitchen))
+        if (!_marketplace.CanPrint(order, PrinterType.Kitchen))
             return (KitchenPrintOutcome.Unknown, KitchenPrintOutcome.Unknown, KitchenPrintOutcome.Unknown);
 
         var front = KitchenPrintOutcome.Sent;
@@ -415,7 +418,7 @@ public class OrderPrintService : IOrderPrintService
 
     public async Task<bool> PrintOrderAsync(Order order, PrinterType printerType, bool isManualPrint = false, CancellationToken cancellationToken = default)
     {
-        if (!MarketplaceReceiptComposer.CanPrint(order, printerType)) return false;
+        if (!_marketplace.CanPrint(order, printerType)) return false;
         try
         {
             var config = await _printerService.LoadConfigurationAsync();
@@ -557,7 +560,7 @@ public class OrderPrintService : IOrderPrintService
         // Type + Table (Kitchen Order Type section; defaults to Tall)
         sb.Append(ApplyStyle(styles.KitchenOrderType));
         ReceiptComposer.AppendTypeAndTableLine(sb, order, labels);
-        MarketplaceReceiptComposer.AppendIdentity(sb, order, language, showPayment: false);
+        _marketplace.AppendIdentity(sb, order, language, showPayment: false);
         sb.Append(ResetStyle(styles.KitchenOrderType));
 
         // Customer name only (no phone) — styled as part of the order info block
@@ -612,7 +615,7 @@ public class OrderPrintService : IOrderPrintService
         var language = PrintLanguagePolicy.Resolve(config.PrintLanguage, order.PreferredLanguage);
         var labels = PrintLabelCatalog.For(language);
         var styles = CurrentStyles();
-        var currency = MarketplaceReceiptComposer.Currency(order);
+        var currency = _marketplace.Currency(order);
 
         // Initialize printer and set Turkish code page for character support
         // Some printers need the code page command repeated to properly switch encoding
@@ -640,7 +643,7 @@ public class OrderPrintService : IOrderPrintService
         // Type + Table on one line
         sb.Append(ApplyStyle(styles.CashierOrderInfo));
         ReceiptComposer.AppendTypeAndTableLine(sb, order, labels);
-        MarketplaceReceiptComposer.AppendIdentity(sb, order, language, showPayment: true);
+        _marketplace.AppendIdentity(sb, order, language, showPayment: true);
         sb.Append(ResetStyle(styles.CashierOrderInfo));
 
         // Customer name, plus a phone number for orders someone may need to call about
@@ -697,7 +700,7 @@ public class OrderPrintService : IOrderPrintService
         sb.Append(ApplyStyle(styles.CashierTotals));
         sb.AppendLine($"{labels.Subtotal}: {ReceiptComposer.Money(order.SubTotal, currency)}");
 
-        MarketplaceReceiptComposer.AppendTax(sb, order, labels, language);
+        _marketplace.AppendTax(sb, order, labels, language);
 
         if (order.Discount > 0)
         {
@@ -759,7 +762,7 @@ public class OrderPrintService : IOrderPrintService
             foreach (var payment in order.Payments)
             {
                 var paymentLabel = order.ExternalOrder is { } source
-                    ? MarketplaceReceiptComposer.ProviderName(source)
+                    ? _marketplace.ProviderName(source)
                     : labels.PaymentMethodLabel(payment.PaymentMethod);
                 var method = string.IsNullOrWhiteSpace(payment.CardLastFourDigits)
                     ? paymentLabel

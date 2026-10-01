@@ -43,7 +43,7 @@ public class OrderPrintToSinkTests
                 CashierAutoPrint = true,
                 CashierPrintCopies = 1,
             };
-            var service = new OrderPrintService(
+            var service = new OrderPrintService(new MarketplaceReceiptComposer(),
                 new StubPrinterService(config),
                 new CapturingRequestLogService(),
                 NullLogger<OrderPrintService>.Instance,
@@ -108,7 +108,7 @@ public class OrderPrintToSinkTests
         using var paths = new TempPathProvider();
 
         var log = new CapturingRequestLogService();
-        var service = new OrderPrintService(
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
             new StubPrinterService(new PrinterConfiguration
             {
                 CashierPrinterName = sink.PrinterName,
@@ -379,7 +379,7 @@ public class OrderPrintToSinkTests
 
         Assert.NotNull(order);
         using var paths = new TempPathProvider();
-        var service = new OrderPrintService(
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
             new StubPrinterService(new PrinterConfiguration
             {
                 CashierPrinterName = sink.PrinterName,
@@ -532,7 +532,7 @@ public class OrderPrintToSinkTests
                 DeviceId = "front-device", Status = DevicePrintStatus.Queued,
             },
         ];
-        var service = new OrderPrintService(
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
             new StubPrinterService(new PrinterConfiguration
             {
                 CashierPrinterName = cashier.PrinterName,
@@ -577,7 +577,7 @@ public class OrderPrintToSinkTests
                 DeviceId = "front-device", Status = status,
             },
         ];
-        var service = new OrderPrintService(
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
             new StubPrinterService(new PrinterConfiguration
             {
                 CashierPrinterName = cashier.PrinterName,
@@ -615,7 +615,7 @@ public class OrderPrintToSinkTests
             JobId = Guid.NewGuid(), Revision = 1, Target = DevicePrintTarget.FrontKitchen,
             DeviceId = "front-device", Status = DevicePrintStatus.Printed,
         }];
-        var service = new OrderPrintService(
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
             new StubPrinterService(new PrinterConfiguration
             {
                 CashierPrinterName = cashier.PrinterName,
@@ -735,7 +735,7 @@ public class OrderPrintToSinkTests
         };
         configure?.Invoke(config);
 
-        var service = new OrderPrintService(
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
             new StubPrinterService(config),
             new CapturingRequestLogService(),
             NullLogger<OrderPrintService>.Instance,
@@ -774,7 +774,7 @@ public class OrderPrintToSinkTests
         PrintToSinksAsync(Order order, Sink cashier, Sink front, Sink back, CancellationToken ct)
     {
         using var paths = new TempPathProvider();
-        var service = new OrderPrintService(
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
             new StubPrinterService(new PrinterConfiguration
             {
                 CashierPrinterName = cashier.PrinterName,

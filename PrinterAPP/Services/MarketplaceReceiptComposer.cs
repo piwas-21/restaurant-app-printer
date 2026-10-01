@@ -5,16 +5,16 @@ using PrinterAPP.Models;
 namespace PrinterAPP.Services;
 
 /// <summary>Pure source-aware print policy/composition; keeps ordinary receipt bytes unchanged.</summary>
-public static class MarketplaceReceiptComposer
+public sealed class MarketplaceReceiptComposer : IMarketplaceReceiptComposer
 {
-    public static string? Currency(Order order)
+    public string? Currency(Order order)
     {
         if (order.ExternalOrder is null) return order.Currency;
         var currency = order.ExternalOrder.Currency;
         return currency.Length == 3 && currency.All(char.IsAsciiLetterUpper) ? currency : null;
     }
 
-    public static bool CanPrint(Order order, PrinterType type)
+    public bool CanPrint(Order order, PrinterType type)
     {
         if (order.ExternalOrder is null) return true;
         if (type == PrinterType.Kitchen && !order.IsKitchenReleased) return false;
@@ -22,10 +22,10 @@ public static class MarketplaceReceiptComposer
         return order.PermittedActions?.Any(entry => entry.Action == action && entry.Allowed) == true;
     }
 
-    public static string ProviderName(ExternalOrder source) =>
+    public string ProviderName(ExternalOrder source) =>
         source.Provider == "uber-eats" ? "Uber Eats" : SafeField(source.Provider);
 
-    public static void AppendIdentity(StringBuilder builder, Order order, string language, bool showPayment)
+    public void AppendIdentity(StringBuilder builder, Order order, string language, bool showPayment)
     {
         var source = order.ExternalOrder;
         if (source is null) return;
@@ -35,7 +35,7 @@ public static class MarketplaceReceiptComposer
         if (showPayment) builder.AppendLine(string.Format(CultureInfo.InvariantCulture, labels.PaymentHandledBy, ProviderName(source)));
     }
 
-    public static void AppendTax(StringBuilder builder, Order order, PrintLabels labels, string language)
+    public void AppendTax(StringBuilder builder, Order order, PrintLabels labels, string language)
     {
         if (order.ExternalOrder is { } source)
         {
