@@ -28,6 +28,7 @@
     <!-- Models (MAUI-free; also linked by PrinterAPP.Tests). Order/DeliveryAddress are needed because
          TelemetryPayloads.PrintAcks(Order, ...) references them. -->
     <Compile Include="..\PrinterAPP\Models\Order.cs" Link="Linked\Order.cs" />
+    <Compile Include="..\PrinterAPP\Models\ExternalOrder.cs" Link="Linked\ExternalOrder.cs" />
     <Compile Include="..\PrinterAPP\Models\TableDisplay.cs" Link="Linked\TableDisplay.cs" />
     <Compile Include="..\PrinterAPP\Models\DeliveryAddress.cs" Link="Linked\DeliveryAddress.cs" />
     <Compile Include="..\PrinterAPP\Models\OrderRoutingState.cs" Link="Linked\OrderRoutingState.cs" />
