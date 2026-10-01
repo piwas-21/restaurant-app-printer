@@ -67,6 +67,7 @@ namespace PrinterAPP
             builder.Services.AddSingleton<IPrinterService, WindowsPrinterService>();
             builder.Services.AddSingleton<IRequestLogService, RequestLogService>();
             builder.Services.AddSingleton<IEventStreamingService, EventStreamingService>();
+            builder.Services.AddSingleton<IMarketplaceReceiptComposer, MarketplaceReceiptComposer>();
             builder.Services.AddSingleton<IOrderPrintService, OrderPrintService>();
             builder.Services.AddSingleton<IOrderHistoryService, OrderHistoryService>();
             builder.Services.AddSingleton<IUpdateService, UpdateService>();

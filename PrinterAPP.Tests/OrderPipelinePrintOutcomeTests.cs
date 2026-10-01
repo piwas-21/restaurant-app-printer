@@ -397,7 +397,7 @@ public sealed class OrderPipelinePrintOutcomeTests : IDisposable
     private async Task<OrderProcessedEventArgs> RunAsync(
         PrinterConfiguration config, Order order, CancellationToken ct)
     {
-        var printService = new OrderPrintService(
+        var printService = new OrderPrintService(new MarketplaceReceiptComposer(),
             new StubPrinterService(config),
             new NoopRequestLogService(),
             NullLogger<OrderPrintService>.Instance,

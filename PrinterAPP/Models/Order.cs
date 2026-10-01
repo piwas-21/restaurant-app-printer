@@ -38,6 +38,7 @@ public class Order
     public decimal Tip { get; set; }
 
     /// <summary>ISO code the order displays money in (backend OrderDto.Currency). Null = unknown: render bare amounts, never an invented label (POS C18).</summary>
+    public ExternalOrder? ExternalOrder { get; set; }
     public string? Currency { get; set; }
     public decimal Total { get; set; }
     public decimal TotalPaid { get; set; }

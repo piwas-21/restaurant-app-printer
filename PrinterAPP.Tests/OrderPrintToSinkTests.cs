@@ -43,7 +43,7 @@ public class OrderPrintToSinkTests
                 CashierAutoPrint = true,
                 CashierPrintCopies = 1,
             };
-            var service = new OrderPrintService(
+            var service = new OrderPrintService(new MarketplaceReceiptComposer(),
                 new StubPrinterService(config),
                 new CapturingRequestLogService(),
                 NullLogger<OrderPrintService>.Instance,
@@ -108,7 +108,7 @@ public class OrderPrintToSinkTests
         using var paths = new TempPathProvider();
 
         var log = new CapturingRequestLogService();
-        var service = new OrderPrintService(
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
             new StubPrinterService(new PrinterConfiguration
             {
                 CashierPrinterName = sink.PrinterName,
@@ -379,7 +379,7 @@ public class OrderPrintToSinkTests
 
         Assert.NotNull(order);
         using var paths = new TempPathProvider();
-        var service = new OrderPrintService(
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
             new StubPrinterService(new PrinterConfiguration
             {
                 CashierPrinterName = sink.PrinterName,
@@ -532,7 +532,7 @@ public class OrderPrintToSinkTests
                 DeviceId = "front-device", Status = DevicePrintStatus.Queued,
             },
         ];
-        var service = new OrderPrintService(
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
             new StubPrinterService(new PrinterConfiguration
             {
                 CashierPrinterName = cashier.PrinterName,
@@ -577,7 +577,7 @@ public class OrderPrintToSinkTests
                 DeviceId = "front-device", Status = status,
             },
         ];
-        var service = new OrderPrintService(
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
             new StubPrinterService(new PrinterConfiguration
             {
                 CashierPrinterName = cashier.PrinterName,
@@ -615,7 +615,7 @@ public class OrderPrintToSinkTests
             JobId = Guid.NewGuid(), Revision = 1, Target = DevicePrintTarget.FrontKitchen,
             DeviceId = "front-device", Status = DevicePrintStatus.Printed,
         }];
-        var service = new OrderPrintService(
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
             new StubPrinterService(new PrinterConfiguration
             {
                 CashierPrinterName = cashier.PrinterName,
@@ -635,6 +635,80 @@ public class OrderPrintToSinkTests
         Assert.True(front.ReceivedAnything);
         await front.ReadTicketAsync(cts.Token);
     }
+
+
+    [Theory]
+    [InlineData(null, "Not reported by provider")]
+    [InlineData("0", "EUR 0.00")]
+    public async Task MarketplaceCashierReceipt_ReachesSinkWithSourceMoneyAndTaxEvidence(string? tax, string expectedTax)
+    {
+        using var sink = new Sink(); using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var order = MarketplaceOrder(); order.PermittedActions = [new() { Action = "PrintReceipt", Allowed = true }];
+        order.ExternalOrder!.ReportedTax = tax is null ? null : decimal.Parse(tax, System.Globalization.CultureInfo.InvariantCulture);
+        var (ok, ticket) = await PrintToSinkAsync(order, sink, cts.Token);
+        Assert.True(ok); Assert.Contains("Uber Eats 9116D", ticket); Assert.Contains("TEST ORDER", ticket);
+        Assert.Contains("Payment handled by Uber Eats", ticket); Assert.Contains(expectedTax, ticket);
+        Assert.Contains("EUR 5.00", ticket); Assert.DoesNotContain("CHF", ticket);
+        Assert.DoesNotContain("11.47", ticket); Assert.DoesNotContain("CARD AT RESTAURANT", ticket);
+        Assert.Contains("ALLERGY: no peanuts", ticket); Assert.Contains("TEST ONLY: no food, no courier", ticket);
+    }
+
+    [Fact]
+    public async Task HeldMarketplaceOrder_ProducesNoOutputOnAnyDestination()
+    {
+        using var cashier = new Sink(); using var front = new Sink(); using var back = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var result = await PrintToSinksAsync(MarketplaceOrder(), cashier, front, back, cts.Token);
+        Assert.False(result.Cashier); Assert.Equal(KitchenPrintOutcome.Unknown, result.FrontKitchen);
+        Assert.Equal(KitchenPrintOutcome.Unknown, result.BackKitchen);
+        Assert.False(cashier.ReceivedAnything); Assert.False(front.ReceivedAnything); Assert.False(back.ReceivedAnything);
+    }
+
+    [Fact]
+    public async Task ReleasedMarketplaceKitchenTicket_ReachesItsSinkWithoutMoney()
+    {
+        using var cashier = new Sink(); using var front = new Sink(); using var back = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var order = MarketplaceOrder(); order.IsKitchenReleased = true;
+        order.PermittedActions = [new() { Action = "PrintKitchen", Allowed = true }];
+        var result = await PrintToSinksAsync(order, cashier, front, back, cts.Token);
+        Assert.True(result.FrontKitchen); Assert.False(cashier.ReceivedAnything);
+        var ticket = await front.ReadTicketAsync(cts.Token);
+        Assert.Contains("Uber Eats 9116D", ticket); Assert.Contains("TEST ORDER", ticket);
+        Assert.Contains("ALLERGY: no peanuts", ticket); Assert.Contains("TEST ONLY: no food, no courier", ticket);
+        Assert.DoesNotContain("EUR", ticket); Assert.DoesNotContain("5.00", ticket);
+        Assert.DoesNotContain("Payment handled", ticket); Assert.DoesNotContain("Not reported", ticket);
+    }
+
+    [Theory]
+    [InlineData("CHF")]
+    [InlineData("\u001b@FORGED")]
+    public async Task MarketplacePayment_CannotReplaceInvalidFrozenCurrencyWithTenderCurrency(string tenderCurrency)
+    {
+        using var sink = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var order = MarketplaceOrder();
+        order.PermittedActions = [new() { Action = "PrintReceipt", Allowed = true }];
+        order.ExternalOrder!.Currency = "invalid";
+        order.Payments![0].Currency = tenderCurrency;
+        var (ok, ticket) = await PrintToSinkAsync(order, sink, cts.Token);
+        Assert.True(ok);
+        Assert.Contains("Uber Eats: 5.00", ticket, StringComparison.Ordinal);
+        Assert.DoesNotContain(tenderCurrency, ticket, StringComparison.Ordinal);
+        Assert.DoesNotContain("CHF", ticket, StringComparison.Ordinal);
+    }
+
+    private static Order MarketplaceOrder() => new()
+    {
+        OrderNumber = "SOURCE-1", Type = "Delivery", Status = "PendingApproval", Currency = "CHF",
+        OrderDate = DateTime.UtcNow, Total = 5, SubTotal = 5, TotalPaid = 5,
+        Notes = "TEST ONLY: no food, no courier",
+        ExternalOrder = new() { Provider = "uber-eats", ExternalDisplayId = "9116D", Currency = "EUR",
+            MerchantTotal = 5, ReportedTax = null, IsSandbox = true, ExternalState = "CREATED" },
+        Items = [new() { ProductName = "Test meal", Quantity = 1, ItemTotal = 5, UnitPrice = 5,
+            KitchenType = "FrontKitchen", SpecialInstructions = "ALLERGY: no peanuts" }],
+        Payments = [new() { PaymentMethod = "CreditCard", Amount = 5, Status = "Completed" }],
+    };
 
     private static Order MinimalOrder() => new()
     {
@@ -661,7 +735,7 @@ public class OrderPrintToSinkTests
         };
         configure?.Invoke(config);
 
-        var service = new OrderPrintService(
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
             new StubPrinterService(config),
             new CapturingRequestLogService(),
             NullLogger<OrderPrintService>.Instance,
@@ -700,7 +774,7 @@ public class OrderPrintToSinkTests
         PrintToSinksAsync(Order order, Sink cashier, Sink front, Sink back, CancellationToken ct)
     {
         using var paths = new TempPathProvider();
-        var service = new OrderPrintService(
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
             new StubPrinterService(new PrinterConfiguration
             {
                 CashierPrinterName = cashier.PrinterName,

@@ -8,9 +8,8 @@ name: CI
 # source-linked transport files, so it needs no MAUI workloads and no Windows.
 # The MAUI app head is compiled for the ANDROID TFM by maui_compile below, which
 # covers the 56% of PrinterAPP/ that the test project does not source-link.
-# Still out-of-scope (needs a Windows runner): the Windows TFM — the `#if WINDOWS`
-# bodies (WindowsPrinterService's P/Invoke) and Windows-only XAML. For those,
-# build-windows.{sh,ps1} remains the pre-merge source of truth.
+# The Windows TFM is compiled separately below. Runtime device checks and
+# release packaging remain separate from these compile checks.
 #
 # Security: this workflow uses no untrusted-input expressions
 # (PR title/body/branch/commit) in run: commands. All inputs are
@@ -103,6 +102,22 @@ jobs:
 
       - name: Build the app head
         run: dotnet build PrinterAPP/PrinterAPP.csproj -c Debug -f net10.0-android --nologo
+
+  maui_windows_compile:
+    name: compile the MAUI app head (Windows TFM)
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-dotnet@26b0ec14cb23fa6904739307f278c14f94c95bf1 # v5.4.0
+        with:
+          dotnet-version: '10.0.x'
+      # Isolate the Windows TFM, as build-release.yml does, to avoid restoring
+      # Android runtime packs with a Windows RID. No signing or release upload.
+      - name: Restore Windows MAUI workloads
+        run: dotnet workload restore PrinterAPP/PrinterAPP.csproj -p:TargetFrameworks=net10.0-windows10.0.19041.0
+      - name: Build the Windows app head
+        run: dotnet build PrinterAPP/PrinterAPP.csproj -c Debug -f net10.0-windows10.0.19041.0 -p:TargetFrameworks=net10.0-windows10.0.19041.0 --nologo
 
   # One job, four scans. GitHub bills each JOB rounded up to the whole minute, so
   # file-length (3-6s) + gitleaks (7-12s) + TruffleHog (11-14s) + Trivy (9-31s)
