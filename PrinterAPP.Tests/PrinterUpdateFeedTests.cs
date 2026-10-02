@@ -173,6 +173,84 @@ public sealed class PrinterUpdateFeedTests : IDisposable
             error.Message.Contains("invalid item snapshots", StringComparison.OrdinalIgnoreCase));
     }
 
+    [Fact]
+    public void Parser_accepts_instruction_change_when_identity_and_quantity_match()
+    {
+        var update = PrinterUpdateTestData.Update(text: string.Empty) with
+        {
+            Changes = new[]
+            {
+                new PrinterFeedChange
+                {
+                    Kind = KitchenChangeKind.InstructionChange,
+                    Previous = new OrderItem
+                    {
+                        Id = "33333333-3333-3333-3333-333333333333",
+                        ProductName = "Salad",
+                        Quantity = 1,
+                        IngredientCustomizations = new List<IngredientCustomization>
+                        {
+                            new() { IngredientName = "Croutons", IsRemoved = true },
+                        },
+                    },
+                    Current = new OrderItem
+                    {
+                        Id = "33333333333333333333333333333333",
+                        ProductName = "Salad",
+                        Quantity = 1,
+                        IngredientCustomizations = new List<IngredientCustomization>
+                        {
+                            new() { IngredientName = "Cheese", IsRemoved = true },
+                        },
+                    },
+                },
+            },
+        };
+
+        var result = OrderFeedParser.Parse(PrinterUpdateTestData.Feed(new[] { update }, "cursor-1"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(KitchenChangeKind.InstructionChange, Assert.Single(result.Updates).Changes[0].Kind);
+    }
+
+    [Theory]
+    [InlineData("line-1", "line-2", 1, 1)]
+    [InlineData("line-1", "line-1", 1, 2)]
+    [InlineData("", "line-1", 1, 1)]
+    public void Parser_rejects_instruction_change_with_different_identity_or_quantity(
+        string previousId, string currentId, int previousQuantity, int currentQuantity)
+    {
+        var update = PrinterUpdateTestData.Update(text: string.Empty) with
+        {
+            Changes = new[]
+            {
+                new PrinterFeedChange
+                {
+                    Kind = KitchenChangeKind.InstructionChange,
+                    Previous = new OrderItem
+                    {
+                        Id = previousId,
+                        ProductName = "Salad",
+                        Quantity = previousQuantity,
+                    },
+                    Current = new OrderItem
+                    {
+                        Id = currentId,
+                        ProductName = "Salad",
+                        Quantity = currentQuantity,
+                    },
+                },
+            },
+        };
+
+        var result = OrderFeedParser.Parse(PrinterUpdateTestData.Feed(new[] { update }, "cursor-1"));
+
+        Assert.False(result.IsSuccess);
+        Assert.Empty(result.Updates);
+        Assert.Contains(result.UpdateErrors, error =>
+            error.Message.Contains("invalid item snapshots", StringComparison.OrdinalIgnoreCase));
+    }
+
     [Theory]
     [InlineData(DevicePrintTarget.General)]
     [InlineData(DevicePrintTarget.Default)]

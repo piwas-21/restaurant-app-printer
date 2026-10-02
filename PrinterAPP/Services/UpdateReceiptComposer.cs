@@ -56,6 +56,7 @@ public static class UpdateReceiptComposer
             builder.AppendLine($"Account revision: {accountRevision}");
         builder.AppendLine($"Job: {FormatId(update.JobId)} / revision {update.Revision}");
         builder.AppendLine($"Station: {StationLabel(update.Target)}");
+        AppendChangeNote(builder, update.Text);
 
         foreach (var change in update.Changes ?? Array.Empty<PrinterFeedChange>())
         {
@@ -105,16 +106,20 @@ public static class UpdateReceiptComposer
 
     private static void AppendInstructionChange(StringBuilder builder, OrderItem previous, OrderItem current)
     {
-        var itemName = SanitizeField(current.ProductName);
-        if (!string.IsNullOrWhiteSpace(current.VariationName))
-            itemName += $" ({SanitizeField(current.VariationName)})";
-        builder.AppendLine($"{current.Quantity}x {itemName}");
-        builder.AppendLine($"Previous instruction: {DisplayInstruction(previous.SpecialInstructions)}");
-        builder.AppendLine($"Current instruction: {DisplayInstruction(current.SpecialInstructions)}");
+        builder.AppendLine("PREVIOUS INSTRUCTION / ITEM:");
+        AppendSnapshot(builder, previous);
+        builder.AppendLine("CURRENT INSTRUCTION / ITEM:");
+        AppendSnapshot(builder, current);
     }
 
-    private static string DisplayInstruction(string? text) =>
-        string.IsNullOrWhiteSpace(text) ? "(none)" : SanitizeNote(text);
+    private static void AppendChangeNote(StringBuilder builder, string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+
+        builder.AppendLine("Change note:");
+        builder.AppendLine(SanitizeNote(text));
+    }
 
     private static void AppendIdentity(StringBuilder builder, string label, Guid? id)
     {

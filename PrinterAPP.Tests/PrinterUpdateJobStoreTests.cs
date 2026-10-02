@@ -218,9 +218,10 @@ public sealed class PrinterUpdateJobStoreTests
     }
 
     [Fact]
-    public void Amendment_receipt_renders_only_typed_deltas_with_frozen_quantities_and_customizations()
+    public void Amendment_receipt_renders_only_typed_deltas_and_full_instruction_snapshots()
     {
-        var update = PrinterUpdateTestData.Update(text: "fallback summary must not print") with
+        var update = PrinterUpdateTestData.Update(
+            text: "Cancel Earlier Order Salad; remove the unwanted item\u001b@") with
         {
             ServiceSessionId = Guid.Parse("44444444-4444-4444-4444-444444444444"),
             AmendmentId = Guid.Parse("55555555-5555-5555-5555-555555555555"),
@@ -233,6 +234,7 @@ public sealed class PrinterUpdateJobStoreTests
                     Kind = KitchenChangeKind.Add,
                     Current = new OrderItem
                     {
+                        Id = "line-burger",
                         ProductName = "Burger",
                         Quantity = 2,
                         SpecialInstructions = "No onions",
@@ -245,28 +247,79 @@ public sealed class PrinterUpdateJobStoreTests
                 new PrinterFeedChange
                 {
                     Kind = KitchenChangeKind.Void,
-                    Previous = new OrderItem { ProductName = "Lemonade", Quantity = 1 },
+                    Previous = new OrderItem
+                    {
+                        Id = "line-lemonade",
+                        ProductName = "Lemonade",
+                        Quantity = 1,
+                    },
                 },
                 new PrinterFeedChange
                 {
                     Kind = KitchenChangeKind.Replace,
-                    Previous = new OrderItem { ProductName = "Old Soup", Quantity = 1 },
-                    Current = new OrderItem { ProductName = "New Soup", Quantity = 2 },
+                    Previous = new OrderItem
+                    {
+                        Id = "line-old-soup",
+                        ProductName = "Old Soup",
+                        Quantity = 1,
+                    },
+                    Current = new OrderItem
+                    {
+                        Id = "line-new-soup",
+                        ProductName = "New Soup",
+                        Quantity = 2,
+                    },
                 },
                 new PrinterFeedChange
                 {
                     Kind = KitchenChangeKind.InstructionChange,
                     Previous = new OrderItem
                     {
+                        Id = "line-salad",
                         ProductName = "Salad",
                         Quantity = 1,
                         SpecialInstructions = "No dressing",
+                        IngredientCustomizations = new List<IngredientCustomization>
+                        {
+                            new() { IngredientName = "Old Croutons", IsRemoved = true },
+                        },
+                        SideItems = new List<OrderItem>
+                        {
+                            new()
+                            {
+                                Id = "line-old-topping",
+                                ProductName = "Old Topping",
+                                Quantity = 1,
+                                IngredientCustomizations = new List<IngredientCustomization>
+                                {
+                                    new() { IngredientName = "Old Garlic", IsRemoved = true },
+                                },
+                            },
+                        },
                     },
                     Current = new OrderItem
                     {
+                        Id = "line-salad",
                         ProductName = "Salad",
                         Quantity = 1,
                         SpecialInstructions = "Dressing on side",
+                        IngredientCustomizations = new List<IngredientCustomization>
+                        {
+                            new() { IngredientName = "Cheese", IsRemoved = true },
+                        },
+                        SideItems = new List<OrderItem>
+                        {
+                            new()
+                            {
+                                Id = "line-new-topping",
+                                ProductName = "New Topping",
+                                Quantity = 1,
+                                IngredientCustomizations = new List<IngredientCustomization>
+                                {
+                                    new() { IngredientName = "Fresh Parsley", Quantity = 2, IsAddOn = true },
+                                },
+                            },
+                        },
                     },
                 },
             },
@@ -289,9 +342,29 @@ public sealed class PrinterUpdateJobStoreTests
         Assert.Contains("1x Old Soup", receipt);
         Assert.Contains("TO:", receipt);
         Assert.Contains("2x New Soup", receipt);
-        Assert.Contains("Previous instruction: No dressing", receipt);
-        Assert.Contains("Current instruction: Dressing on side", receipt);
-        Assert.DoesNotContain("fallback summary must not print", receipt);
+        var previousStart = receipt.IndexOf("PREVIOUS INSTRUCTION / ITEM:", StringComparison.Ordinal);
+        var currentStart = receipt.IndexOf("CURRENT INSTRUCTION / ITEM:", StringComparison.Ordinal);
+        Assert.True(previousStart >= 0 && currentStart > previousStart);
+        var previousSection = receipt[previousStart..currentStart];
+        var currentSection = receipt[currentStart..];
+        Assert.Contains("No dressing", previousSection);
+        Assert.Contains("NO Old Croutons", previousSection);
+        Assert.Contains("1x Old Topping", previousSection);
+        Assert.Contains("NO Old Garlic", previousSection);
+        Assert.DoesNotContain("Dressing on side", previousSection);
+        Assert.DoesNotContain("NO Cheese", previousSection);
+        Assert.Contains("Dressing on side", currentSection);
+        Assert.Contains("NO Cheese", currentSection);
+        Assert.Contains("1x New Topping", currentSection);
+        Assert.Contains("EXTRA Fresh Parsley x2", currentSection);
+        Assert.DoesNotContain("No dressing", currentSection);
+        Assert.DoesNotContain("NO Old Croutons", currentSection);
+        Assert.Contains("Change note:", receipt);
+        Assert.Contains("Cancel Earlier Order Salad; remove the unwanted item@", receipt);
+        Assert.True(!receipt.Contains("Cancel Earlier Order Salad; remove the unwanted item\u001b@", StringComparison.Ordinal));
+        Assert.True(!receipt.Split('\n').Any(line =>
+                line.Contains("1x Earlier Order Salad", StringComparison.Ordinal)),
+            "An earlier order item must not be rendered as part of the kitchen delta.");
     }
 
     [Fact]
@@ -306,6 +379,7 @@ public sealed class PrinterUpdateJobStoreTests
                     Kind = KitchenChangeKind.Add,
                     Current = new OrderItem
                     {
+                        Id = "line-burger",
                         ProductName = "Burger\u001b@",
                         Quantity = 1,
                         SpecialInstructions = "No onions\u001b@",

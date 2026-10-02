@@ -52,8 +52,11 @@ public static class PrinterFeedUpdateValidation
             {
                 KitchenChangeKind.Add => change.Previous is null && IsValidSnapshot(change.Current),
                 KitchenChangeKind.Void => IsValidSnapshot(change.Previous) && change.Current is null,
-                KitchenChangeKind.Replace or KitchenChangeKind.InstructionChange =>
+                KitchenChangeKind.Replace =>
                     IsValidSnapshot(change.Previous) && IsValidSnapshot(change.Current),
+                KitchenChangeKind.InstructionChange => IsValidSnapshot(change.Previous)
+                    && IsValidSnapshot(change.Current)
+                    && HaveSameInstructionTarget(change.Previous!, change.Current!),
                 _ => false,
             };
             if (!validSnapshots)
@@ -65,9 +68,26 @@ public static class PrinterFeedUpdateValidation
 
     private static bool IsValidSnapshot(OrderItem? item) =>
         item is not null
+        && !string.IsNullOrWhiteSpace(item.Id)
         && !string.IsNullOrWhiteSpace(item.ProductName)
         && item.Quantity > 0
         && (item.SideItems is null || item.SideItems.All(IsValidSnapshot));
+
+    private static bool HaveSameInstructionTarget(OrderItem previous, OrderItem current) =>
+        SameItemId(previous.Id, current.Id) && previous.Quantity == current.Quantity;
+
+    private static bool SameItemId(string previousId, string currentId)
+    {
+        // Backend IDs are Guids. Compare parsed values when possible to mirror Guid equality,
+        // while retaining exact matching for historic/synthetic non-Guid feed fixtures.
+        if (Guid.TryParse(previousId, out var previousGuid)
+            && Guid.TryParse(currentId, out var currentGuid))
+        {
+            return previousGuid == currentGuid;
+        }
+
+        return string.Equals(previousId, currentId, StringComparison.Ordinal);
+    }
 
     private static bool TryGetPropertyIgnoreCase(JsonElement element, string name, out JsonElement value)
     {
