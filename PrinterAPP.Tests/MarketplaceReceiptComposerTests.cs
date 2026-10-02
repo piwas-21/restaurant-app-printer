@@ -31,6 +31,17 @@ public sealed class MarketplaceReceiptComposerTests
     }
 
     [Fact]
+    public void AccessCodeIsLabeledOnCashierReceiptAndAbsentFromKitchenHeader()
+    {
+        var order = SourceOrder(); order.ExternalOrder!.CustomerPhoneAccessCode = "555 55 555\u001b";
+        var cashier = new StringBuilder(); Composer.AppendIdentity(cashier, order, "en", showPayment: true);
+        Assert.Contains("Phone access code: 555 55 555" + Environment.NewLine, cashier.ToString());
+        Assert.DoesNotContain('\u001b', cashier.ToString());
+        var kitchen = new StringBuilder(); Composer.AppendIdentity(kitchen, order, "en", showPayment: false);
+        Assert.DoesNotContain("555 55 555", kitchen.ToString());
+    }
+
+    [Fact]
     public void MissingTaxRemainsUnknown_ExplicitZeroIsMoney()
     {
         var order = SourceOrder(); var builder = new StringBuilder();

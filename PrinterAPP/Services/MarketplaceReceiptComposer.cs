@@ -32,7 +32,12 @@ public sealed class MarketplaceReceiptComposer : IMarketplaceReceiptComposer
         var labels = MarketplacePrintLabels.For(language);
         builder.AppendLine($"{ProviderName(source)} {SafeField(source.ExternalDisplayId)}");
         if (source.IsSandbox) builder.AppendLine(labels.TestOrder);
-        if (showPayment) builder.AppendLine(string.Format(CultureInfo.InvariantCulture, labels.PaymentHandledBy, ProviderName(source)));
+        if (showPayment)
+        {
+            builder.AppendLine(string.Format(CultureInfo.InvariantCulture, labels.PaymentHandledBy, ProviderName(source)));
+            if (!string.IsNullOrWhiteSpace(source.CustomerPhoneAccessCode))
+                builder.AppendLine($"{labels.PhoneAccessCode}: {SafeField(source.CustomerPhoneAccessCode)}");
+        }
     }
 
     public void AppendTax(StringBuilder builder, Order order, PrintLabels labels, string language)

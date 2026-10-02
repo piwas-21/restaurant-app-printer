@@ -11,5 +11,6 @@ public sealed class ExternalOrder
     public decimal MerchantTotal { get; set; }
     public decimal? ReportedTax { get; set; }
     public string FulfillmentType { get; set; } = string.Empty;
+    public string? CustomerPhoneAccessCode { get; set; }
     public bool IsSandbox { get; set; }
 }
