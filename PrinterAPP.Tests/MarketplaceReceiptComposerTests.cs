@@ -76,6 +76,11 @@ public sealed class MarketplaceReceiptComposerTests
         Assert.False(string.IsNullOrWhiteSpace(labels.TestOrder));
         Assert.False(string.IsNullOrWhiteSpace(labels.TaxNotReported));
         Assert.Contains("{0}", labels.PaymentHandledBy);
+        Assert.False(string.IsNullOrWhiteSpace(labels.PhoneAccessCode));
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        var encoding = Encoding.GetEncoding(857, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+        foreach (var label in new[] { labels.TestOrder, labels.PaymentHandledBy, labels.TaxNotReported, labels.PhoneAccessCode })
+            Assert.Equal(label, encoding.GetString(encoding.GetBytes(label)));
     }
 
     [Fact]
