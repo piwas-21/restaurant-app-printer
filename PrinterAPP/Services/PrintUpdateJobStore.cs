@@ -50,7 +50,7 @@ public class PrintUpdateJobStore : IUpdateJobStore
                 record = existing;
                 // The identity is immutable: a changed duplicate is corruption, not a new job.
                 shouldDispatch = false;
-                if (record.Update != update)
+                if (!PrinterJsonSerialization.AreEquivalent(record.Update, update))
                     return false;
                 shouldDispatch = record.IsPending;
                 return true;

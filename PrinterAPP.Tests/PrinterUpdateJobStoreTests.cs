@@ -50,6 +50,34 @@ public sealed class PrinterUpdateJobStoreTests
     }
 
     [Fact]
+    public void Store_recognizes_a_replayed_structured_payload_after_json_deserialization()
+    {
+        using var paths = new FakeAppDataPathProvider();
+        var store = new PrintUpdateJobStore(paths, NullLogger<PrintUpdateJobStore>.Instance);
+        var update = PrinterUpdateTestData.Update() with
+        {
+            Changes = new[]
+            {
+                new PrinterFeedChange
+                {
+                    Kind = KitchenChangeKind.Add,
+                    Current = new OrderItem { Id = "line-1", ProductName = "Burger", Quantity = 2 },
+                },
+            },
+        };
+        var jsonOptions = new JsonSerializerOptions { Converters = { new JsonStringEnumConverter() } };
+        var replay = JsonSerializer.Deserialize<PrinterFeedUpdate>(
+            JsonSerializer.Serialize(update, jsonOptions), jsonOptions)!;
+
+        Assert.NotSame(update.Changes, replay.Changes);
+        Assert.True(store.AddOrGet(update, out _, out var shouldDispatch));
+        Assert.True(shouldDispatch);
+        Assert.True(store.AddOrGet(replay, out _, out shouldDispatch));
+        Assert.True(shouldDispatch);
+        Assert.Single(store.GetHistory());
+    }
+
+    [Fact]
     public void Store_rejects_an_empty_cursor_without_replacing_the_durable_cursor()
     {
         using var paths = new FakeAppDataPathProvider();
@@ -190,6 +218,117 @@ public sealed class PrinterUpdateJobStoreTests
     }
 
     [Fact]
+    public void Amendment_receipt_renders_only_typed_deltas_with_frozen_quantities_and_customizations()
+    {
+        var update = PrinterUpdateTestData.Update(text: "fallback summary must not print") with
+        {
+            ServiceSessionId = Guid.Parse("44444444-4444-4444-4444-444444444444"),
+            AmendmentId = Guid.Parse("55555555-5555-5555-5555-555555555555"),
+            AccountRevision = 9,
+            Target = DevicePrintTarget.FrontKitchen,
+            Changes = new[]
+            {
+                new PrinterFeedChange
+                {
+                    Kind = KitchenChangeKind.Add,
+                    Current = new OrderItem
+                    {
+                        ProductName = "Burger",
+                        Quantity = 2,
+                        SpecialInstructions = "No onions",
+                        IngredientCustomizations = new List<IngredientCustomization>
+                        {
+                            new() { IngredientName = "Onion", IsRemoved = true },
+                        },
+                    },
+                },
+                new PrinterFeedChange
+                {
+                    Kind = KitchenChangeKind.Void,
+                    Previous = new OrderItem { ProductName = "Lemonade", Quantity = 1 },
+                },
+                new PrinterFeedChange
+                {
+                    Kind = KitchenChangeKind.Replace,
+                    Previous = new OrderItem { ProductName = "Old Soup", Quantity = 1 },
+                    Current = new OrderItem { ProductName = "New Soup", Quantity = 2 },
+                },
+                new PrinterFeedChange
+                {
+                    Kind = KitchenChangeKind.InstructionChange,
+                    Previous = new OrderItem
+                    {
+                        ProductName = "Salad",
+                        Quantity = 1,
+                        SpecialInstructions = "No dressing",
+                    },
+                    Current = new OrderItem
+                    {
+                        ProductName = "Salad",
+                        Quantity = 1,
+                        SpecialInstructions = "Dressing on side",
+                    },
+                },
+            },
+        };
+
+        var receipt = UpdateReceiptComposer.Compose(update);
+
+        Assert.Contains("*** KITCHEN CHANGE ***", receipt);
+        Assert.Contains("Station: Front kitchen", receipt);
+        Assert.Contains("Visit: 44444444", receipt);
+        Assert.Contains("Amendment: 55555555", receipt);
+        Assert.Contains("Account revision: 9", receipt);
+        Assert.Contains("*** ADD ***", receipt);
+        Assert.Contains("2x Burger", receipt);
+        Assert.Contains("No onions", receipt);
+        Assert.Contains("NO Onion", receipt);
+        Assert.Contains("*** CANCEL ***", receipt);
+        Assert.Contains("1x Lemonade", receipt);
+        Assert.Contains("FROM:", receipt);
+        Assert.Contains("1x Old Soup", receipt);
+        Assert.Contains("TO:", receipt);
+        Assert.Contains("2x New Soup", receipt);
+        Assert.Contains("Previous instruction: No dressing", receipt);
+        Assert.Contains("Current instruction: Dressing on side", receipt);
+        Assert.DoesNotContain("fallback summary must not print", receipt);
+    }
+
+    [Fact]
+    public void Amendment_receipt_sanitizes_item_and_instruction_text_before_composition()
+    {
+        var update = PrinterUpdateTestData.Update(text: string.Empty) with
+        {
+            Changes = new[]
+            {
+                new PrinterFeedChange
+                {
+                    Kind = KitchenChangeKind.Add,
+                    Current = new OrderItem
+                    {
+                        ProductName = "Burger\u001b@",
+                        Quantity = 1,
+                        SpecialInstructions = "No onions\u001b@",
+                    },
+                },
+            },
+        };
+
+        var receipt = UpdateReceiptComposer.Compose(update);
+        var lines = receipt.Split('\n');
+        var productLine = Assert.Single(lines, line => line.Contains("Burger@", StringComparison.Ordinal));
+        var instructionLine = Assert.Single(lines, line => line.Contains("No onions@", StringComparison.Ordinal));
+
+        Assert.Equal("Burger@", UpdateReceiptComposer.SanitizeNote(update.Changes[0].Current!.ProductName));
+        Assert.Contains("Burger@", productLine);
+        Assert.Contains("No onions@", instructionLine);
+        Assert.True(!productLine.Contains("Burger\u001b@", StringComparison.Ordinal),
+            string.Join(',', productLine.Select(character => ((int)character).ToString("X2"))));
+        Assert.True(!instructionLine.Contains("No onions\u001b@", StringComparison.Ordinal),
+            string.Join(',', instructionLine.Select(character => ((int)character).ToString("X2"))));
+    }
+
+    [Fact]
     public void Legacy_order_ack_shape_remains_three_unidentified_receipts()
     {
         var order = new Order { Id = Guid.NewGuid().ToString(), OrderNumber = "LEGACY-1" };
@@ -251,6 +390,27 @@ public sealed class PrinterUpdateJobStoreTests
     }
 
     [Fact]
+    public void Station_change_jobs_resolve_to_the_matching_station_with_existing_fallbacks()
+    {
+        var config = new PrinterConfiguration
+        {
+            CashierPrinterName = "cashier",
+            FrontKitchenPrinterName = "front",
+            KitchenPrinterName = "legacy-back",
+        };
+
+        var front = UpdateJobRouting.Resolve(DevicePrintTarget.FrontKitchen, config);
+        var back = UpdateJobRouting.Resolve(DevicePrintTarget.BackKitchen, config);
+
+        Assert.Equal(KitchenDestinationResolutionKind.ConfiguredStation, front.Kind);
+        Assert.Equal("front", front.PrinterName);
+        Assert.Equal(KitchenDestinationResolutionKind.ConfiguredStation, back.Kind);
+        Assert.Equal("legacy-back", back.PrinterName);
+        Assert.False(UpdateJobRouting.IsUpdateTarget(DevicePrintTarget.Cashier));
+        Assert.True(UpdateJobRouting.AutoPrintEnabled(DevicePrintTarget.FrontKitchen, config));
+    }
+
+    [Fact]
     public async Task Update_print_returns_unknown_not_configured_skipped_and_failed_distinctly()
     {
         using var paths = new FakeAppDataPathProvider();
@@ -262,6 +422,12 @@ public sealed class PrinterUpdateJobStoreTests
         Assert.Equal(
             KitchenPrintStatus.Unknown,
             (await unknown.PrintUpdateAsync(update with { Audience = "Staff" })).Status);
+        Assert.Equal(
+            KitchenPrintStatus.Unknown,
+            (await unknown.PrintUpdateAsync(update with
+            {
+                Changes = new[] { new PrinterFeedChange { Kind = KitchenChangeKind.Add } },
+            })).Status);
 
         var notConfigured = new OrderPrintService(new MarketplaceReceiptComposer(),
             new ConfigPrinter(new PrinterConfiguration { KitchenAutoPrint = true }),

@@ -182,7 +182,7 @@ public static class OrderFeedParser
                     errors.Add(new OrderFeedParseError(index, TryReadUpdateOrderNumber(element), "Update element deserialised to null."));
                 else
                 {
-                    var validationError = ValidateUpdate(element, update);
+                    var validationError = PrinterFeedUpdateValidation.Validate(element, update);
                     if (validationError is not null)
                         errors.Add(new OrderFeedParseError(index, TryReadUpdateOrderNumber(element), validationError));
                     else
@@ -196,28 +196,6 @@ public static class OrderFeedParser
             index++;
         }
     }
-    private static string? ValidateUpdate(JsonElement element, PrinterFeedUpdate update)
-    {
-        foreach (var property in RequiredUpdateProperties)
-        {
-            if (!TryGetPropertyIgnoreCase(element, property, out _))
-                return $"Update {property} is required.";
-        }
-        if (update.JobId == Guid.Empty) return "Update jobId is required.";
-        if (update.Revision <= 0) return "Update revision must be positive.";
-        if (update.JobType != DevicePrintJobType.Update) return "Update jobType is not Update.";
-        if (update.Target is not (DevicePrintTarget.General or DevicePrintTarget.Default))
-            return "Update target is not General or Default.";
-        if (update.OrderId == Guid.Empty) return "Update orderId is required.";
-        if (!string.Equals(update.Audience, "Kitchen", StringComparison.OrdinalIgnoreCase))
-            return "Update audience is not Kitchen.";
-        if (string.IsNullOrWhiteSpace(update.OrderNumber)) return "Update orderNumber is required.";
-        if (string.IsNullOrWhiteSpace(update.Text)) return "Update text is required.";
-        if (update.CreatedAt == default) return "Update createdAt is required.";
-        return null;
-    }
-    private static readonly string[] RequiredUpdateProperties = [
-        "jobId", "revision", "jobType", "target", "orderId", "orderNumber", "audience", "text", "createdAt"];
     private static string? TryReadOrderNumber(JsonElement element) => TryReadScalar(element, "orderNumber");
     private static string? TryReadUpdateOrderNumber(JsonElement element) => TryReadScalar(element, "orderNumber");
     private static string? TryReadScalar(JsonElement element, string propertyName)

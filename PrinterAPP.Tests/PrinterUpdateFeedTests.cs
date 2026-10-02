@@ -117,6 +117,77 @@ public sealed class PrinterUpdateFeedTests : IDisposable
         Assert.Null(parsed.TableNumber);
     }
 
+    [Fact]
+    public void Parser_accepts_typed_changes_and_preserves_visit_amendment_and_item_snapshots()
+    {
+        var update = PrinterUpdateTestData.Update(text: string.Empty) with
+        {
+            ServiceSessionId = Guid.Parse("44444444-4444-4444-4444-444444444444"),
+            AmendmentId = Guid.Parse("55555555-5555-5555-5555-555555555555"),
+            AccountRevision = 9,
+            Changes = new[]
+            {
+                new PrinterFeedChange
+                {
+                    Kind = KitchenChangeKind.Add,
+                    Current = new OrderItem
+                    {
+                        Id = "line-1",
+                        ProductName = "Burger",
+                        Quantity = 2,
+                        IngredientCustomizations = new List<IngredientCustomization>
+                        {
+                            new() { IngredientId = "onion", IngredientName = "Onion", IsRemoved = true },
+                        },
+                    },
+                },
+            },
+        };
+
+        var result = OrderFeedParser.Parse(PrinterUpdateTestData.Feed(new[] { update }, "cursor-1"));
+
+        var parsed = Assert.Single(result.Updates);
+        Assert.Equal(update.ServiceSessionId, parsed.ServiceSessionId);
+        Assert.Equal(update.AmendmentId, parsed.AmendmentId);
+        Assert.Equal(9, parsed.AccountRevision);
+        var added = Assert.Single(parsed.Changes);
+        Assert.Equal(KitchenChangeKind.Add, added.Kind);
+        Assert.Equal("Burger", added.Current!.ProductName);
+        Assert.Equal(2, added.Current.Quantity);
+        Assert.Equal("Onion", Assert.Single(added.Current.IngredientCustomizations!).IngredientName);
+    }
+
+    [Fact]
+    public void Parser_rejects_typed_change_without_the_snapshot_required_by_its_kind()
+    {
+        var update = PrinterUpdateTestData.Update() with
+        {
+            Changes = new[] { new PrinterFeedChange { Kind = KitchenChangeKind.Void } },
+        };
+
+        var result = OrderFeedParser.Parse(PrinterUpdateTestData.Feed(new[] { update }, "cursor-1"));
+
+        Assert.False(result.IsSuccess);
+        Assert.Empty(result.Updates);
+        Assert.Contains(result.UpdateErrors, error =>
+            error.Message.Contains("invalid item snapshots", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Theory]
+    [InlineData(DevicePrintTarget.General)]
+    [InlineData(DevicePrintTarget.Default)]
+    [InlineData(DevicePrintTarget.FrontKitchen)]
+    [InlineData(DevicePrintTarget.BackKitchen)]
+    public void Parser_accepts_each_kitchen_update_target(DevicePrintTarget target)
+    {
+        var update = PrinterUpdateTestData.Update() with { Target = target };
+
+        var result = OrderFeedParser.Parse(PrinterUpdateTestData.Feed(new[] { update }, "cursor-1"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(target, Assert.Single(result.Updates).Target);
+    }
+
     private EventStreamingService CreateFeed(FeedServer server, IPrintUpdateJobStore store) =>
         new(
             new FeedPrinter(server.BaseUrl), new NoopRequestLogService(), new InMemoryFeedCursorStore(),
