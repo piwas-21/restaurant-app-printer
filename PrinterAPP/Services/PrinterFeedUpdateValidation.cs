@@ -93,8 +93,9 @@ public static class PrinterFeedUpdateValidation
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
-            foreach (var property in element.EnumerateObject().Where(property =>
-                string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)))
+            var property = element.EnumerateObject().FirstOrDefault(property =>
+                string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase));
+            if (property.Value.ValueKind != JsonValueKind.Undefined)
             {
                 value = property.Value;
                 return true;
