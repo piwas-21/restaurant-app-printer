@@ -56,7 +56,7 @@ public static class PrinterFeedUpdateValidation
                     IsValidSnapshot(change.Previous) && IsValidSnapshot(change.Current),
                 KitchenChangeKind.InstructionChange => IsValidSnapshot(change.Previous)
                     && IsValidSnapshot(change.Current)
-                    && HaveSameInstructionTarget(change.Previous!, change.Current!),
+                    && HaveSameInstructionTarget(change.Previous, change.Current),
                 _ => false,
             };
             if (!validSnapshots)
@@ -93,13 +93,11 @@ public static class PrinterFeedUpdateValidation
     {
         if (element.ValueKind == JsonValueKind.Object)
         {
-            foreach (var property in element.EnumerateObject())
+            foreach (var property in element.EnumerateObject().Where(property =>
+                string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase)))
             {
-                if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
-                {
-                    value = property.Value;
-                    return true;
-                }
+                value = property.Value;
+                return true;
             }
         }
 
