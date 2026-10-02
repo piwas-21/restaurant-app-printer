@@ -15,4 +15,6 @@ public sealed record PrinterFeedChange
     public KitchenChangeKind Kind { get; init; }
     public OrderItem? Previous { get; init; }
     public OrderItem? Current { get; init; }
+    public Guid? ReplacementDispatchedOrderId { get; init; }
+    public string? ReplacementDispatchedOrderNumber { get; init; }
 }

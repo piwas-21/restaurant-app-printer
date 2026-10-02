@@ -90,10 +90,15 @@ public static class UpdateReceiptComposer
                 AppendSnapshot(builder, change.Previous);
                 break;
             case KitchenChangeKind.Replace when change.Previous is not null && change.Current is not null:
-                builder.AppendLine("FROM:");
+                builder.AppendLine(change.ReplacementDispatchedOrderId.HasValue ? "CANCEL PREVIOUS:" : "FROM:");
                 AppendSnapshot(builder, change.Previous);
-                builder.AppendLine("TO:");
+                builder.AppendLine(change.ReplacementDispatchedOrderId.HasValue ? "REPLACEMENT REFERENCE ONLY:" : "TO:");
                 AppendSnapshot(builder, change.Current);
+                if (change.ReplacementDispatchedOrderId is Guid dispatchedOrderId)
+                {
+                    builder.AppendLine($"Replacement ticket: {SanitizeField(change.ReplacementDispatchedOrderNumber)} / {dispatchedOrderId:D}");
+                    builder.AppendLine("Prepare replacement only from its separate ticket.");
+                }
                 break;
             case KitchenChangeKind.InstructionChange when change.Previous is not null && change.Current is not null:
                 AppendInstructionChange(builder, change.Previous, change.Current);
@@ -203,7 +208,7 @@ public static class UpdateReceiptComposer
         return builder.ToString();
     }
 
-    private static string SanitizeField(string? value) =>
+    internal static string SanitizeField(string? value) =>
         SanitizeNote(value).Replace('\n', ' ').Trim();
 
     private static string? SanitizeOptionalField(string? value) =>

@@ -555,6 +555,7 @@ public class OrderPrintService : IOrderPrintService
         // Type + Table (Kitchen Order Type section; defaults to Tall)
         sb.Append(ApplyStyle(styles.KitchenOrderType));
         ReceiptComposer.AppendTypeAndTableLine(sb, order, labels);
+        AmendmentReceiptComposer.AppendKitchenIdentity(sb, order, language);
         _marketplace.AppendIdentity(sb, order, language, showPayment: false);
         sb.Append(ResetStyle(styles.KitchenOrderType));
 
