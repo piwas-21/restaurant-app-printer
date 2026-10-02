@@ -45,6 +45,7 @@
     <!-- Order models (MAUI-free; plain System.Text.Json records). Pinned here to guard the
          backend-DTO mirror after a string-vs-object drift on deliveryAddress wedged the prod poll. -->
     <Compile Include="..\PrinterAPP\Models\Order.cs" Link="Linked\Order.cs" />
+    <Compile Include="..\PrinterAPP\Models\OrderAmendmentPrintContext.cs" Link="Linked\OrderAmendmentPrintContext.cs" />
     <Compile Include="..\PrinterAPP\Models\ExternalOrder.cs" Link="Linked\ExternalOrder.cs" />
     <Compile Include="..\PrinterAPP\Services\IMarketplaceReceiptComposer.cs" Link="Linked\IMarketplaceReceiptComposer.cs" />
     <Compile Include="..\PrinterAPP\Services\MarketplaceReceiptComposer.cs" Link="Linked\MarketplaceReceiptComposer.cs" />
@@ -106,6 +107,8 @@
     <Compile Include="..\PrinterAPP\Services\KitchenRoutingAnalysis.cs" Link="Linked\KitchenRoutingAnalysis.cs" />
     <Compile Include="..\PrinterAPP\Services\UpdateJobRouting.cs" Link="Linked\UpdateJobRouting.cs" />
     <Compile Include="..\PrinterAPP\Services\UpdateReceiptComposer.cs" Link="Linked\UpdateReceiptComposer.cs" />
+    <Compile Include="..\PrinterAPP\Services\AmendmentReceiptComposer.cs" Link="Linked\AmendmentReceiptComposer.cs" />
+    <Compile Include="..\PrinterAPP\Services\AmendmentReceiptLabels.cs" Link="Linked\AmendmentReceiptLabels.cs" />
     <!-- Routing settings mapper is MAUI-free so load/save/reset/validation stay unit-testable. -->
     <Compile Include="..\PrinterAPP\Services\KitchenRoutingSettingsMapper.cs" Link="Linked\KitchenRoutingSettingsMapper.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderPrintService.cs" Link="Linked\OrderPrintService.cs" />

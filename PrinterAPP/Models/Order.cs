@@ -5,6 +5,7 @@ public class Order
 {
     public string Id { get; set; } = string.Empty;
     public string OrderNumber { get; set; } = string.Empty;
+    public OrderAmendmentPrintContext? AmendmentPrintContext { get; set; }
     public string? UserId { get; set; }
     public string? CustomerName { get; set; }
     public string? CustomerEmail { get; set; }

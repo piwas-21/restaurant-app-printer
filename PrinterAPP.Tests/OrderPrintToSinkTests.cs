@@ -17,7 +17,7 @@ namespace PrinterAPP.Tests;
 /// <see cref="NetworkTcpTransport"/> and the ESC/POS bytes for a real order land at the socket, framed by
 /// the init + cut commands. Hermetic (no backend) → runs on every PR. See docs/E2E-STRATEGY.md.
 /// </summary>
-public class OrderPrintToSinkTests
+public partial class OrderPrintToSinkTests
 {
     private static readonly JsonSerializerOptions BackendJsonOptions = new()
     {
