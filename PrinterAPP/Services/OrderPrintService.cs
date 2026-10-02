@@ -196,23 +196,18 @@ public class OrderPrintService : IOrderPrintService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(update);
-        if (update.JobId == Guid.Empty
-            || update.Revision <= 0
-            || update.JobType != DevicePrintJobType.Update
-            || !UpdateJobRouting.IsUpdateTarget(update.Target)
-            || update.OrderId == Guid.Empty
-            || string.IsNullOrWhiteSpace(update.OrderNumber)
-            || string.IsNullOrWhiteSpace(update.Text)
-            || update.CreatedAt == default
-            || !string.Equals(update.Audience, "Kitchen", StringComparison.OrdinalIgnoreCase))
+        var validationError = PrinterFeedUpdateValidation.Validate(update);
+        if (validationError is not null)
         {
+            _logger.LogWarning("Rejecting invalid update job {JobId}: {Reason}", update.JobId, validationError);
             return KitchenPrintOutcome.Unknown;
         }
 
         var config = await _printerService.LoadConfigurationAsync();
-        if (!config.KitchenAutoPrint)
+        if (!UpdateJobRouting.AutoPrintEnabled(update.Target, config))
         {
-            _logger.LogInformation("Automatic update printing is disabled for job {JobId}", update.JobId);
+            _logger.LogInformation("Automatic printing is disabled for update job {JobId} at {Target}",
+                update.JobId, update.Target);
             return KitchenPrintOutcome.Skipped;
         }
 

@@ -20,6 +20,14 @@ public sealed record PrinterFeedUpdate
     public Guid? TableId { get; init; }
     /// <summary>Display label captured with the order; null on legacy update jobs.</summary>
     public string? TableLabel { get; init; }
+    /// <summary>Explicit table visit associated with this amendment, when the order has one.</summary>
+    public Guid? ServiceSessionId { get; init; }
+    /// <summary>Stable operation identity shared by all station jobs for this amendment.</summary>
+    public Guid? AmendmentId { get; init; }
+    /// <summary>Visit-account revision after the amendment, when available.</summary>
+    public long? AccountRevision { get; init; }
+    /// <summary>Frozen preparation deltas; empty on legacy text-only update jobs.</summary>
+    public IReadOnlyList<PrinterFeedChange> Changes { get; init; } = Array.Empty<PrinterFeedChange>();
     public string Audience { get; init; } = "Kitchen";
     public string Text { get; init; } = string.Empty;
     public DateTime CreatedAt { get; init; }

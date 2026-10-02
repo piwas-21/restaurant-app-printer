@@ -46,6 +46,9 @@
     <Compile Include="..\PrinterAPP\Models\DevicePrintStatus.cs" Link="Linked\DevicePrintStatus.cs" />
     <Compile Include="..\PrinterAPP\Models\DevicePrintJobType.cs" Link="Linked\DevicePrintJobType.cs" />
     <Compile Include="..\PrinterAPP\Models\PrinterFeedUpdate.cs" Link="Linked\PrinterFeedUpdate.cs" />
+    <Compile Include="..\PrinterAPP\Models\PrinterFeedChange.cs" Link="Linked\PrinterFeedChange.cs" />
+    <Compile Include="..\PrinterAPP\Models\PrintStyleSettings.cs" Link="Linked\PrintStyleSettings.cs" />
+    <Compile Include="..\PrinterAPP\Models\PaymentMethodCode.cs" Link="Linked\PaymentMethodCode.cs" />
     <Compile Include="..\PrinterAPP\Models\PrintUpdateJobState.cs" Link="Linked\PrintUpdateJobState.cs" />
     <Compile Include="..\PrinterAPP\Models\PrintUpdateJobRecord.cs" Link="Linked\PrintUpdateJobRecord.cs" />
     <!-- Fleet telemetry client (the real shipping services under test) -->
@@ -79,9 +82,12 @@
     <Compile Include="..\PrinterAPP\Services\FeedCursorStore.cs" Link="Linked\FeedCursorStore.cs" />
     <Compile Include="..\PrinterAPP\Services\UpdateJobRouting.cs" Link="Linked\UpdateJobRouting.cs" />
     <Compile Include="..\PrinterAPP\Services\UpdateReceiptComposer.cs" Link="Linked\UpdateReceiptComposer.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrintLabels.cs" Link="Linked\PrintLabels.cs" />
+    <Compile Include="..\PrinterAPP\Services\ReceiptComposer.cs" Link="Linked\ReceiptComposer.cs" />
     <Compile Include="..\PrinterAPP\Services\UnconfirmedOrderExpiry.cs" Link="Linked\UnconfirmedOrderExpiry.cs" />
     <Compile Include="..\PrinterAPP\Services\EventStreamingService.cs" Link="Linked\EventStreamingService.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderFeedParser.cs" Link="Linked\OrderFeedParser.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrinterFeedUpdateValidation.cs" Link="Linked\PrinterFeedUpdateValidation.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderRoutingStateValidation.cs" Link="Linked\OrderRoutingStateValidation.cs" />
     <Compile Include="..\PrinterAPP\Services\PrinterJsonSerialization.cs" Link="Linked\PrinterJsonSerialization.cs" />
   </ItemGroup>

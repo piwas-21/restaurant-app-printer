@@ -55,6 +55,7 @@
     <Compile Include="..\PrinterAPP\Models\DeliveryAddress.cs" Link="Linked\DeliveryAddress.cs" />
     <!-- Resilient per-order feed parser (MAUI-free): one bad order must not wedge the whole poll batch. -->
     <Compile Include="..\PrinterAPP\Services\OrderFeedParser.cs" Link="Linked\OrderFeedParser.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrinterFeedUpdateValidation.cs" Link="Linked\PrinterFeedUpdateValidation.cs" />
     <Compile Include="..\PrinterAPP\Services\PrinterJsonSerialization.cs" Link="Linked\PrinterJsonSerialization.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderRoutingStateValidation.cs" Link="Linked\OrderRoutingStateValidation.cs" />
     <!-- Config storage + migration (MAUI-free by design; see PrinterConfigurationStore.cs). -->
@@ -79,6 +80,7 @@
     <Compile Include="..\PrinterAPP\Models\DevicePrintStatus.cs" Link="Linked\DevicePrintStatus.cs" />
     <Compile Include="..\PrinterAPP\Models\DevicePrintJobType.cs" Link="Linked\DevicePrintJobType.cs" />
     <Compile Include="..\PrinterAPP\Models\PrinterFeedUpdate.cs" Link="Linked\PrinterFeedUpdate.cs" />
+    <Compile Include="..\PrinterAPP\Models\PrinterFeedChange.cs" Link="Linked\PrinterFeedChange.cs" />
     <Compile Include="..\PrinterAPP\Models\PrintUpdateJobState.cs" Link="Linked\PrintUpdateJobState.cs" />
     <Compile Include="..\PrinterAPP\Models\PrintUpdateJobRecord.cs" Link="Linked\PrintUpdateJobRecord.cs" />
     <Compile Include="..\PrinterAPP\Services\ITelemetryClient.cs" Link="Linked\ITelemetryClient.cs" />

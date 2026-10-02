@@ -11,4 +11,10 @@ internal static class PrinterJsonSerialization
         PropertyNameCaseInsensitive = true,
         Converters = { new JsonStringEnumConverter() },
     };
+
+    internal static bool AreEquivalent<T>(T first, T second) =>
+        string.Equals(
+            JsonSerializer.Serialize(first, Options),
+            JsonSerializer.Serialize(second, Options),
+            StringComparison.Ordinal);
 }
