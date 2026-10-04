@@ -1,6 +1,6 @@
 # Printer-App Development Guidelines
 
-> .NET MAUI 9 | Windows 10+ | ESC/POS Thermal Printers
+> .NET MAUI 10 | Windows 10+ and Android 7+ | ESC/POS Thermal Printers
 
 ---
 
