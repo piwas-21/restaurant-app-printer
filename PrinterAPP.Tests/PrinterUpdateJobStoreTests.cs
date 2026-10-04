@@ -12,7 +12,7 @@ namespace PrinterAPP.Tests;
 public sealed class PrinterUpdateJobStoreTests
 {
     [Fact]
-    public void Store_recovers_processing_work_and_deduplicates_terminal_jobs_after_restart()
+    public void Store_recovers_interrupted_print_as_unknown_and_deduplicates_it_after_restart()
     {
         using var paths = new FakeAppDataPathProvider();
         var update = PrinterUpdateTestData.Update();
@@ -22,17 +22,18 @@ public sealed class PrinterUpdateJobStoreTests
         Assert.True(shouldDispatch);
         Assert.True(first.TryBegin(update.Key));
 
-        // A new instance sees an interrupted owner as retryable, not as lost work.
+        // It is impossible to know whether the printer received bytes before the process stopped.
         var restarted = new PrintUpdateJobStore(paths, NullLogger<PrintUpdateJobStore>.Instance);
-        var pending = Assert.Single(restarted.GetPending());
-        Assert.Equal(PrintUpdateJobState.Pending, pending.State);
-        Assert.True(restarted.TryBegin(update.Key));
-        Assert.True(restarted.Complete(update.Key, PrintUpdateJobState.Sent));
+        Assert.Empty(restarted.GetPending());
+        var interrupted = Assert.Single(restarted.GetHistory());
+        Assert.Equal(PrintUpdateJobState.Unknown, interrupted.State);
+        Assert.Contains("Check the printer", interrupted.FailureReason);
+        Assert.Single(restarted.GetPendingFinalAcknowledgements());
 
         var finalRestart = new PrintUpdateJobStore(paths, NullLogger<PrintUpdateJobStore>.Instance);
         Assert.True(finalRestart.AddOrGet(update, out var existing, out shouldDispatch));
         Assert.False(shouldDispatch);
-        Assert.Equal(PrintUpdateJobState.Sent, existing.State);
+        Assert.Equal(PrintUpdateJobState.Unknown, existing.State);
         Assert.Empty(finalRestart.GetPending());
     }
 
@@ -102,7 +103,7 @@ public sealed class PrinterUpdateJobStoreTests
     }
 
     [Fact]
-    public void Store_keeps_failed_not_configured_and_unknown_jobs_pending()
+    public void Store_retries_known_failures_but_holds_unknown_delivery_for_operator_review()
     {
         using var paths = new FakeAppDataPathProvider();
         var store = new PrintUpdateJobStore(paths, NullLogger<PrintUpdateJobStore>.Instance);
@@ -110,7 +111,6 @@ public sealed class PrinterUpdateJobStoreTests
         {
             PrintUpdateJobState.Failed,
             PrintUpdateJobState.NotConfigured,
-            PrintUpdateJobState.Unknown,
         };
 
         foreach (var state in states)
@@ -121,8 +121,75 @@ public sealed class PrinterUpdateJobStoreTests
             Assert.True(store.Complete(update.Key, state, state.ToString()));
         }
 
+        var unknown = PrinterUpdateTestData.Update(Guid.NewGuid());
+        Assert.True(store.AddOrGet(unknown, out _, out _));
+        Assert.True(store.TryBegin(unknown.Key));
+        Assert.True(store.Complete(unknown.Key, PrintUpdateJobState.Unknown, "unknown"));
+
         Assert.Equal(states.Length, store.GetPending().Count);
         Assert.All(store.GetPending(), record => Assert.True(record.IsPending));
+        Assert.DoesNotContain(store.GetPending(), record => record.Key == unknown.Key);
+        Assert.Contains(store.GetPendingFinalAcknowledgements(), record => record.Key == unknown.Key);
+    }
+
+    [Fact]
+    public void Store_retains_unknown_and_unacknowledged_outcomes_until_stable_acknowledged_history_can_be_pruned()
+    {
+        using var paths = new FakeAppDataPathProvider();
+        var baseline = DateTime.UtcNow.AddDays(-1);
+        var records = Enumerable.Range(0, 10_000)
+            .Select(index => new PrintUpdateJobRecord
+            {
+                Update = PrinterUpdateTestData.Update(Guid.NewGuid()),
+                State = PrintUpdateJobState.Sent,
+                FirstSeenAt = baseline.AddSeconds(index),
+                FinalAcknowledgementQueued = true,
+            })
+            .ToList();
+        records[0] = records[0] with
+        {
+            State = PrintUpdateJobState.Unknown,
+            FinalAcknowledgementQueued = false,
+        };
+        records[1] = records[1] with { FinalAcknowledgementQueued = false };
+        var jsonOptions = new JsonSerializerOptions { Converters = { new JsonStringEnumConverter() } };
+        var jobPath = Path.Combine(paths.AppDataDirectory, "print-update-jobs.json");
+        File.WriteAllText(jobPath, JsonSerializer.Serialize(records, jsonOptions));
+
+        var store = new PrintUpdateJobStore(paths, NullLogger<PrintUpdateJobStore>.Instance);
+        var unknownKey = records[0].Key;
+        var unacknowledgedSentKey = records[1].Key;
+        var firstPrunableKey = records[2].Key;
+        Assert.True(store.AddOrGet(PrinterUpdateTestData.Update(Guid.NewGuid()), out _, out _));
+
+        Assert.Contains(store.GetHistory(), record => record.Key == unknownKey && record.State == PrintUpdateJobState.Unknown);
+        Assert.Contains(store.GetHistory(), record => record.Key == unacknowledgedSentKey && !record.FinalAcknowledgementQueued);
+        Assert.DoesNotContain(store.GetHistory(), record => record.Key == firstPrunableKey);
+
+        Assert.True(store.MarkFinalAcknowledgementQueued(unacknowledgedSentKey));
+        Assert.True(store.AddOrGet(PrinterUpdateTestData.Update(Guid.NewGuid()), out _, out _));
+
+        Assert.Contains(store.GetHistory(), record => record.Key == unknownKey && record.State == PrintUpdateJobState.Unknown);
+        Assert.DoesNotContain(store.GetHistory(), record => record.Key == unacknowledgedSentKey);
+    }
+
+    [Fact]
+    public void Store_marks_final_acknowledgement_only_after_outbox_acceptance()
+    {
+        using var paths = new FakeAppDataPathProvider();
+        var store = new PrintUpdateJobStore(paths, NullLogger<PrintUpdateJobStore>.Instance);
+        var update = PrinterUpdateTestData.Update();
+        Assert.True(store.AddOrGet(update, out _, out _));
+        Assert.True(store.TryBegin(update.Key));
+        Assert.True(store.Complete(update.Key, PrintUpdateJobState.Sent));
+
+        Assert.Single(store.GetPendingFinalAcknowledgements());
+        Assert.True(store.MarkFinalAcknowledgementQueued(update.Key));
+        Assert.Empty(store.GetPendingFinalAcknowledgements());
+
+        var restarted = new PrintUpdateJobStore(paths, NullLogger<PrintUpdateJobStore>.Instance);
+        Assert.Empty(restarted.GetPendingFinalAcknowledgements());
+        Assert.True(restarted.GetHistory().Single().FinalAcknowledgementQueued);
     }
 
     [Fact]
@@ -186,6 +253,30 @@ public sealed class PrinterUpdateJobStoreTests
         Assert.Contains(EscPosCommands.AlignLeft, receipt);
         Assert.DoesNotContain('\u001b', sanitized);
         Assert.DoesNotContain('\u0007', sanitized);
+    }
+
+    [Fact]
+    public void Manual_copy_receipt_has_duplicate_warning_and_keeps_only_the_typed_delta()
+    {
+        var update = PrinterUpdateTestData.Update() with
+        {
+            Changes = new[]
+            {
+                new PrinterFeedChange
+                {
+                    Kind = KitchenChangeKind.Add,
+                    Current = new OrderItem { Id = "new-line", ProductName = "New bowl", Quantity = 1 },
+                },
+            },
+        };
+
+        var original = UpdateReceiptComposer.Compose(update);
+        var copy = UpdateReceiptComposer.Compose(update, isCopy: true);
+
+        Assert.Contains("KITCHEN CHANGE", copy);
+        Assert.Contains("COPY - POSSIBLE DUPLICATE", copy);
+        Assert.Contains("New bowl", copy);
+        Assert.DoesNotContain("COPY - POSSIBLE DUPLICATE", original);
     }
 
     [Fact]

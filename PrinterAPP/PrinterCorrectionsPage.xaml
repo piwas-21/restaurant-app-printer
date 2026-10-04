@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
+             xmlns:viewModels="clr-namespace:PrinterAPP.ViewModels"
+             x:Class="PrinterAPP.PrinterCorrectionsPage"
+             Title="Corrections"
+             BackgroundColor="{AppThemeBinding Light={StaticResource PageBackground}, Dark={StaticResource PageBackgroundDark}}">
+    <Grid Padding="16" RowDefinitions="Auto,Auto,*" RowSpacing="10">
+        <Grid ColumnDefinitions="*,Auto">
+            <VerticalStackLayout Spacing="2">
+                <Label Text="Correction history" FontSize="22" FontAttributes="Bold"
+                       TextColor="{AppThemeBinding Light={StaticResource TextPrimary}, Dark={StaticResource TextPrimaryDark}}" />
+                <Label Text="{Binding StatusMessage}"
+                       FontSize="13"
+                       TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}" />
+            </VerticalStackLayout>
+            <Button Grid.Column="1" Text="Refresh" Clicked="OnRefreshClicked"
+                    VerticalOptions="Center" Padding="14,8" />
+        </Grid>
+
+        <Label Grid.Row="1"
+               Text="{Binding CopyWarningText}"
+               FontSize="13" LineBreakMode="WordWrap"
+               TextColor="{AppThemeBinding Light={StaticResource TextSecondary}, Dark={StaticResource TextSecondaryDark}}" />
+
+        <CollectionView Grid.Row="2" ItemsSource="{Binding History}" SelectionMode="None">
+            <CollectionView.EmptyView>
+                <Label Text="No correction jobs have reached this device."
+                       HorizontalOptions="Center" VerticalOptions="Center"
+                       HorizontalTextAlignment="Center" Padding="24"
+                       TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}" />
+            </CollectionView.EmptyView>
+            <CollectionView.ItemTemplate>
+                <DataTemplate x:DataType="viewModels:PrinterCorrectionHistoryItem">
+                    <Border Margin="0,0,0,8" Padding="12" StrokeThickness="1"
+                            Stroke="{AppThemeBinding Light={StaticResource CardBorder}, Dark={StaticResource CardBorderDark}}"
+                            BackgroundColor="{AppThemeBinding Light={StaticResource CardBackground}, Dark={StaticResource CardBackgroundDark}}">
+                        <Border.StrokeShape><RoundRectangle CornerRadius="8" /></Border.StrokeShape>
+                        <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="10" RowSpacing="3">
+                            <Label Grid.Row="0" Grid.Column="0"
+                                   Text="{Binding OrderNumber, StringFormat='Order: {0}'}"
+                                   FontAttributes="Bold" FontSize="16" />
+                            <Label Grid.Row="0" Grid.Column="1" Text="{Binding State}"
+                                   FontAttributes="Bold" FontSize="13" VerticalOptions="Center" />
+                            <Label Grid.Row="1" Grid.ColumnSpan="2"
+                                   Text="{Binding Target, StringFormat='Station: {0}'}" FontSize="13" />
+                            <Label Grid.Row="2" Grid.ColumnSpan="2"
+                                   Text="{Binding FirstSeenAt, StringFormat='Received: {0:g}'}" FontSize="12"
+                                   TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}" />
+                            <Label Grid.Row="3" Grid.ColumnSpan="2" Text="{Binding JobRevision}"
+                                   FontSize="11" LineBreakMode="TailTruncation"
+                                   TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}" />
+                            <Label Grid.Row="4" Grid.ColumnSpan="2" Text="{Binding ChangeSummary}"
+                                   FontSize="13" LineBreakMode="WordWrap" />
+                            <Label Grid.Row="5" Grid.Column="0" Text="{Binding FailureReason}"
+                                   FontSize="12" LineBreakMode="WordWrap" IsVisible="{Binding HasFailureReason}"
+                                   TextColor="{AppThemeBinding Light={StaticResource TextSecondary}, Dark={StaticResource TextSecondaryDark}}" />
+                            <Button Grid.Row="5" Grid.Column="1" Text="Print COPY"
+                                    CommandParameter="{Binding .}" Clicked="OnCopyClicked"
+                                    IsVisible="{Binding CanCopy}"
+                                    MinimumWidthRequest="112" Padding="12,7" />
+                        </Grid>
+                    </Border>
+                </DataTemplate>
+            </CollectionView.ItemTemplate>
+        </CollectionView>
+    </Grid>
+</ContentPage>

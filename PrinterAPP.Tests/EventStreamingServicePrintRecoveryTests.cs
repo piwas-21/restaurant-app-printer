@@ -156,6 +156,10 @@ public sealed class EventStreamingServicePrintRecoveryTests
             PrinterFeedUpdate update,
             CancellationToken cancellationToken = default) => Task.FromResult(KitchenPrintOutcome.Sent);
 
+        public Task<KitchenPrintOutcome> PrintUpdateCopyAsync(
+            PrinterFeedUpdate update,
+            CancellationToken cancellationToken = default) => Task.FromResult(KitchenPrintOutcome.Sent);
+
         public async Task WaitForCallsAsync(int expected)
         {
             for (var attempt = 0; attempt < 500 && PrintCalls < expected; attempt++)

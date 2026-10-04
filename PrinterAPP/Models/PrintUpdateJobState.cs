@@ -6,7 +6,7 @@ public enum PrintUpdateJobState
     /// <summary>The job is stored and eligible for a print attempt.</summary>
     Pending = 1,
 
-    /// <summary>One pipeline owner currently has the job. Reload turns this back into Pending.</summary>
+    /// <summary>One pipeline owner currently has the job. Reload conservatively turns this into Unknown.</summary>
     Processing = 2,
 
     /// <summary>The bytes left through the printer transport.</summary>
@@ -21,6 +21,6 @@ public enum PrintUpdateJobState
     /// <summary>No configured destination exists. It remains eligible for retry.</summary>
     NotConfigured = 6,
 
-    /// <summary>The job could not be safely interpreted. It remains eligible for retry.</summary>
+    /// <summary>The job could not be safely interpreted or delivery may have occurred. Operator review is required.</summary>
     Unknown = 7,
 }

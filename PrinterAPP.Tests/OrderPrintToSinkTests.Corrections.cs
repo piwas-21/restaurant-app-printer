@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging.Abstractions;
 using PrinterAPP.Models;
 using PrinterAPP.Services;
+using PrinterAPP.ViewModels;
 using Xunit;
 
 namespace PrinterAPP.Tests;
@@ -90,6 +91,92 @@ public partial class OrderPrintToSinkTests
         var outcome = await service.PrintUpdateAsync(missingSnapshot);
         Assert.Equal(KitchenPrintStatus.Unknown, outcome.Status);
         Assert.False(destination.ReceivedAnything);
+    }
+
+    [Fact]
+    public async Task StableCorrectionCopyBypassesAutoPrintGateAndLeavesOriginalHistoryUnchanged()
+    {
+        using var destination = new Sink();
+        using var unrelated = new Sink();
+        using var paths = new TempPathProvider();
+        var config = new PrinterConfiguration
+        {
+            FrontKitchenPrinterName = destination.PrinterName,
+            DefaultKitchenPrinterName = unrelated.PrinterName,
+            FrontKitchenAutoPrint = false,
+            KitchenAutoPrint = false,
+        };
+        var jobStore = new PrintUpdateJobStore(paths, NullLogger<PrintUpdateJobStore>.Instance);
+        var parsed = OrderFeedParser.Parse(ReplacementCorrectionEnvelope(DevicePrintTarget.FrontKitchen));
+        Assert.True(parsed.IsSuccess, parsed.FailureMessage);
+        var update = Assert.Single(parsed.Updates);
+        Assert.True(jobStore.AddOrGet(update, out _, out _));
+        Assert.True(jobStore.TryBegin(update.Key));
+        Assert.True(jobStore.Complete(update.Key, PrintUpdateJobState.Skipped));
+        Assert.True(jobStore.MarkFinalAcknowledgementQueued(update.Key));
+
+        var copyService = new PrinterCorrectionCopyService(
+            jobStore,
+            new StubPrinterService(config),
+            new PrinterOutputService(NullLogger<PrinterOutputService>.Instance),
+            new CapturingRequestLogService(),
+            NullLogger<PrinterCorrectionCopyService>.Instance);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var copy = await copyService.PrintCopyAsync(update.Key, cancellation.Token);
+        Assert.True(copy.WasEligible);
+        Assert.Equal(KitchenPrintStatus.Sent, copy.Outcome?.Status);
+        var ticket = await destination.ReadTicketAsync(cancellation.Token);
+
+        Assert.Contains("COPY - POSSIBLE DUPLICATE", ticket, StringComparison.Ordinal);
+        Assert.Contains("CANCEL PREVIOUS:", ticket, StringComparison.Ordinal);
+        Assert.Contains("Pasta", ticket, StringComparison.Ordinal);
+        Assert.DoesNotContain("Soup", ticket, StringComparison.Ordinal);
+        Assert.False(unrelated.ReceivedAnything);
+        var unchanged = Assert.Single(jobStore.GetHistory());
+        Assert.Equal(PrintUpdateJobState.Skipped, unchanged.State);
+        Assert.True(unchanged.FinalAcknowledgementQueued);
+    }
+
+    [Theory]
+    [InlineData(PrintUpdateJobState.Pending)]
+    [InlineData(PrintUpdateJobState.Processing)]
+    [InlineData(PrintUpdateJobState.Failed)]
+    [InlineData(PrintUpdateJobState.NotConfigured)]
+    public async Task Copy_is_blocked_while_the_original_is_active_or_retryable(PrintUpdateJobState state)
+    {
+        using var destination = new Sink();
+        using var paths = new TempPathProvider();
+        var update = PrinterUpdateTestData.Update(Guid.NewGuid(), target: DevicePrintTarget.FrontKitchen);
+        var jobStore = new PrintUpdateJobStore(paths, NullLogger<PrintUpdateJobStore>.Instance);
+        Assert.True(jobStore.AddOrGet(update, out _, out _));
+        if (state != PrintUpdateJobState.Pending)
+        {
+            Assert.True(jobStore.TryBegin(update.Key));
+            if (state != PrintUpdateJobState.Processing)
+                Assert.True(jobStore.Complete(update.Key, state, state.ToString()));
+        }
+
+        var copyService = new PrinterCorrectionCopyService(
+            jobStore,
+            new StubPrinterService(new PrinterConfiguration { FrontKitchenPrinterName = destination.PrinterName }),
+            new PrinterOutputService(NullLogger<PrinterOutputService>.Instance),
+            new CapturingRequestLogService(),
+            NullLogger<PrinterCorrectionCopyService>.Instance);
+
+        var result = await copyService.PrintCopyAsync(update.Key);
+
+        Assert.False(result.WasEligible);
+        Assert.Equal(state, result.OriginalState);
+        Assert.Null(result.Outcome);
+        Assert.False(destination.ReceivedAnything);
+        Assert.Equal(state, Assert.Single(jobStore.GetHistory()).State);
+    }
+
+    [Fact]
+    public void Copy_confirmation_explains_duplicate_risk_and_staff_check()
+    {
+        Assert.Contains("may already have reached the kitchen", PrinterCorrectionHistoryViewModel.CopyConfirmationWarning);
+        Assert.Contains("Check with staff", PrinterCorrectionHistoryViewModel.CopyConfirmationWarning);
     }
 
     private static string ReplacementCorrectionEnvelope(DevicePrintTarget target) => $$$"""

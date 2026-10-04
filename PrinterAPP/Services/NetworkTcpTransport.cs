@@ -19,6 +19,7 @@ public sealed class NetworkTcpTransport : IPrinterTransport
     private readonly TimeSpan _connectTimeout;
     private readonly TimeSpan _writeTimeout;
     private readonly TimeSpan _retryDelay;
+    public bool DeliveryMayHaveOccurred { get; private set; }
 
     /// <param name="ip">Printer IP address.</param>
     /// <param name="port">TCP port (default 9100).</param>
@@ -51,12 +52,14 @@ public sealed class NetworkTcpTransport : IPrinterTransport
     public async Task SendAsync(byte[] data, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(data);
+        DeliveryMayHaveOccurred = false;
 
         using var client = await ConnectWithRetryAsync(ct).ConfigureAwait(false);
         await using var stream = client.GetStream();
 
         using var writeCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         writeCts.CancelAfter(_writeTimeout);
+        DeliveryMayHaveOccurred = true;
         await stream.WriteAsync(data, writeCts.Token).ConfigureAwait(false);
         await stream.FlushAsync(writeCts.Token).ConfigureAwait(false);
     }

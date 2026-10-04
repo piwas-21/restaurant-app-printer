@@ -29,6 +29,7 @@ public partial class OrderPipeline
         // durable pending job explicitly; feed delivery is not the retry mechanism.
         if (_updateJobStore is not null)
         {
+            _ = QueuePendingFinalAcknowledgementsAsync();
             foreach (var pending in _updateJobStore.GetPending())
                 _ = ProcessUpdateAsync(pending.Update);
         }
@@ -61,56 +62,102 @@ public partial class OrderPipeline
             // physical output and durable lifecycle bookkeeping must finish without leaving Processing.
             await _printAckOutbox.EnqueueAsync(
                 new[] { TelemetryPayloads.UpdateQueuedAck(update, receivedAt) }, CancellationToken.None);
-            KitchenPrintOutcome outcome;
-            try
-            {
-                outcome = await _orderPrintService.PrintUpdateAsync(update, CancellationToken.None);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Update job {JobId} failed during printing", update.JobId);
-                outcome = KitchenPrintOutcome.Failed;
-            }
-            if (_updateJobStore is not null)
-            {
-                var state = outcome.Status switch
-                {
-                    KitchenPrintStatus.Sent => PrintUpdateJobState.Sent,
-                    KitchenPrintStatus.Skipped => PrintUpdateJobState.Skipped,
-                    KitchenPrintStatus.NotConfigured => PrintUpdateJobState.NotConfigured,
-                    KitchenPrintStatus.Unknown => PrintUpdateJobState.Unknown,
-                    _ => PrintUpdateJobState.Failed,
-                };
-                var completed = TryCompleteUpdate(
-                    update.Key,
-                    state,
-                    state is PrintUpdateJobState.Failed
-                        or PrintUpdateJobState.NotConfigured
-                        or PrintUpdateJobState.Unknown
-                        ? outcome.Status.ToString()
-                        : null);
-                if (!completed)
-                {
-                    // Do not acknowledge Sent when local history could not record it. The store has
-                    // deliberately left the job retryable; a conservative Failed snapshot is the
-                    // only truthful wire state until a later retry establishes a durable result.
-                    await _printAckOutbox.EnqueueAsync(
-                        new[] { TelemetryPayloads.UpdateAck(update, KitchenPrintOutcome.Failed, receivedAt) },
-                        CancellationToken.None);
-                    return;
-                }
-            }
-            // Sent is the only successful update outcome. Failed, NotConfigured and Unknown stay
-            // explicit; none is ever upgraded to Printed/Sent by the ack mapper.
-            await _printAckOutbox.EnqueueAsync(
-                new[] { TelemetryPayloads.UpdateAck(update, outcome, receivedAt) }, CancellationToken.None);
         }
         catch (Exception ex)
         {
-            // Keep the job retryable if a bookkeeping edge throws. A malformed route must not make
-            // the update disappear merely because telemetry was unavailable.
-            _logger.LogError(ex, "Update job {JobId} bookkeeping failed", update.JobId);
-            TryCompleteUpdate(update.Key, PrintUpdateJobState.Failed, ex.Message);
+            // No print call has started, so this failure is safe to retry. Keep the queued/final
+            // lifecycle snapshots in the same durable outbox before returning to the retry loop.
+            _logger.LogError(ex, "Could not persist queued acknowledgement for update {JobId}", update.JobId);
+            TryCompleteUpdate(update.Key, PrintUpdateJobState.Failed, "Queued acknowledgement could not be persisted.");
+            await QueueFinalAcknowledgementAsync(update, KitchenPrintOutcome.Failed, receivedAt);
+            return;
+        }
+
+        KitchenPrintOutcome outcome;
+        try
+        {
+            outcome = await _orderPrintService.PrintUpdateAsync(update, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            // A thrown print call may have failed after handing bytes to the transport. Treat it as
+            // ambiguous and wait for operator review instead of automatically duplicating a ticket.
+            _logger.LogError(ex, "Update job {JobId} failed during printing with an unknown delivery state", update.JobId);
+            outcome = KitchenPrintOutcome.Unknown;
+        }
+
+        var state = outcome.Status switch
+        {
+            KitchenPrintStatus.Sent => PrintUpdateJobState.Sent,
+            KitchenPrintStatus.Skipped => PrintUpdateJobState.Skipped,
+            KitchenPrintStatus.NotConfigured => PrintUpdateJobState.NotConfigured,
+            KitchenPrintStatus.Unknown => PrintUpdateJobState.Unknown,
+            _ => PrintUpdateJobState.Failed,
+        };
+        if (_updateJobStore is not null)
+        {
+            var completed = TryCompleteUpdate(
+                update.Key,
+                state,
+                state is PrintUpdateJobState.Failed
+                    or PrintUpdateJobState.NotConfigured
+                    or PrintUpdateJobState.Unknown
+                    ? outcome.Status.ToString()
+                    : null);
+            if (!completed)
+            {
+                // The outcome could not be saved locally. The store holds this job as Unknown (and
+                // a restart converts durable Processing to Unknown), so never claim Sent or retry it.
+                outcome = KitchenPrintOutcome.Unknown;
+                _logger.LogError("Could not persist outcome for update {JobId}; delivery is held for review", update.JobId);
+            }
+        }
+
+        // This is deliberately outside the print/bookkeeping try blocks. An outbox write failure
+        // must not turn a durable Sent/Unknown outcome into Failed and cause another physical send.
+        await QueueFinalAcknowledgementAsync(update, outcome, receivedAt);
+    }
+
+    private async Task QueueFinalAcknowledgementAsync(
+        PrinterFeedUpdate update,
+        KitchenPrintOutcome outcome,
+        DateTime receivedAt)
+    {
+        try
+        {
+            await _printAckOutbox.EnqueueAsync(
+                new[] { TelemetryPayloads.UpdateAck(update, outcome, receivedAt) }, CancellationToken.None);
+            if (_updateJobStore is not null
+                && !_updateJobStore.MarkFinalAcknowledgementQueued(update.Key))
+            {
+                _logger.LogWarning(
+                    "Final acknowledgement for update {JobId} is queued but its local marker could not be saved",
+                    update.JobId);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Final acknowledgement for update {JobId} remains pending", update.JobId);
+        }
+    }
+
+    private async Task QueuePendingFinalAcknowledgementsAsync()
+    {
+        var store = _updateJobStore;
+        if (store is null)
+            return;
+
+        foreach (var record in store.GetPendingFinalAcknowledgements())
+        {
+            var outcome = record.State switch
+            {
+                PrintUpdateJobState.Sent => KitchenPrintOutcome.Sent,
+                PrintUpdateJobState.Skipped => KitchenPrintOutcome.Skipped,
+                PrintUpdateJobState.NotConfigured => KitchenPrintOutcome.NotConfigured,
+                PrintUpdateJobState.Unknown => KitchenPrintOutcome.Unknown,
+                _ => KitchenPrintOutcome.Failed,
+            };
+            await QueueFinalAcknowledgementAsync(record.Update, outcome, DateTime.UtcNow);
         }
     }
     private bool TryCompleteUpdate(
@@ -151,6 +198,7 @@ public partial class OrderPipeline
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(seconds));
             while (await timer.WaitForNextTickAsync(cancellationToken))
             {
+                await QueuePendingFinalAcknowledgementsAsync();
                 foreach (var pending in updateJobStore.GetPending())
                     _ = ProcessUpdateAsync(pending.Update);
             }

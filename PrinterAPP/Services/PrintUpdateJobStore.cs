@@ -5,10 +5,10 @@ using PrinterAPP.Models;
 namespace PrinterAPP.Services;
 /// <summary>
 /// Atomic file-backed implementation of <see cref="IPrintUpdateJobStore"/>. A job is written before
-/// the feed cursor is allowed to move. Processing entries are recovered as Pending on load, so a
-/// process kill between claiming and physical printing cannot lose the leaf work.
+/// the feed cursor is allowed to move. Processing entries are recovered as Unknown on load because
+/// the process may have stopped after bytes left for the printer but before the outcome was stored.
 /// </summary>
-public class PrintUpdateJobStore : IUpdateJobStore
+public partial class PrintUpdateJobStore : IUpdateJobStore
 {
     private const string FileName = "print-update-jobs.json";
     private const string CursorFileName = "print-update-cursor.json";
@@ -87,6 +87,18 @@ public class PrintUpdateJobStore : IUpdateJobStore
                 .ToList();
         }
     }
+    public IReadOnlyList<PrintUpdateJobRecord> GetPendingFinalAcknowledgements()
+    {
+        lock (_gate)
+        {
+            return EnsureLoaded().Values
+                .Where(record => !record.IsPending
+                    && record.State != PrintUpdateJobState.Processing
+                    && !record.FinalAcknowledgementQueued)
+                .OrderBy(record => record.FirstSeenAt)
+                .ToList();
+        }
+    }
     public bool TryBegin(PrintUpdateJobKey key)
     {
         lock (_gate)
@@ -98,6 +110,7 @@ public class PrintUpdateJobStore : IUpdateJobStore
             {
                 State = PrintUpdateJobState.Processing,
                 LastAttemptAt = DateTime.UtcNow,
+                FinalAcknowledgementQueued = false,
             };
             if (SaveLocked())
                 return true;
@@ -119,17 +132,42 @@ public class PrintUpdateJobStore : IUpdateJobStore
             if (state == PrintUpdateJobState.Processing)
                 throw new ArgumentException("A job cannot be completed as Processing.", nameof(state));
 
-            records[key] = current with { State = state, FailureReason = failureReason };
+            records[key] = current with
+            {
+                State = state,
+                FailureReason = failureReason,
+                FinalAcknowledgementQueued = false,
+            };
             if (SaveLocked())
                 return true;
 
-            // Physical delivery is not known to be durable in the local history. Keep the job
-            // retryable in this process; a restart also recovers the durable Processing record.
+            // The outcome write failed after the print path. Do not retry bytes whose delivery may
+            // have happened; retain an in-memory hold and recover the on-disk Processing record as
+            // Unknown after restart.
             RestoreRecord(records, key, current with
             {
-                State = PrintUpdateJobState.Failed,
-                FailureReason = failureReason ?? "Could not persist update-job outcome.",
+                State = PrintUpdateJobState.Unknown,
+                FailureReason = "Could not persist the print outcome. Check the printer before sending COPY.",
+                FinalAcknowledgementQueued = false,
             });
+            return false;
+        }
+    }
+
+    public bool MarkFinalAcknowledgementQueued(PrintUpdateJobKey key)
+    {
+        lock (_gate)
+        {
+            var records = EnsureLoaded();
+            if (!records.TryGetValue(key, out var current)
+                || current.State is PrintUpdateJobState.Pending or PrintUpdateJobState.Processing)
+                return false;
+
+            records[key] = current with { FinalAcknowledgementQueued = true };
+            if (SaveLocked())
+                return true;
+
+            RestoreRecord(records, key, current with { FinalAcknowledgementQueued = false });
             return false;
         }
     }
@@ -144,42 +182,6 @@ public class PrintUpdateJobStore : IUpdateJobStore
                 .ThenBy(record => record.Update.Revision)
                 .ThenBy(record => record.Update.Target)
                 .ToList();
-        }
-    }
-
-    public string? LoadUpdateCursor()
-    {
-        lock (_gate)
-        {
-            EnsureCursorLoaded();
-            return _updateCursor;
-        }
-    }
-
-    public bool TryAdvanceUpdateCursor(string? cursor)
-    {
-        lock (_gate)
-        {
-            EnsureCursorLoaded();
-            if (cursor is not null && string.IsNullOrWhiteSpace(cursor))
-                return false;
-            try
-            {
-                var directory = Path.GetDirectoryName(CursorFilePath);
-                if (!string.IsNullOrWhiteSpace(directory))
-                    Directory.CreateDirectory(directory);
-
-                var temp = CursorFilePath + ".tmp";
-                File.WriteAllText(temp, JsonSerializer.Serialize(cursor, JsonOptions));
-                File.Move(temp, CursorFilePath, overwrite: true);
-                _updateCursor = cursor;
-                return true;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to persist update-feed cursor");
-                return false;
-            }
         }
     }
 
@@ -201,10 +203,15 @@ public class PrintUpdateJobStore : IUpdateJobStore
                 if (record.Update is null || record.Update.JobId == Guid.Empty || record.Update.Revision <= 0)
                     continue;
 
-                // A process may have been killed while a job was owned. The durable truth is that it
-                // was not completed, so make it eligible again rather than leaving a permanent wedge.
+                // A process may have been killed after the printer received some or all bytes. That
+                // is an ambiguous physical outcome: require an operator to inspect before COPY.
                 var recovered = record.State == PrintUpdateJobState.Processing
-                    ? record with { State = PrintUpdateJobState.Pending }
+                    ? record with
+                    {
+                        State = PrintUpdateJobState.Unknown,
+                        FailureReason = "App restarted during printing. Check the printer before sending COPY.",
+                        FinalAcknowledgementQueued = false,
+                    }
                     : record;
                 _records[recovered.Key] = recovered;
             }
@@ -217,36 +224,16 @@ public class PrintUpdateJobStore : IUpdateJobStore
         return _records;
     }
 
-    private void EnsureCursorLoaded()
-    {
-        if (_cursorLoaded)
-            return;
-
-        _cursorLoaded = true;
-        try
-        {
-            if (File.Exists(CursorFilePath))
-            {
-                _updateCursor = JsonSerializer.Deserialize<string>(
-                    File.ReadAllText(CursorFilePath), JsonOptions);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(ex, "Update-feed cursor unreadable; starting from the initial boundary");
-            _updateCursor = null;
-        }
-    }
-
     private static void Trim(Dictionary<PrintUpdateJobKey, PrintUpdateJobRecord> records)
     {
         if (records.Count <= MaxStored)
             return;
 
-        // Never evict pending work: doing so while the feed cursor advances would lose a kitchen
-        // leaf. Only old terminal history is bounded; if every entry is pending, retain all of it.
+        // Never evict retryable or ambiguous work, or a final outcome whose acknowledgement is not
+        // durable in the outbox. Only acknowledged Sent/Skipped history is bounded.
         var removable = records.Values
-            .Where(record => !record.IsPending && record.State != PrintUpdateJobState.Processing)
+            .Where(record => record.FinalAcknowledgementQueued
+                && (record.State is PrintUpdateJobState.Sent or PrintUpdateJobState.Skipped))
             .OrderBy(record => record.FirstSeenAt)
             .Take(Math.Max(0, records.Count - MaxStored))
             .Select(record => record.Key)

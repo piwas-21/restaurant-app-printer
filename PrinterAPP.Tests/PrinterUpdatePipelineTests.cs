@@ -12,7 +12,6 @@ public sealed class PrinterUpdatePipelineTests
     [Theory]
     [InlineData(KitchenPrintStatus.Failed, PrintUpdateJobState.Failed, DevicePrintStatus.Failed)]
     [InlineData(KitchenPrintStatus.NotConfigured, PrintUpdateJobState.NotConfigured, DevicePrintStatus.NotConfigured)]
-    [InlineData(KitchenPrintStatus.Unknown, PrintUpdateJobState.Unknown, DevicePrintStatus.Unknown)]
     public async Task Non_success_update_outcomes_stay_pending_and_are_acknowledged_explicitly(
         KitchenPrintStatus printStatus,
         PrintUpdateJobState expectedState,
@@ -45,6 +44,30 @@ public sealed class PrinterUpdatePipelineTests
     }
 
     [Fact]
+    public async Task Unknown_delivery_is_terminal_and_is_not_retried_automatically()
+    {
+        var update = PrinterUpdateTestData.Update(Guid.NewGuid());
+        var store = new RecordingUpdateStore();
+        Assert.True(store.AddOrGet(update, out _, out _));
+        var feed = new TestFeed();
+        var outbox = new RecordingOutbox();
+        var printer = new StubUpdatePrinter(_ => KitchenPrintOutcome.Unknown);
+        var pipeline = CreatePipeline(feed, store, outbox, printer);
+
+        await pipeline.StartAsync();
+        feed.Emit(update);
+        Assert.True(await WaitUntilAsync(() =>
+            store.Records.TryGetValue(update.Key, out var record)
+            && record.State == PrintUpdateJobState.Unknown
+            && record.FinalAcknowledgementQueued));
+        await pipeline.StopAsync();
+
+        Assert.False(store.Records[update.Key].IsPending);
+        Assert.Single(outbox.Acks, ack => ack.Status == DevicePrintStatus.Unknown);
+        Assert.Equal(1, printer.UpdatePrintCalls);
+    }
+
+    [Fact]
     public async Task Sent_update_is_terminal_and_carries_job_identity_in_the_ack()
     {
         var update = PrinterUpdateTestData.Update(Guid.NewGuid());
@@ -70,6 +93,39 @@ public sealed class PrinterUpdatePipelineTests
         Assert.Equal(update.JobId, ack.JobId);
         Assert.Equal(update.Revision, ack.Revision);
         Assert.Equal(DevicePrintJobType.Update, ack.JobType);
+        Assert.True(store.Records[update.Key].FinalAcknowledgementQueued);
+    }
+
+    [Fact]
+    public async Task Failed_final_ack_persistence_does_not_reclassify_sent_or_retry_the_print()
+    {
+        var update = PrinterUpdateTestData.Update(Guid.NewGuid());
+        var store = new RecordingUpdateStore();
+        Assert.True(store.AddOrGet(update, out _, out _));
+        var feed = new TestFeed();
+        var outbox = new RecordingOutbox { FailOnCall = 2 };
+        var printer = new StubUpdatePrinter(_ => KitchenPrintOutcome.Sent);
+        var pipeline = CreatePipeline(feed, store, outbox, printer);
+
+        await pipeline.StartAsync();
+        feed.Emit(update);
+        Assert.True(await WaitUntilAsync(() =>
+            store.Records.TryGetValue(update.Key, out var record)
+            && record.State == PrintUpdateJobState.Sent));
+        await pipeline.StopAsync();
+
+        Assert.False(store.Records[update.Key].IsPending);
+        Assert.False(store.Records[update.Key].FinalAcknowledgementQueued);
+        Assert.Equal(1, printer.UpdatePrintCalls);
+        outbox.FailOnCall = null;
+
+        var restarted = CreatePipeline(new TestFeed(), store, outbox, printer);
+        await restarted.StartAsync();
+        Assert.True(await WaitUntilAsync(() => store.Records[update.Key].FinalAcknowledgementQueued));
+        await restarted.StopAsync();
+
+        Assert.Equal(1, printer.UpdatePrintCalls);
+        Assert.Contains(outbox.Acks, ack => ack.Status == DevicePrintStatus.Sent);
     }
 
     private static OrderPipeline CreatePipeline(
@@ -124,9 +180,15 @@ public sealed class PrinterUpdatePipelineTests
     private sealed class StubUpdatePrinter : IOrderPrintService
     {
         private readonly Func<PrinterFeedUpdate, KitchenPrintOutcome> _outcome;
+        public int UpdatePrintCalls { get; private set; }
         public StubUpdatePrinter(Func<PrinterFeedUpdate, KitchenPrintOutcome> outcome) => _outcome = outcome;
-        public Task<KitchenPrintOutcome> PrintUpdateAsync(PrinterFeedUpdate update, CancellationToken cancellationToken = default) =>
-            Task.FromResult(_outcome(update));
+        public Task<KitchenPrintOutcome> PrintUpdateAsync(PrinterFeedUpdate update, CancellationToken cancellationToken = default)
+        {
+            UpdatePrintCalls++;
+            return Task.FromResult(_outcome(update));
+        }
+        public Task<KitchenPrintOutcome> PrintUpdateCopyAsync(PrinterFeedUpdate update, CancellationToken cancellationToken = default) =>
+            Task.FromResult(KitchenPrintOutcome.Sent);
         public Task<(bool Cashier, KitchenPrintOutcome FrontKitchen, KitchenPrintOutcome BackKitchen, KitchenPrintOutcome GeneralDefault)> PrintOrderToAllPrintersAsync(Order order, bool isManualPrint = false, CancellationToken cancellationToken = default) =>
             Task.FromResult((true, KitchenPrintOutcome.Sent, KitchenPrintOutcome.Sent, KitchenPrintOutcome.Sent));
         public Task<bool> PrintOrderAsync(Order order, PrinterType printerType, bool isManualPrint = false, CancellationToken cancellationToken = default) =>
@@ -152,18 +214,29 @@ public sealed class PrinterUpdatePipelineTests
             return true;
         }
         public IReadOnlyList<PrintUpdateJobRecord> GetPending() => Records.Values.Where(r => r.IsPending).ToList();
+        public IReadOnlyList<PrintUpdateJobRecord> GetPendingFinalAcknowledgements() => Records.Values
+            .Where(record => !record.IsPending && record.State != PrintUpdateJobState.Processing
+                && !record.FinalAcknowledgementQueued)
+            .ToList();
         public bool TryBegin(PrintUpdateJobKey key)
         {
             if (!Records.TryGetValue(key, out var record) || !record.IsPending)
                 return false;
-            Records[key] = record with { State = PrintUpdateJobState.Processing };
+            Records[key] = record with { State = PrintUpdateJobState.Processing, FinalAcknowledgementQueued = false };
             return true;
         }
         public bool Complete(PrintUpdateJobKey key, PrintUpdateJobState state, string? failureReason = null)
         {
             if (!Records.TryGetValue(key, out var record))
                 return false;
-            Records[key] = record with { State = state, FailureReason = failureReason };
+            Records[key] = record with { State = state, FailureReason = failureReason, FinalAcknowledgementQueued = false };
+            return true;
+        }
+        public bool MarkFinalAcknowledgementQueued(PrintUpdateJobKey key)
+        {
+            if (!Records.TryGetValue(key, out var record))
+                return false;
+            Records[key] = record with { FinalAcknowledgementQueued = true };
             return true;
         }
         public IReadOnlyList<PrintUpdateJobRecord> GetHistory() => Records.Values.ToList();
@@ -172,8 +245,13 @@ public sealed class PrinterUpdatePipelineTests
     private sealed class RecordingOutbox : IPrintAckOutbox
     {
         public List<PrintAck> Acks { get; } = new();
+        public int? FailOnCall { get; set; }
+        private int _callCount;
         public Task EnqueueAsync(IEnumerable<PrintAck> acks, CancellationToken cancellationToken = default)
         {
+            _callCount++;
+            if (_callCount == FailOnCall)
+                throw new IOException("simulated outbox write failure");
             Acks.AddRange(acks);
             return Task.CompletedTask;
         }

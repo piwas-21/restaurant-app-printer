@@ -31,6 +31,7 @@ public sealed class FileSinkTransport : IPrinterTransport
 
     private readonly string _directory;
     private readonly TimeProvider _timeProvider;
+    public bool DeliveryMayHaveOccurred { get; private set; }
 
     /// <param name="directory">Directory to write captures into; created on demand.</param>
     /// <param name="timeProvider">Clock for capture filenames. Injected so tests are deterministic.</param>
@@ -54,6 +55,7 @@ public sealed class FileSinkTransport : IPrinterTransport
     public async Task SendAsync(byte[] data, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(data);
+        DeliveryMayHaveOccurred = false;
 
         Directory.CreateDirectory(_directory);
         var path = NextCapturePath();
@@ -64,6 +66,7 @@ public sealed class FileSinkTransport : IPrinterTransport
         await using var stream = new FileStream(
             path, FileMode.CreateNew, FileAccess.Write, FileShare.None,
             bufferSize: 4096, useAsync: true);
+        DeliveryMayHaveOccurred = true;
         await stream.WriteAsync(data, ct).ConfigureAwait(false);
         await stream.FlushAsync(ct).ConfigureAwait(false);
     }
