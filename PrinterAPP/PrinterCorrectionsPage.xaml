@@ -19,7 +19,7 @@
         </Grid>
 
         <Label Grid.Row="1"
-               Text="{Binding CopyWarningText}"
+               Text="{x:Static viewModels:PrinterCorrectionHistoryViewModel.CopyWarningText}"
                FontSize="13" LineBreakMode="WordWrap"
                TextColor="{AppThemeBinding Light={StaticResource TextSecondary}, Dark={StaticResource TextSecondaryDark}}" />
 

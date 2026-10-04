@@ -30,7 +30,7 @@ public sealed class PrinterCorrectionHistoryViewModel : INotifyPropertyChanged
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public string CopyWarningText => CopyConfirmationWarning;
+    public static string CopyWarningText => CopyConfirmationWarning;
 
     public IReadOnlyList<PrinterCorrectionHistoryItem> History
     {
