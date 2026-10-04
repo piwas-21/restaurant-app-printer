@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Text;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using PrinterAPP.Models;
 
 namespace PrinterAPP.Services;
@@ -13,6 +14,7 @@ public class OrderPrintService : IOrderPrintService
     private readonly ILogger<OrderPrintService> _logger;
     private readonly PrintStyleSettingsService _styleService;
     private readonly IDeviceIdentityService? _deviceIdentity;
+    private readonly IPrinterOutputService _printerOutputService;
 
     // KitchenType values as the backend emits them (OrderItemDto.KitchenType).
     private const string FRONT_KITCHEN = "FrontKitchen";
@@ -24,13 +26,16 @@ public class OrderPrintService : IOrderPrintService
         IRequestLogService requestLogService,
         ILogger<OrderPrintService> logger,
         IAppDataPathProvider pathProvider,
-        IDeviceIdentityService? deviceIdentity = null)
+        IDeviceIdentityService? deviceIdentity = null,
+        IPrinterOutputService? printerOutputService = null)
     {
         _marketplace = marketplace;
         _printerService = printerService;
         _requestLogService = requestLogService;
         _deviceIdentity = deviceIdentity;
         _logger = logger;
+        _printerOutputService = printerOutputService
+            ?? new PrinterOutputService(NullLogger<PrinterOutputService>.Instance);
         // Path provider injected (was `new PrintStyleSettingsService()` with a MAUI default) so this
         // service is source-linkable into the headless print-to-sink test.
         _styleService = new PrintStyleSettingsService(pathProvider);
@@ -221,10 +226,10 @@ public class OrderPrintService : IOrderPrintService
         }
 
         var content = UpdateReceiptComposer.Compose(update);
-        var sent = await PrintRawContentAsync(printerName, content);
+        var outcome = await _printerOutputService.SendAsync(printerName, content, cancellationToken);
         _logger.LogInformation("Update job {JobId} to {Printer}: {Result}",
-            update.JobId, destination.PrinterName, sent ? "✓" : "✗");
-        return sent ? KitchenPrintOutcome.Sent : KitchenPrintOutcome.Failed;
+            update.JobId, destination.PrinterName, outcome);
+        return outcome;
     }
 
     /// <summary>
@@ -813,50 +818,7 @@ public class OrderPrintService : IOrderPrintService
     /// </summary>
     private async Task<bool> PrintRawContentAsync(string printerName, string content)
     {
-        try
-        {
-            // PC857 encoding (ADR-002) matches the codepage selected in the ESC/POS stream — the
-            // exact encode both legacy branches performed, hoisted (byte-identical payloads).
-            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-            var bytes = Encoding.GetEncoding(857).GetBytes(content);
-
-            // Phase-2b: transport constructed per configured target (a per-printer value), so it
-            // is not a DI singleton. See ADR-006 / PrinterTransportResolver.
-            IPrinterTransport transport = PrinterTransportResolver.Resolve(printerName);
-
-            // A sink write SUCCEEDS, so without this every surface — the request log, the order
-            // history, the pipeline ack, fleet print-ack telemetry — reports a healthy print while
-            // no paper exists and the kitchen sees nothing. A diagnostic left switched on would
-            // therefore be invisible in exactly the situation where it matters most. Warn on every
-            // sink-routed print so the condition is greppable in the logs rather than resting on a
-            // comment. Deliberately not an error: the operator asked for this, and failing the print
-            // would make the capture unusable.
-            if (transport is FileSinkTransport sink)
-            {
-                _logger.LogWarning(
-                    "DIAGNOSTIC SINK ACTIVE for {PrinterName}: order bytes captured to {Directory}, NOT printed. " +
-                    "No paper is produced while this target is configured.",
-                    printerName, sink.CaptureDirectory);
-            }
-
-            if (transport is WindowsSpoolerTransport)
-            {
-                // The spooler transport's winspool calls are synchronous Win32; keep them off the
-                // caller's context exactly as the legacy Task.Run(PrintToWindowsPrinter) did (an
-                // in-transport offload was deliberately declined in PR #47).
-                await Task.Run(() => transport.SendAsync(bytes, CancellationToken.None));
-            }
-            else
-            {
-                await transport.SendAsync(bytes, CancellationToken.None);
-            }
-
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to print to {PrinterName}", printerName);
-            return false;
-        }
+        var outcome = await _printerOutputService.SendAsync(printerName, content);
+        return outcome.IsSuccess;
     }
 }

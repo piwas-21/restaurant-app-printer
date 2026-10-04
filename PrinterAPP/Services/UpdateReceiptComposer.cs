@@ -12,16 +12,18 @@ public static class UpdateReceiptComposer
     private const int MaxNoteCharacters = 4_000;
 
     /// <summary>Builds one framed, left-aligned UPDATE receipt.</summary>
-    public static string Compose(PrinterFeedUpdate update)
+    public static string Compose(PrinterFeedUpdate update, bool isCopy = false)
     {
         ArgumentNullException.ThrowIfNull(update);
         if (update.Changes is { Count: > 0 })
-            return ComposeAmendment(update);
+            return ComposeAmendment(update, isCopy);
 
         var builder = new StringBuilder();
         builder.Append(EscPosCommands.Initialize);
         builder.Append(EscPosCommands.CodepageTurkish);
         builder.Append(EscPosCommands.AlignLeft);
+        if (isCopy)
+            AppendCopyWarning(builder);
         builder.Append(EscPosCommands.BoldOn);
         builder.AppendLine("*** UPDATE ***");
         builder.Append(EscPosCommands.BoldOff);
@@ -38,12 +40,14 @@ public static class UpdateReceiptComposer
         return builder.ToString();
     }
 
-    private static string ComposeAmendment(PrinterFeedUpdate update)
+    private static string ComposeAmendment(PrinterFeedUpdate update, bool isCopy)
     {
         var builder = new StringBuilder();
         builder.Append(EscPosCommands.Initialize);
         builder.Append(EscPosCommands.CodepageTurkish);
         builder.Append(EscPosCommands.AlignLeft);
+        if (isCopy)
+            AppendCopyWarning(builder);
         builder.Append(EscPosCommands.BoldOn);
         builder.AppendLine("*** KITCHEN CHANGE ***");
         builder.Append(EscPosCommands.BoldOff);
@@ -66,6 +70,14 @@ public static class UpdateReceiptComposer
         builder.Append(EscPosCommands.Feed3Lines);
         builder.Append(EscPosCommands.FullCut);
         return builder.ToString();
+    }
+
+    private static void AppendCopyWarning(StringBuilder builder)
+    {
+        builder.Append(EscPosCommands.BoldOn);
+        builder.AppendLine("!!! COPY - POSSIBLE DUPLICATE !!!");
+        builder.Append(EscPosCommands.BoldOff);
+        builder.AppendLine("Check kitchen before preparing.");
     }
 
     private static void AppendChange(StringBuilder builder, PrinterFeedChange change)

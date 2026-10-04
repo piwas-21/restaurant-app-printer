@@ -55,6 +55,7 @@ public class NetworkTcpTransportTests
 
             var received = await receivedTask;
             Assert.Equal(payload, received);
+            Assert.True(transport.DeliveryMayHaveOccurred);
         }
         finally { listener.Stop(); }
     }
@@ -156,6 +157,7 @@ public class NetworkTcpTransportTests
 
         await Assert.ThrowsAnyAsync<Exception>(
             () => transport.SendAsync(new byte[] { 0x1B, 0x40 }, CancellationToken.None));
+        Assert.False(transport.DeliveryMayHaveOccurred);
     }
 
     [Fact]

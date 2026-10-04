@@ -25,7 +25,7 @@ public class PrinterConfiguration
     public int KitchenPrintCopies { get; set; } = 1;
     public int KitchenPaperWidth { get; set; } = 80;
 
-    // Retry cadence for durable update jobs that remain Failed, NotConfigured or Unknown.
+    // Retry cadence for known no-delivery failures and missing destinations. Unknown delivery is held for review.
     public int UpdateRetryIntervalSeconds { get; set; } = DefaultUpdateRetryIntervalSeconds;
 
     // Kitchen routing policy (issue #113): Stations (default) = the shipped Front/Back split,
