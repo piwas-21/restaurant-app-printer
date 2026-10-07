@@ -4,6 +4,41 @@ namespace PrinterAPP.Services;
 
 public partial class PrintUpdateJobStore
 {
+    private bool TryRefreshWithdrawal(
+        Dictionary<PrintUpdateJobKey, PrintUpdateJobRecord> records,
+        PrintUpdateJobRecord existing,
+        PrinterFeedUpdate update,
+        out PrintUpdateJobRecord refreshed)
+    {
+        refreshed = existing;
+        if (existing.Key != update.Key
+            || !existing.Update.IsWithdrawn
+            || existing.Update.Revision != 2
+            || !update.IsWithdrawn
+            || update.Revision != 2
+            || PrinterFeedUpdateValidation.Validate(existing.Update) is not null
+            || PrinterFeedUpdateValidation.Validate(update) is not null
+            || update.CreatedAt <= existing.Update.CreatedAt
+            || !PrinterJsonSerialization.AreEquivalent(
+                existing.Update with { CreatedAt = update.CreatedAt }, update))
+        {
+            return false;
+        }
+
+        var before = new Dictionary<PrintUpdateJobKey, PrintUpdateJobRecord>(records);
+        refreshed = existing with { Update = update };
+        records[update.Key] = refreshed;
+        // Erasure may restamp a previously withdrawn note. Reapply redaction so an older local
+        // payload can never survive the newer tombstone in either memory or the durable cache.
+        RedactOriginalRevision(records, update);
+        if (SaveLocked())
+            return true;
+
+        Restore(records, before);
+        refreshed = existing;
+        return false;
+    }
+
     public bool MarkWithdrawn(PrintUpdateJobKey key)
     {
         lock (_gate)

@@ -78,6 +78,126 @@ public sealed class PrinterUpdateJobStoreTests
         Assert.Equal(withdrawal.Key, replayed.Key);
     }
 
+    [Theory]
+    [InlineData(PrintUpdateJobState.Sent)]
+    [InlineData(PrintUpdateJobState.Unknown)]
+    public void Newer_withdrawal_restamps_only_the_tombstone_and_redacts_stale_original_cache(
+        PrintUpdateJobState originalState)
+    {
+        using var paths = new FakeAppDataPathProvider();
+        var original = PrinterUpdateTestData.Update(
+            Guid.NewGuid(), createdAt: DateTime.UtcNow.AddMinutes(-1), text: "private preparation note") with
+        {
+            Changes = new[]
+            {
+                new PrinterFeedChange
+                {
+                    Kind = KitchenChangeKind.InstructionChange,
+                    Previous = new OrderItem
+                    {
+                        Id = "line-1", ProductName = "Burger", Quantity = 1,
+                        SpecialInstructions = "no onions",
+                    },
+                    Current = new OrderItem
+                    {
+                        Id = "line-1", ProductName = "Burger", Quantity = 1,
+                        SpecialInstructions = "no onions",
+                    },
+                },
+            },
+        };
+        var firstWithdrawal = MakeWithdrawal(original, original.CreatedAt.AddSeconds(1));
+        var staleOriginal = new PrintUpdateJobRecord
+        {
+            Update = original with { IsWithdrawn = true },
+            State = originalState,
+            FirstSeenAt = original.CreatedAt,
+            FailureReason = originalState == PrintUpdateJobState.Unknown ? "ambiguous" : null,
+            FinalAcknowledgementQueued = true,
+        };
+        var oldTombstone = new PrintUpdateJobRecord
+        {
+            Update = firstWithdrawal,
+            State = PrintUpdateJobState.Withdrawn,
+            FirstSeenAt = firstWithdrawal.CreatedAt,
+            FailureReason = "Withdrawn",
+            FinalAcknowledgementQueued = true,
+        };
+        var options = new JsonSerializerOptions { Converters = { new JsonStringEnumConverter() } };
+        var jobFile = Path.Combine(paths.AppDataDirectory, "print-update-jobs.json");
+        File.WriteAllText(jobFile, JsonSerializer.Serialize(new[] { staleOriginal, oldTombstone }, options));
+
+        var store = new PrintUpdateJobStore(paths, NullLogger<PrintUpdateJobStore>.Instance);
+        Assert.True(store.TryAdvanceUpdateCursor("cursor-before"));
+        Assert.Equal(2, store.GetHistory().Count);
+        var refreshedWithdrawal = firstWithdrawal with { CreatedAt = firstWithdrawal.CreatedAt.AddSeconds(1) };
+
+        Assert.True(store.AddOrGet(refreshedWithdrawal, out var refreshed, out var shouldDispatch));
+
+        Assert.False(shouldDispatch);
+        Assert.Equal(refreshedWithdrawal.CreatedAt, refreshed.Update.CreatedAt);
+        Assert.Equal(PrintUpdateJobState.Withdrawn, refreshed.State);
+        Assert.True(refreshed.FinalAcknowledgementQueued);
+        Assert.Equal("cursor-before", store.LoadUpdateCursor());
+
+        var savedOriginal = Assert.Single(store.GetHistory(), record => record.Key == original.Key);
+        Assert.Equal(originalState, savedOriginal.State);
+        Assert.True(savedOriginal.FinalAcknowledgementQueued);
+        Assert.True(savedOriginal.Update.IsWithdrawn);
+        Assert.Empty(savedOriginal.Update.Text);
+        Assert.Null(savedOriginal.Update.Changes[0].Previous!.SpecialInstructions);
+        Assert.Null(savedOriginal.Update.Changes[0].Current!.SpecialInstructions);
+
+        var restarted = new PrintUpdateJobStore(paths, NullLogger<PrintUpdateJobStore>.Instance);
+        var persistedWithdrawal = Assert.Single(restarted.GetHistory(), record => record.Key == refreshedWithdrawal.Key);
+        Assert.Equal(refreshedWithdrawal.CreatedAt, persistedWithdrawal.Update.CreatedAt);
+        var persistedOriginal = Assert.Single(restarted.GetHistory(), record => record.Key == original.Key);
+        Assert.Equal(originalState, persistedOriginal.State);
+        Assert.Empty(persistedOriginal.Update.Text);
+        Assert.Null(persistedOriginal.Update.Changes[0].Current!.SpecialInstructions);
+    }
+
+    [Fact]
+    public void Store_rejects_newer_withdrawal_with_changed_identity_or_preparation_content()
+    {
+        using var paths = new FakeAppDataPathProvider();
+        var baseTime = DateTime.UtcNow.AddMinutes(-1);
+        var original = PrinterUpdateTestData.Update(Guid.NewGuid(), createdAt: baseTime);
+        var withdrawal = MakeWithdrawal(original, baseTime.AddSeconds(1));
+        var store = new PrintUpdateJobStore(paths, NullLogger<PrintUpdateJobStore>.Instance);
+        Assert.True(store.AddOrGet(withdrawal, out _, out _));
+        Assert.True(store.TryBegin(withdrawal.Key));
+        Assert.True(store.Complete(withdrawal.Key, PrintUpdateJobState.Withdrawn, "Withdrawn"));
+        Assert.True(store.MarkFinalAcknowledgementQueued(withdrawal.Key));
+        var newer = withdrawal with { CreatedAt = withdrawal.CreatedAt.AddSeconds(1) };
+
+        Assert.False(store.AddOrGet(newer with { OrderId = Guid.NewGuid() }, out _, out var shouldDispatch));
+        Assert.False(shouldDispatch);
+        Assert.False(store.AddOrGet(newer with { Text = "private text" }, out _, out shouldDispatch));
+        Assert.False(shouldDispatch);
+        Assert.False(store.AddOrGet(newer with
+        {
+            Changes = new[]
+            {
+                new PrinterFeedChange
+                {
+                    Kind = KitchenChangeKind.Add,
+                    Current = new OrderItem { Id = "line-1", ProductName = "Burger", Quantity = 1 },
+                },
+            },
+        }, out _, out shouldDispatch));
+        Assert.False(shouldDispatch);
+        Assert.False(store.AddOrGet(withdrawal with { CreatedAt = withdrawal.CreatedAt.AddTicks(-1) },
+            out _, out shouldDispatch));
+        Assert.False(shouldDispatch);
+
+        var saved = Assert.Single(store.GetHistory());
+        Assert.Equal(withdrawal.CreatedAt, saved.Update.CreatedAt);
+        Assert.True(saved.FinalAcknowledgementQueued);
+        Assert.Empty(saved.Update.Text);
+        Assert.Empty(saved.Update.Changes);
+    }
+
     [Fact]
     public void Store_recovers_interrupted_print_as_unknown_and_deduplicates_it_after_restart()
     {
@@ -683,6 +803,15 @@ public sealed class PrinterUpdateJobStoreTests
         Assert.Equal(KitchenPrintStatus.Failed,
             (await failed.PrintUpdateAsync(update, AlwaysAuthorizeUpdate)).Status);
     }
+
+    private static PrinterFeedUpdate MakeWithdrawal(PrinterFeedUpdate original, DateTime createdAt) => original with
+    {
+        Revision = 2,
+        IsWithdrawn = true,
+        Text = string.Empty,
+        Changes = Array.Empty<PrinterFeedChange>(),
+        CreatedAt = createdAt,
+    };
 
     private static int ReserveUnusedPort()
     {

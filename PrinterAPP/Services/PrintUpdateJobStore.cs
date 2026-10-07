@@ -61,6 +61,12 @@ public partial class PrintUpdateJobStore : IUpdateJobStore
                     shouldDispatch = false;
                     return true;
                 }
+                if (TryRefreshWithdrawal(records, existing, update, out var refreshed))
+                {
+                    record = refreshed;
+                    shouldDispatch = refreshed.IsPending;
+                    return true;
+                }
                 // The identity is immutable: a changed duplicate is corruption, not a new job.
                 shouldDispatch = false;
                 if (!PrinterJsonSerialization.AreEquivalent(record.Update, update))

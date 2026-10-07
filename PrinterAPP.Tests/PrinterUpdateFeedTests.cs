@@ -70,6 +70,67 @@ public sealed class PrinterUpdateFeedTests : IDisposable
     }
 
     [Fact]
+    public async Task Failed_newer_withdrawal_save_rolls_back_cache_and_does_not_advance_feed_cursor()
+    {
+        using var paths = new FakeAppDataPathProvider();
+        var original = PrinterUpdateTestData.Update(
+            Guid.NewGuid(), createdAt: DateTime.UtcNow.AddMinutes(-1), text: "private note");
+        var withdrawal = original with
+        {
+            Revision = 2,
+            IsWithdrawn = true,
+            Text = string.Empty,
+            Changes = Array.Empty<PrinterFeedChange>(),
+            CreatedAt = original.CreatedAt.AddSeconds(1),
+        };
+        var seededRecords = new[]
+        {
+            new PrintUpdateJobRecord
+            {
+                Update = original with { IsWithdrawn = true },
+                State = PrintUpdateJobState.Unknown,
+                FirstSeenAt = original.CreatedAt,
+                FailureReason = "ambiguous",
+                FinalAcknowledgementQueued = true,
+            },
+            new PrintUpdateJobRecord
+            {
+                Update = withdrawal,
+                State = PrintUpdateJobState.Withdrawn,
+                FirstSeenAt = withdrawal.CreatedAt,
+                FailureReason = "Withdrawn",
+                FinalAcknowledgementQueued = true,
+            },
+        };
+        var options = new JsonSerializerOptions { Converters = { new JsonStringEnumConverter() } };
+        var jobFile = Path.Combine(paths.AppDataDirectory, "print-update-jobs.json");
+        File.WriteAllText(jobFile, JsonSerializer.Serialize(seededRecords, options));
+
+        var store = new PrintUpdateJobStore(paths, NullLogger<PrintUpdateJobStore>.Instance);
+        Assert.True(store.TryAdvanceUpdateCursor("cursor-before"));
+        Assert.Equal(2, store.GetHistory().Count);
+        File.Delete(store.FilePath);
+        Directory.CreateDirectory(store.FilePath);
+
+        var newerWithdrawal = withdrawal with { CreatedAt = withdrawal.CreatedAt.AddSeconds(1) };
+        var server = AddServer(PrinterUpdateTestData.Feed(new[] { newerWithdrawal }, "cursor-after"));
+        var service = CreateFeed(server, store);
+
+        await service.StartListeningAsync();
+        Assert.True(await WaitUntilAsync(() => server.UpdateCursors.Count > 0));
+        await Task.Delay(100);
+        await service.StopListeningAsync();
+
+        Assert.Equal("cursor-before", store.LoadUpdateCursor());
+        Assert.DoesNotContain("cursor-after", server.UpdateCursors);
+        var unchangedWithdrawal = Assert.Single(store.GetHistory(), record => record.Key == withdrawal.Key);
+        Assert.Equal(withdrawal.CreatedAt, unchangedWithdrawal.Update.CreatedAt);
+        var unchangedOriginal = Assert.Single(store.GetHistory(), record => record.Key == original.Key);
+        Assert.Equal(PrintUpdateJobState.Unknown, unchangedOriginal.State);
+        Assert.Equal("private note", unchangedOriginal.Update.Text);
+    }
+
+    [Fact]
     public void Parser_rejects_updates_with_an_empty_cursor()
     {
         var update = PrinterUpdateTestData.Update();
