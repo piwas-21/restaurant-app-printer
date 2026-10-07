@@ -78,6 +78,32 @@ public sealed class PrinterUpdateJobStoreTests
         Assert.Equal(withdrawal.Key, replayed.Key);
     }
 
+    [Fact]
+    public void Withdrawal_redactor_drops_null_cached_side_item_and_redacts_valid_children()
+    {
+        var cachedItem = JsonSerializer.Deserialize<OrderItem>(
+            """{"SideItems":[null,{"Id":"side-1","ProductName":"Fries","SpecialInstructions":"private note"}]}""");
+        Assert.NotNull(cachedItem);
+
+        var update = PrinterUpdateTestData.Update(Guid.NewGuid(), text: "private correction") with
+        {
+            Changes =
+            [
+                new PrinterFeedChange
+                {
+                    Kind = KitchenChangeKind.InstructionChange,
+                    Previous = cachedItem,
+                    Current = cachedItem,
+                },
+            ],
+        };
+
+        var redacted = PrinterUpdateWithdrawalRedactor.Redact(update);
+        var retainedSideItem = Assert.Single(redacted.Changes[0].Previous!.SideItems!);
+        Assert.Equal("side-1", retainedSideItem.Id);
+        Assert.Null(retainedSideItem.SpecialInstructions);
+    }
+
     [Theory]
     [InlineData(PrintUpdateJobState.Sent)]
     [InlineData(PrintUpdateJobState.Unknown)]

@@ -22,6 +22,20 @@ public static class PrinterFeedUpdateValidation
 
     public static string? Validate(PrinterFeedUpdate update)
     {
+        var identityError = ValidateIdentityAndRouting(update);
+        if (identityError is not null)
+            return identityError;
+
+        // A withdrawal is an identity/tombstone envelope only. It must reach the durable store and
+        // cursor even after its original instructions and structured preparation payload are gone.
+        if (update.IsWithdrawn)
+            return ValidateWithdrawal(update);
+
+        return ValidatePreparation(update);
+    }
+
+    private static string? ValidateIdentityAndRouting(PrinterFeedUpdate update)
+    {
         if (update.JobId == Guid.Empty) return "Update jobId is required.";
         if (update.Revision is not (1 or 2)) return "Update revision is not supported.";
         if (update.IsWithdrawn != (update.Revision == 2))
@@ -34,17 +48,19 @@ public static class PrinterFeedUpdateValidation
             return "Update audience is not Kitchen.";
         if (string.IsNullOrWhiteSpace(update.OrderNumber)) return "Update orderNumber is required.";
         if (update.CreatedAt == default) return "Update createdAt is required.";
+        return null;
+    }
 
-        // A withdrawal is an identity/tombstone envelope only. It must reach the durable store and
-        // cursor even after its original instructions and structured preparation payload are gone.
+    private static string? ValidateWithdrawal(PrinterFeedUpdate update)
+    {
+        if (!string.IsNullOrWhiteSpace(update.Text) || update.Changes is { Count: > 0 })
+            return "Withdrawn updates cannot carry preparation content.";
+        return null;
+    }
+
+    private static string? ValidatePreparation(PrinterFeedUpdate update)
+    {
         var changes = update.Changes ?? Array.Empty<PrinterFeedChange>();
-        if (update.IsWithdrawn)
-        {
-            if (!string.IsNullOrWhiteSpace(update.Text) || changes.Count > 0)
-                return "Withdrawn updates cannot carry preparation content.";
-            return null;
-        }
-
         if (string.IsNullOrWhiteSpace(update.Text) && changes.Count == 0)
             return "Update text or structured changes are required.";
         var changeError = ValidateChanges(changes);

@@ -86,8 +86,8 @@ public partial class PrintUpdateJobStore
         FailureReason = state == PrintUpdateJobState.Withdrawn
             ? "Withdrawn by the backend; no new print will be sent."
             : record.FailureReason,
-        FinalAcknowledgementQueued = state == PrintUpdateJobState.Withdrawn
-            ? false : record.FinalAcknowledgementQueued,
+        FinalAcknowledgementQueued = state != PrintUpdateJobState.Withdrawn
+            && record.FinalAcknowledgementQueued,
     };
 
     private static bool IsRetryable(PrintUpdateJobState state) => state is

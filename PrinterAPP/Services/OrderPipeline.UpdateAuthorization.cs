@@ -7,7 +7,16 @@ public partial class OrderPipeline
 {
     private async Task<AuthorizedUpdateResult> PrintAuthorizedUpdateAsync(PrinterFeedUpdate update)
     {
-        if (update.IsWithdrawn || _updateJobStore?.IsWithdrawalRequested(update.Key) == true)
+        var preflightResult = await CheckInitialUpdateAuthorizationAsync(update);
+        if (preflightResult is not null)
+            return preflightResult;
+
+        return await PrintPreauthorizedUpdateAsync(update);
+    }
+
+    private async Task<AuthorizedUpdateResult?> CheckInitialUpdateAuthorizationAsync(PrinterFeedUpdate update)
+    {
+        if (IsLocallyWithdrawn(update))
             return WithdrawnUpdate();
 
         if (_updateAuthorizationService is null)
@@ -22,33 +31,25 @@ public partial class OrderPipeline
         {
             _logger.LogWarning(ex,
                 "Authorization check failed for update {JobId}; no printer bytes were sent", update.JobId);
-            return _updateJobStore?.IsWithdrawalRequested(update.Key) == true
-                ? WithdrawnUpdate() : AuthorizationUnavailable();
+            return IsLocallyWithdrawn(update) ? WithdrawnUpdate() : AuthorizationUnavailable();
         }
 
         if (authorization.Status == PrinterUpdateAuthorizationStatus.Withdrawn)
-        {
-            if (_updateJobStore?.MarkWithdrawn(update.Key) == false)
-            {
-                _logger.LogError(
-                    "Could not persist withdrawal for update {JobId}; output is blocked pending local recovery",
-                    update.JobId);
-                return new(KitchenPrintOutcome.Unknown, PrintUpdateJobState.Unknown,
-                    "Backend withdrew this update, but local redaction could not be persisted.");
-            }
-
-            return WithdrawnUpdate();
-        }
+            return PersistBackendWithdrawal(update);
 
         // The feed may deliver a withdrawal while the authority request is in flight. Recheck the
         // durable local fence immediately before composing or opening the printer transport.
-        if (_updateJobStore?.IsWithdrawalRequested(update.Key) == true)
+        if (IsLocallyWithdrawn(update))
             return WithdrawnUpdate();
 
-        if (authorization.Status != PrinterUpdateAuthorizationStatus.Authorized)
-            return AuthorizationUnavailable();
+        return authorization.Status == PrinterUpdateAuthorizationStatus.Authorized
+            ? null
+            : AuthorizationUnavailable();
+    }
 
-        var finalAuthorization = authorization;
+    private async Task<AuthorizedUpdateResult> PrintPreauthorizedUpdateAsync(PrinterFeedUpdate update)
+    {
+        var finalAuthorization = PrinterUpdateAuthorizationResult.Authorized;
         var withdrawalPersistenceFailed = false;
         try
         {
@@ -94,6 +95,23 @@ public partial class OrderPipeline
         }
     }
 
+    private AuthorizedUpdateResult? PersistBackendWithdrawal(PrinterFeedUpdate update)
+    {
+        if (_updateJobStore?.MarkWithdrawn(update.Key) is { } persisted && !persisted)
+        {
+            _logger.LogError(
+                "Could not persist withdrawal for update {JobId}; output is blocked pending local recovery",
+                update.JobId);
+            return new(KitchenPrintOutcome.Unknown, PrintUpdateJobState.Unknown,
+                "Backend withdrew this update, but local redaction could not be persisted.");
+        }
+
+        return WithdrawnUpdate();
+    }
+
+    private bool IsLocallyWithdrawn(PrinterFeedUpdate update) =>
+        update.IsWithdrawn || _updateJobStore?.IsWithdrawalRequested(update.Key) == true;
+
     private async Task<PrinterUpdateAuthorizationResult> AuthorizeImmediatelyBeforeSendAsync(
         PrinterFeedUpdate update,
         CancellationToken cancellationToken,
@@ -124,7 +142,7 @@ public partial class OrderPipeline
 
         if (final.Status == PrinterUpdateAuthorizationStatus.Withdrawn)
         {
-            if (_updateJobStore?.MarkWithdrawn(update.Key) == false)
+            if (_updateJobStore?.MarkWithdrawn(update.Key) is { } persisted && !persisted)
             {
                 markWithdrawalPersistenceFailed();
                 final = PrinterUpdateAuthorizationResult.Unavailable;

@@ -11,18 +11,22 @@ public static class PrinterUpdateWithdrawalRedactor
         Changes = (update.Changes ?? Array.Empty<PrinterFeedChange>())
             .Select(change => change with
             {
-                Previous = Redact(change.Previous),
-                Current = Redact(change.Current),
+                Previous = RedactSnapshot(change.Previous),
+                Current = RedactSnapshot(change.Current),
             })
             .ToArray(),
     };
 
-    private static OrderItem? Redact(OrderItem? item)
-    {
-        if (item is null)
-            return null;
+    private static OrderItem? RedactSnapshot(OrderItem? item) =>
+        item is null ? null : Redact(item);
 
-        var copy = item.WithSideItems(item.SideItems?.Select(child => Redact(child)!).ToList());
+    private static OrderItem Redact(OrderItem item)
+    {
+        var sideItems = item.SideItems?
+            .Where(child => child is not null)
+            .Select(Redact)
+            .ToList();
+        var copy = item.WithSideItems(sideItems);
         copy.SpecialInstructions = null;
         return copy;
     }

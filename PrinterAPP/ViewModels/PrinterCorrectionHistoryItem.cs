@@ -18,11 +18,7 @@ public sealed record PrinterCorrectionHistoryItem(PrintUpdateJobRecord Record)
     public string Target => Update.Target.ToString();
     public DateTime FirstSeenAt => Record.FirstSeenAt.ToLocalTime();
     public string JobRevision => $"Job {Update.JobId.ToString("N")[..8]} · revision {Update.Revision}";
-    public string ChangeSummary => Update.IsWithdrawn
-        ? "Withdrawn by the server. Cached correction content was removed."
-        : Limit(Update.Changes.Count > 0
-            ? string.Join("; ", Update.Changes.Select(DescribeChange))
-            : Update.Text);
+    public string ChangeSummary => GetChangeSummary();
     public string FailureReason => Record.FailureReason ?? string.Empty;
     public bool HasFailureReason => !string.IsNullOrWhiteSpace(Record.FailureReason);
 
@@ -38,6 +34,17 @@ public sealed record PrinterCorrectionHistoryItem(PrintUpdateJobRecord Record)
             KitchenChangeKind.InstructionChange => $"Instructions: {current ?? previous ?? "item"}",
             _ => "Review update",
         };
+    }
+
+    private string GetChangeSummary()
+    {
+        if (Update.IsWithdrawn)
+            return "Withdrawn by the server. Cached correction content was removed.";
+
+        var summary = Update.Changes.Count > 0
+            ? string.Join("; ", Update.Changes.Select(DescribeChange))
+            : Update.Text;
+        return Limit(summary);
     }
 
     private static string Limit(string value) => value.Length <= 180 ? value : value[..177] + "…";

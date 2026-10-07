@@ -114,13 +114,12 @@ public sealed class PrinterUpdateAuthorizationService : IPrinterUpdateAuthorizat
 
     private static bool TryProperty(JsonElement element, string name, out JsonElement value)
     {
-        foreach (var property in element.EnumerateObject())
+        var property = element.EnumerateObject().FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase));
+        if (property.Value.ValueKind != JsonValueKind.Undefined)
         {
-            if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
-            {
-                value = property.Value;
-                return true;
-            }
+            value = property.Value;
+            return true;
         }
 
         value = default;
