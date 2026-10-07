@@ -33,6 +33,7 @@ public static partial class TelemetryPayloads
             CashierPrinter = NullIfBlank(config.CashierPrinterName),
             TargetCapabilities = PrinterTargetCapabilityBuilder.Build(config),
             KitchenRoutingMode = config.KitchenRoutingMode,
+            SupportsUpdateAuthorization = true,
         };
     }
 
@@ -147,16 +148,26 @@ public static partial class TelemetryPayloads
             Status = status,
             ReceivedAt = receivedAt,
             PrintedAt = status == DevicePrintStatus.Sent ? DateTime.UtcNow : null,
-            FailureReason = status is DevicePrintStatus.Failed
-                or DevicePrintStatus.NotConfigured
-                or DevicePrintStatus.Unknown
-                ? status.ToString()
-                : null,
+            FailureReason = UpdateAcknowledgementFailureReason(update, status),
             Copies = status == DevicePrintStatus.Sent ? 1 : 0,
             JobId = update.JobId,
             Revision = update.Revision,
             JobType = update.JobType,
         };
+    }
+
+    private static string? UpdateAcknowledgementFailureReason(
+        PrinterFeedUpdate update,
+        DevicePrintStatus status)
+    {
+        if (update.IsWithdrawn)
+            return "Withdrawn";
+
+        return status is DevicePrintStatus.Failed
+            or DevicePrintStatus.NotConfigured
+            or DevicePrintStatus.Unknown
+            ? status.ToString()
+            : null;
     }
 
     /// <summary>Queues a durable lifecycle acknowledgement for an update job.</summary>

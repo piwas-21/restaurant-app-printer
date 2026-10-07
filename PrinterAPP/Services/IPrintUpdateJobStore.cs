@@ -23,6 +23,12 @@ public interface IPrintUpdateJobStore
     /// <summary>Atomically gives one pipeline owner the job.</summary>
     bool TryBegin(PrintUpdateJobKey key);
 
+    /// <summary>Redacts a withdrawn job while retaining its identity and any ambiguous print state.</summary>
+    bool MarkWithdrawn(PrintUpdateJobKey key) => false;
+
+    /// <summary>True after server withdrawal has invalidated a locally cached revision-one payload.</summary>
+    bool IsWithdrawalRequested(PrintUpdateJobKey key) => false;
+
     /// <summary>Records the outcome and persists the history entry.</summary>
     bool Complete(PrintUpdateJobKey key, PrintUpdateJobState state, string? failureReason = null);
 

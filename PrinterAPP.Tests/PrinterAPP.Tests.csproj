@@ -59,6 +59,10 @@
     <!-- Resilient per-order feed parser (MAUI-free): one bad order must not wedge the whole poll batch. -->
     <Compile Include="..\PrinterAPP\Services\OrderFeedParser.cs" Link="Linked\OrderFeedParser.cs" />
     <Compile Include="..\PrinterAPP\Services\PrinterFeedUpdateValidation.cs" Link="Linked\PrinterFeedUpdateValidation.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrinterUpdateWithdrawalRedactor.cs" Link="Linked\PrinterUpdateWithdrawalRedactor.cs" />
+    <Compile Include="..\PrinterAPP\Services\IPrinterUpdateAuthorizationService.cs" Link="Linked\IPrinterUpdateAuthorizationService.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrinterUpdateAuthorizationResult.cs" Link="Linked\PrinterUpdateAuthorizationResult.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrinterUpdateAuthorizationService.cs" Link="Linked\PrinterUpdateAuthorizationService.cs" />
     <Compile Include="..\PrinterAPP\Services\PrinterJsonSerialization.cs" Link="Linked\PrinterJsonSerialization.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderRoutingStateValidation.cs" Link="Linked\OrderRoutingStateValidation.cs" />
     <!-- Config storage + migration (MAUI-free by design; see PrinterConfigurationStore.cs). -->
@@ -96,6 +100,8 @@
     <Compile Include="..\PrinterAPP\Services\PrintAckOutbox.cs" Link="Linked\PrintAckOutbox.cs" />
     <Compile Include="..\PrinterAPP\Services\IPrintUpdateJobStore.cs" Link="Linked\IPrintUpdateJobStore.cs" />
     <Compile Include="..\PrinterAPP\Services\PrintUpdateJobStore.cs" Link="Linked\PrintUpdateJobStore.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrintUpdateJobStore.Withdrawal.cs" Link="Linked\PrintUpdateJobStore.Withdrawal.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrintUpdateJobStore.Retention.cs" Link="Linked\PrintUpdateJobStore.Retention.cs" />
     <Compile Include="..\PrinterAPP\Services\PrintUpdateJobStore.Cursor.cs" Link="Linked\PrintUpdateJobStore.Cursor.cs" />
     <Compile Include="..\PrinterAPP\Services\IPrinterCorrectionCopyService.cs" Link="Linked\IPrinterCorrectionCopyService.cs" />
     <Compile Include="..\PrinterAPP\Services\PrinterCorrectionCopyService.cs" Link="Linked\PrinterCorrectionCopyService.cs" />
@@ -128,6 +134,7 @@
     <Compile Include="..\PrinterAPP\Services\IOrderPipeline.cs" Link="Linked\IOrderPipeline.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderPipeline.cs" Link="Linked\OrderPipeline.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderPipeline.Processing.cs" Link="Linked\OrderPipeline.Processing.cs" />
+    <Compile Include="..\PrinterAPP\Services\OrderPipeline.UpdateAuthorization.cs" Link="Linked\OrderPipeline.UpdateAuthorization.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderPipeline.Printing.cs" Link="Linked\OrderPipeline.Printing.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderPipeline.Events.cs" Link="Linked\OrderPipeline.Events.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderPipeline.Routing.cs" Link="Linked\OrderPipeline.Routing.cs" />

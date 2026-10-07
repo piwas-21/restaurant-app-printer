@@ -64,6 +64,7 @@ public sealed class PrinterCorrectionHistoryViewModel : INotifyPropertyChanged
 
     public bool CanCopy(PrintUpdateJobKey key) => _jobStore.GetHistory()
         .FirstOrDefault(record => record.Key == key) is { } record
+        && !record.Update.IsWithdrawn
         && PrinterCorrectionCopyService.IsCopySafeState(record.State);
 
     public Task<PrinterCorrectionCopyResult> PrintCopyAsync(
@@ -73,6 +74,9 @@ public sealed class PrinterCorrectionHistoryViewModel : INotifyPropertyChanged
 
     public static string CopyResultMessage(PrinterCorrectionCopyResult result)
     {
+        if (result.WasWithdrawn)
+            return "The server withdrew this correction. No COPY was sent.";
+
         if (!result.WasEligible)
         {
             return result.OriginalState is null

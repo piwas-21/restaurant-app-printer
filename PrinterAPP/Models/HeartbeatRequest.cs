@@ -23,4 +23,6 @@ public class HeartbeatRequest
     public string? CashierPrinter { get; set; }
     public List<PrinterTargetCapability>? TargetCapabilities { get; set; }
     public KitchenRoutingMode? KitchenRoutingMode { get; set; }
+    /// <summary>True only for clients that enforce server authorization before correction output.</summary>
+    public bool SupportsUpdateAuthorization { get; set; }
 }

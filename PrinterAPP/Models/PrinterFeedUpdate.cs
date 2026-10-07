@@ -3,14 +3,15 @@ using System.Text.Json.Serialization;
 namespace PrinterAPP.Models;
 
 /// <summary>
-/// One additive printer-feed update job. The backend currently emits kitchen operational notes as
-/// immutable revision-one jobs. The job identity is <see cref="JobId"/>, <see cref="Revision"/> and
-/// <see cref="Target"/>; it is never derived from note text or timestamps.
+/// One additive printer-feed update job. Revision one carries an immutable kitchen update; revision
+/// two may withdraw its private preparation payload. The job identity is <see cref="JobId"/>,
+/// <see cref="Revision"/> and <see cref="Target"/>; it is never derived from note text or timestamps.
 /// </summary>
 public sealed record PrinterFeedUpdate
 {
     public Guid JobId { get; init; }
     public int Revision { get; init; }
+    public bool IsWithdrawn { get; init; }
     public DevicePrintJobType JobType { get; init; } = DevicePrintJobType.Update;
     public DevicePrintTarget Target { get; init; } = DevicePrintTarget.General;
     public Guid OrderId { get; init; }

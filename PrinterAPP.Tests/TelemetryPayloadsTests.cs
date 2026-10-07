@@ -98,6 +98,7 @@ public class TelemetryPayloadsTests
 
         Assert.Equal(5, heartbeat.TargetCapabilities!.Count);
         Assert.Equal(KitchenRoutingMode.Stations, heartbeat.KitchenRoutingMode);
+        Assert.True(heartbeat.SupportsUpdateAuthorization);
         Assert.Equal("cashier", heartbeat.TargetCapabilities
             .Single(capability => capability.Target == DevicePrintTarget.Cashier).PrinterName);
         Assert.Equal("front", heartbeat.TargetCapabilities

@@ -12,6 +12,73 @@ namespace PrinterAPP.Tests;
 public sealed class PrinterUpdateJobStoreTests
 {
     [Fact]
+    public void Withdrawal_tombstone_redacts_persisted_text_but_preserves_structural_identity_and_amounts()
+    {
+        using var paths = new FakeAppDataPathProvider();
+        var store = new PrintUpdateJobStore(paths, NullLogger<PrintUpdateJobStore>.Instance);
+        var update = PrinterUpdateTestData.Update(Guid.NewGuid(), text: "customer asked to remove onions") with
+        {
+            Changes = new[]
+            {
+                new PrinterFeedChange
+                {
+                    Kind = KitchenChangeKind.InstructionChange,
+                    Previous = new OrderItem
+                    {
+                        Id = "line-1", ProductName = "Burger", Quantity = 2,
+                        UnitPrice = 12.50m, ItemTotal = 25m, SpecialInstructions = "no onions",
+                        SideItems = [new OrderItem
+                        {
+                            Id = "side-1", ProductName = "Fries", Quantity = 2,
+                            UnitPrice = 3m, ItemTotal = 6m, SpecialInstructions = "extra crispy",
+                        }],
+                    },
+                    Current = new OrderItem
+                    {
+                        Id = "line-1", ProductName = "Burger", Quantity = 2,
+                        UnitPrice = 12.50m, ItemTotal = 25m, SpecialInstructions = "no onions",
+                    },
+                },
+            },
+        };
+        Assert.True(store.AddOrGet(update, out _, out _));
+        var withdrawal = update with
+        {
+            Revision = 2,
+            IsWithdrawn = true,
+            Text = string.Empty,
+            Changes = Array.Empty<PrinterFeedChange>(),
+            CreatedAt = update.CreatedAt.AddSeconds(1),
+        };
+
+        Assert.True(store.AddOrGet(withdrawal, out _, out var shouldDispatch));
+        Assert.True(shouldDispatch);
+        var original = Assert.Single(store.GetHistory(), record => record.Key == update.Key);
+        Assert.Equal(PrintUpdateJobState.Withdrawn, original.State);
+        Assert.True(original.Update.IsWithdrawn);
+        Assert.Empty(original.Update.Text);
+        var item = original.Update.Changes[0].Previous!;
+        Assert.Equal("line-1", item.Id);
+        Assert.Equal("Burger", item.ProductName);
+        Assert.Equal(2, item.Quantity);
+        Assert.Equal(12.50m, item.UnitPrice);
+        Assert.Equal(25m, item.ItemTotal);
+        Assert.Null(item.SpecialInstructions);
+        var side = Assert.Single(item.SideItems!);
+        Assert.Equal("side-1", side.Id);
+        Assert.Equal(3m, side.UnitPrice);
+        Assert.Null(side.SpecialInstructions);
+
+        var restarted = new PrintUpdateJobStore(paths, NullLogger<PrintUpdateJobStore>.Instance);
+        var withdrawalRecord = Assert.Single(restarted.GetHistory(), record => record.Key == withdrawal.Key);
+        Assert.True(withdrawalRecord.Update.IsWithdrawn);
+        Assert.Empty(withdrawalRecord.Update.Changes);
+        Assert.True(restarted.AddOrGet(update, out var replayed, out shouldDispatch));
+        Assert.False(shouldDispatch);
+        Assert.Equal(withdrawal.Key, replayed.Key);
+    }
+
+    [Fact]
     public void Store_recovers_interrupted_print_as_unknown_and_deduplicates_it_after_restart()
     {
         using var paths = new FakeAppDataPathProvider();
@@ -586,23 +653,25 @@ public sealed class PrinterUpdateJobStoreTests
             NullLogger<OrderPrintService>.Instance, paths);
         Assert.Equal(
             KitchenPrintStatus.Unknown,
-            (await unknown.PrintUpdateAsync(update with { Audience = "Staff" })).Status);
+            (await unknown.PrintUpdateAsync(update with { Audience = "Staff" }, AlwaysAuthorizeUpdate)).Status);
         Assert.Equal(
             KitchenPrintStatus.Unknown,
             (await unknown.PrintUpdateAsync(update with
             {
                 Changes = new[] { new PrinterFeedChange { Kind = KitchenChangeKind.Add } },
-            })).Status);
+            }, AlwaysAuthorizeUpdate)).Status);
 
         var notConfigured = new OrderPrintService(new MarketplaceReceiptComposer(),
             new ConfigPrinter(new PrinterConfiguration { KitchenAutoPrint = true }),
             new NoopRequestLogService(), NullLogger<OrderPrintService>.Instance, paths);
-        Assert.Equal(KitchenPrintStatus.NotConfigured, (await notConfigured.PrintUpdateAsync(update)).Status);
+        Assert.Equal(KitchenPrintStatus.NotConfigured,
+            (await notConfigured.PrintUpdateAsync(update, AlwaysAuthorizeUpdate)).Status);
 
         var skipped = new OrderPrintService(new MarketplaceReceiptComposer(),
             new ConfigPrinter(new PrinterConfiguration { KitchenAutoPrint = false }),
             new NoopRequestLogService(), NullLogger<OrderPrintService>.Instance, paths);
-        Assert.Equal(KitchenPrintStatus.Skipped, (await skipped.PrintUpdateAsync(update)).Status);
+        Assert.Equal(KitchenPrintStatus.Skipped,
+            (await skipped.PrintUpdateAsync(update, AlwaysAuthorizeUpdate)).Status);
 
         var unusedPort = ReserveUnusedPort();
         var failed = new OrderPrintService(new MarketplaceReceiptComposer(),
@@ -611,7 +680,8 @@ public sealed class PrinterUpdateJobStoreTests
                 KitchenAutoPrint = true,
                 DefaultKitchenPrinterName = $"127.0.0.1:{unusedPort}",
             }), new NoopRequestLogService(), NullLogger<OrderPrintService>.Instance, paths);
-        Assert.Equal(KitchenPrintStatus.Failed, (await failed.PrintUpdateAsync(update)).Status);
+        Assert.Equal(KitchenPrintStatus.Failed,
+            (await failed.PrintUpdateAsync(update, AlwaysAuthorizeUpdate)).Status);
     }
 
     private static int ReserveUnusedPort()
@@ -622,6 +692,9 @@ public sealed class PrinterUpdateJobStoreTests
         listener.Stop();
         return port;
     }
+
+    private static Task<PrinterUpdateAuthorizationResult> AlwaysAuthorizeUpdate(CancellationToken _) =>
+        Task.FromResult(PrinterUpdateAuthorizationResult.Authorized);
 
     private sealed class FixedPaths : IAppDataPathProvider
     {

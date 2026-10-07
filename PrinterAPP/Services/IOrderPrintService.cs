@@ -30,5 +30,6 @@ public interface IOrderPrintService
     /// <summary>Prints one additive UPDATE job to its resolved General/Default destination.</summary>
     Task<KitchenPrintOutcome> PrintUpdateAsync(
         PrinterFeedUpdate update,
+        Func<CancellationToken, Task<PrinterUpdateAuthorizationResult>> authorizeImmediatelyBeforeSend,
         CancellationToken cancellationToken = default);
 }

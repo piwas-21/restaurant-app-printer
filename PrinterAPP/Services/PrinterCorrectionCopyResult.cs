@@ -5,4 +5,5 @@ namespace PrinterAPP.Services;
 public sealed record PrinterCorrectionCopyResult(
     bool WasEligible,
     PrintUpdateJobState? OriginalState,
-    KitchenPrintOutcome? Outcome);
+    KitchenPrintOutcome? Outcome,
+    bool WasWithdrawn = false);
