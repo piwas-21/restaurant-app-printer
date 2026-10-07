@@ -45,9 +45,28 @@ public partial class PrintUpdateJobStore : IUpdateJobStore
         lock (_gate)
         {
             var records = EnsureLoaded();
+            var withdrawalKey = new PrintUpdateJobKey(update.JobId, 2, update.Target);
+            if (!update.IsWithdrawn && records.TryGetValue(withdrawalKey, out var withdrawal))
+            {
+                record = withdrawal;
+                shouldDispatch = false;
+                return true;
+            }
+
             if (records.TryGetValue(update.Key, out var existing))
             {
                 record = existing;
+                if (existing.Update.IsWithdrawn && update.Revision == 1)
+                {
+                    shouldDispatch = false;
+                    return true;
+                }
+                if (TryRefreshWithdrawal(records, existing, update, out var refreshed))
+                {
+                    record = refreshed;
+                    shouldDispatch = refreshed.IsPending;
+                    return true;
+                }
                 // The identity is immutable: a changed duplicate is corruption, not a new job.
                 shouldDispatch = false;
                 if (!PrinterJsonSerialization.AreEquivalent(record.Update, update))
@@ -56,6 +75,9 @@ public partial class PrintUpdateJobStore : IUpdateJobStore
                 return true;
             }
             var before = new Dictionary<PrintUpdateJobKey, PrintUpdateJobRecord>(records);
+            if (update.IsWithdrawn)
+                RedactOriginalRevision(records, update);
+
             record = new PrintUpdateJobRecord
             {
                 Update = update,
@@ -74,6 +96,7 @@ public partial class PrintUpdateJobStore : IUpdateJobStore
             return true;
         }
     }
+
     public IReadOnlyList<PrintUpdateJobRecord> GetPending()
     {
         lock (_gate)
@@ -222,24 +245,6 @@ public partial class PrintUpdateJobStore : IUpdateJobStore
         }
 
         return _records;
-    }
-
-    private static void Trim(Dictionary<PrintUpdateJobKey, PrintUpdateJobRecord> records)
-    {
-        if (records.Count <= MaxStored)
-            return;
-
-        // Never evict retryable or ambiguous work, or a final outcome whose acknowledgement is not
-        // durable in the outbox. Only acknowledged Sent/Skipped history is bounded.
-        var removable = records.Values
-            .Where(record => record.FinalAcknowledgementQueued
-                && (record.State is PrintUpdateJobState.Sent or PrintUpdateJobState.Skipped))
-            .OrderBy(record => record.FirstSeenAt)
-            .Take(Math.Max(0, records.Count - MaxStored))
-            .Select(record => record.Key)
-            .ToList();
-        foreach (var key in removable)
-            records.Remove(key);
     }
 
     private bool SaveLocked()

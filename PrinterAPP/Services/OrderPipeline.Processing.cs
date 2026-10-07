@@ -73,37 +73,15 @@ public partial class OrderPipeline
             return;
         }
 
-        KitchenPrintOutcome outcome;
-        try
-        {
-            outcome = await _orderPrintService.PrintUpdateAsync(update, CancellationToken.None);
-        }
-        catch (Exception ex)
-        {
-            // A thrown print call may have failed after handing bytes to the transport. Treat it as
-            // ambiguous and wait for operator review instead of automatically duplicating a ticket.
-            _logger.LogError(ex, "Update job {JobId} failed during printing with an unknown delivery state", update.JobId);
-            outcome = KitchenPrintOutcome.Unknown;
-        }
-
-        var state = outcome.Status switch
-        {
-            KitchenPrintStatus.Sent => PrintUpdateJobState.Sent,
-            KitchenPrintStatus.Skipped => PrintUpdateJobState.Skipped,
-            KitchenPrintStatus.NotConfigured => PrintUpdateJobState.NotConfigured,
-            KitchenPrintStatus.Unknown => PrintUpdateJobState.Unknown,
-            _ => PrintUpdateJobState.Failed,
-        };
+        var printResult = await PrintAuthorizedUpdateAsync(update);
+        var outcome = printResult.Outcome;
+        var state = printResult.State;
         if (_updateJobStore is not null)
         {
             var completed = TryCompleteUpdate(
                 update.Key,
                 state,
-                state is PrintUpdateJobState.Failed
-                    or PrintUpdateJobState.NotConfigured
-                    or PrintUpdateJobState.Unknown
-                    ? outcome.Status.ToString()
-                    : null);
+                printResult.FailureReason);
             if (!completed)
             {
                 // The outcome could not be saved locally. The store holds this job as Unknown (and
@@ -116,6 +94,8 @@ public partial class OrderPipeline
         // This is deliberately outside the print/bookkeeping try blocks. An outbox write failure
         // must not turn a durable Sent/Unknown outcome into Failed and cause another physical send.
         await QueueFinalAcknowledgementAsync(update, outcome, receivedAt);
+        if (update.IsWithdrawn)
+            await QueuePendingFinalAcknowledgementsAsync();
     }
 
     private async Task QueueFinalAcknowledgementAsync(
@@ -125,8 +105,11 @@ public partial class OrderPipeline
     {
         try
         {
+            var acknowledgementUpdate = _updateJobStore?.GetHistory()
+                .FirstOrDefault(record => record.Key == update.Key)?.Update ?? update;
             await _printAckOutbox.EnqueueAsync(
-                new[] { TelemetryPayloads.UpdateAck(update, outcome, receivedAt) }, CancellationToken.None);
+                new[] { TelemetryPayloads.UpdateAck(acknowledgementUpdate, outcome, receivedAt) },
+                CancellationToken.None);
             if (_updateJobStore is not null
                 && !_updateJobStore.MarkFinalAcknowledgementQueued(update.Key))
             {
@@ -155,6 +138,7 @@ public partial class OrderPipeline
                 PrintUpdateJobState.Skipped => KitchenPrintOutcome.Skipped,
                 PrintUpdateJobState.NotConfigured => KitchenPrintOutcome.NotConfigured,
                 PrintUpdateJobState.Unknown => KitchenPrintOutcome.Unknown,
+                PrintUpdateJobState.Withdrawn => KitchenPrintOutcome.Skipped,
                 _ => KitchenPrintOutcome.Failed,
             };
             await QueueFinalAcknowledgementAsync(record.Update, outcome, DateTime.UtcNow);

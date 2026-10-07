@@ -154,6 +154,7 @@ public sealed class EventStreamingServicePrintRecoveryTests
 
         public Task<KitchenPrintOutcome> PrintUpdateAsync(
             PrinterFeedUpdate update,
+            Func<CancellationToken, Task<PrinterUpdateAuthorizationResult>> authorizeImmediatelyBeforeSend,
             CancellationToken cancellationToken = default) => Task.FromResult(KitchenPrintOutcome.Sent);
 
         public Task<KitchenPrintOutcome> PrintUpdateCopyAsync(

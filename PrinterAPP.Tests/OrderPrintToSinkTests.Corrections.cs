@@ -52,7 +52,7 @@ public partial class OrderPrintToSinkTests
         Assert.Equal(Guid.Parse("55555555-5555-4555-8555-555555555555"), update.AmendmentId);
         Assert.Equal(KitchenChangeKind.Replace, Assert.Single(update.Changes).Kind);
 
-        var outcome = await service.PrintUpdateAsync(update, cancellation.Token);
+        var outcome = await service.PrintUpdateAsync(update, AlwaysAuthorize, cancellation.Token);
         Assert.Equal(KitchenPrintStatus.Sent, outcome.Status);
         var correction = await destination.ReadTicketAsync(cancellation.Token);
         Assert.Contains("\u001b@", correction, StringComparison.Ordinal);
@@ -88,7 +88,7 @@ public partial class OrderPrintToSinkTests
         Assert.True(parsed.IsSuccess, parsed.FailureMessage);
         var valid = Assert.Single(parsed.Updates);
         var missingSnapshot = valid with { Changes = [valid.Changes[0] with { Previous = null }] };
-        var outcome = await service.PrintUpdateAsync(missingSnapshot);
+        var outcome = await service.PrintUpdateAsync(missingSnapshot, AlwaysAuthorize);
         Assert.Equal(KitchenPrintStatus.Unknown, outcome.Status);
         Assert.False(destination.ReceivedAnything);
     }
@@ -119,6 +119,7 @@ public partial class OrderPrintToSinkTests
             jobStore,
             new StubPrinterService(config),
             new PrinterOutputService(NullLogger<PrinterOutputService>.Instance),
+            new AuthorizedUpdateAuthorizationService(),
             new CapturingRequestLogService(),
             NullLogger<PrinterCorrectionCopyService>.Instance);
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
@@ -135,6 +136,59 @@ public partial class OrderPrintToSinkTests
         var unchanged = Assert.Single(jobStore.GetHistory());
         Assert.Equal(PrintUpdateJobState.Skipped, unchanged.State);
         Assert.True(unchanged.FinalAcknowledgementQueued);
+    }
+
+    [Fact]
+    public async Task Copy_rechecks_authority_immediately_before_output_and_redacts_withdrawn_history()
+    {
+        using var destination = new Sink();
+        using var paths = new TempPathProvider();
+        var update = PrinterUpdateTestData.Update(Guid.NewGuid(), target: DevicePrintTarget.FrontKitchen,
+            text: "customer asked to remove onions");
+        var jobStore = new PrintUpdateJobStore(paths, NullLogger<PrintUpdateJobStore>.Instance);
+        Assert.True(jobStore.AddOrGet(update, out _, out _));
+        Assert.True(jobStore.TryBegin(update.Key));
+        Assert.True(jobStore.Complete(update.Key, PrintUpdateJobState.Unknown, "Check the printer."));
+
+        var copyService = new PrinterCorrectionCopyService(
+            jobStore,
+            new StubPrinterService(new PrinterConfiguration { FrontKitchenPrinterName = destination.PrinterName }),
+            new PrinterOutputService(NullLogger<PrinterOutputService>.Instance),
+            new AuthorizedUpdateAuthorizationService(PrinterUpdateAuthorizationResult.Withdrawn),
+            new CapturingRequestLogService(),
+            NullLogger<PrinterCorrectionCopyService>.Instance);
+
+        var result = await copyService.PrintCopyAsync(update.Key);
+
+        Assert.False(result.WasEligible);
+        Assert.True(result.WasWithdrawn);
+        Assert.Equal(PrintUpdateJobState.Unknown, result.OriginalState);
+        Assert.False(destination.ReceivedAnything);
+        var saved = Assert.Single(jobStore.GetHistory());
+        Assert.Equal(PrintUpdateJobState.Unknown, saved.State);
+        Assert.True(saved.Update.IsWithdrawn);
+        Assert.Empty(saved.Update.Text);
+    }
+
+    [Fact]
+    public async Task Automatic_output_is_blocked_when_final_authorization_is_unavailable()
+    {
+        using var destination = new Sink();
+        using var paths = new TempPathProvider();
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
+            new StubPrinterService(new PrinterConfiguration
+            {
+                FrontKitchenPrinterName = destination.PrinterName,
+                FrontKitchenAutoPrint = true,
+            }), new CapturingRequestLogService(), NullLogger<OrderPrintService>.Instance, paths);
+        var update = Assert.Single(OrderFeedParser.Parse(
+            ReplacementCorrectionEnvelope(DevicePrintTarget.FrontKitchen)).Updates);
+
+        var outcome = await service.PrintUpdateAsync(update,
+            _ => Task.FromResult(PrinterUpdateAuthorizationResult.Unavailable));
+
+        Assert.Equal(KitchenPrintStatus.Failed, outcome.Status);
+        Assert.False(destination.ReceivedAnything);
     }
 
     [Theory]
@@ -160,6 +214,7 @@ public partial class OrderPrintToSinkTests
             jobStore,
             new StubPrinterService(new PrinterConfiguration { FrontKitchenPrinterName = destination.PrinterName }),
             new PrinterOutputService(NullLogger<PrinterOutputService>.Instance),
+            new AuthorizedUpdateAuthorizationService(),
             new CapturingRequestLogService(),
             NullLogger<PrinterCorrectionCopyService>.Instance);
 
@@ -193,4 +248,21 @@ public partial class OrderPrintToSinkTests
             "replacementDispatchedOrderId":"66666666-6666-4666-8666-666666666666","replacementDispatchedOrderNumber":"NEW-42"}]
         }],"nextUpdateCursor":"correction-cursor","hasMoreUpdates":false}}
         """;
+
+    private static Task<PrinterUpdateAuthorizationResult> AlwaysAuthorize(CancellationToken _) =>
+        Task.FromResult(PrinterUpdateAuthorizationResult.Authorized);
+
+    private sealed class AuthorizedUpdateAuthorizationService : IPrinterUpdateAuthorizationService
+    {
+        private readonly PrinterUpdateAuthorizationResult _result;
+
+        public AuthorizedUpdateAuthorizationService(
+            PrinterUpdateAuthorizationResult? result = null) =>
+            _result = result ?? PrinterUpdateAuthorizationResult.Authorized;
+
+        public Task<PrinterUpdateAuthorizationResult> CheckAsync(
+            PrinterFeedUpdate update,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult(_result);
+    }
 }

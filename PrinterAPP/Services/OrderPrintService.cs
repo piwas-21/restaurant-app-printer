@@ -198,9 +198,11 @@ public class OrderPrintService : IOrderPrintService
     /// </summary>
     public async Task<KitchenPrintOutcome> PrintUpdateAsync(
         PrinterFeedUpdate update,
+        Func<CancellationToken, Task<PrinterUpdateAuthorizationResult>> authorizeImmediatelyBeforeSend,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(update);
+        ArgumentNullException.ThrowIfNull(authorizeImmediatelyBeforeSend);
         var validationError = PrinterFeedUpdateValidation.Validate(update);
         if (validationError is not null)
         {
@@ -226,6 +228,27 @@ public class OrderPrintService : IOrderPrintService
         }
 
         var content = UpdateReceiptComposer.Compose(update);
+        PrinterUpdateAuthorizationResult authorization;
+        try
+        {
+            authorization = await authorizeImmediatelyBeforeSend(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Authorization check failed immediately before update {JobId}; no printer bytes were sent",
+                update.JobId);
+            return KitchenPrintOutcome.Failed;
+        }
+
+        if (authorization.Status != PrinterUpdateAuthorizationStatus.Authorized)
+        {
+            _logger.LogInformation("Update job {JobId} was not authorized for output: {Status}",
+                update.JobId, authorization.Status);
+            return authorization.Status == PrinterUpdateAuthorizationStatus.Withdrawn
+                ? KitchenPrintOutcome.Skipped : KitchenPrintOutcome.Failed;
+        }
+
         var outcome = await _printerOutputService.SendAsync(printerName, content, cancellationToken);
         _logger.LogInformation("Update job {JobId} to {Printer}: {Result}",
             update.JobId, destination.PrinterName, outcome);

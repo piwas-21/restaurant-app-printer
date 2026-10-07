@@ -68,6 +68,11 @@ namespace PrinterAPP
             builder.Services.AddSingleton<IPrinterService, WindowsPrinterService>();
             builder.Services.AddSingleton<IRequestLogService, RequestLogService>();
             builder.Services.AddSingleton<IEventStreamingService, EventStreamingService>();
+            builder.Services.AddSingleton<IPrinterUpdateAuthorizationService>(sp =>
+                new PrinterUpdateAuthorizationService(
+                    new HttpClient { Timeout = TimeSpan.FromSeconds(10) },
+                    sp.GetRequiredService<IPrinterService>(),
+                    sp.GetRequiredService<ILogger<PrinterUpdateAuthorizationService>>()));
             builder.Services.AddSingleton<IMarketplaceReceiptComposer, MarketplaceReceiptComposer>();
             builder.Services.AddSingleton<IPrinterOutputService, PrinterOutputService>();
             builder.Services.AddSingleton<IPrinterCorrectionCopyService, PrinterCorrectionCopyService>();

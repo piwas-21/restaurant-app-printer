@@ -23,4 +23,7 @@ public enum PrintUpdateJobState
 
     /// <summary>The job could not be safely interpreted or delivery may have occurred. Operator review is required.</summary>
     Unknown = 7,
+
+    /// <summary>The backend withdrew the job; its payload is redacted and it cannot be retried or copied.</summary>
+    Withdrawn = 8,
 }

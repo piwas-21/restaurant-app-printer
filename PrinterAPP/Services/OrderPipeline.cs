@@ -12,6 +12,7 @@ public partial class OrderPipeline : IOrderPipeline
     private readonly IOrderHistoryService _orderHistoryService;
     private readonly IPrintAckOutbox _printAckOutbox;
     private readonly IPrintUpdateJobStore? _updateJobStore;
+    private readonly IPrinterUpdateAuthorizationService? _updateAuthorizationService;
     private readonly ITelemetryScheduler _telemetryScheduler;
     private readonly IPrinterService _printerService;
     private readonly IDeviceIdentityService _deviceIdentity;
@@ -58,13 +59,15 @@ public partial class OrderPipeline : IOrderPipeline
         IDeviceIdentityService deviceIdentity,
         IRequestLogService requestLogService,
         ILogger<OrderPipeline> logger,
-        IPrintUpdateJobStore? updateJobStore = null)
+        IPrintUpdateJobStore? updateJobStore = null,
+        IPrinterUpdateAuthorizationService? updateAuthorizationService = null)
     {
         _feed = feed;
         _orderPrintService = orderPrintService;
         _orderHistoryService = orderHistoryService;
         _printAckOutbox = printAckOutbox;
         _updateJobStore = updateJobStore;
+        _updateAuthorizationService = updateAuthorizationService;
         _telemetryScheduler = telemetryScheduler;
         _printerService = printerService;
         _deviceIdentity = deviceIdentity;

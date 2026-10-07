@@ -64,6 +64,9 @@
     <Compile Include="..\PrinterAPP\Services\PrintAckOutbox.cs" Link="Linked\PrintAckOutbox.cs" />
     <Compile Include="..\PrinterAPP\Services\IPrintUpdateJobStore.cs" Link="Linked\IPrintUpdateJobStore.cs" />
     <Compile Include="..\PrinterAPP\Services\PrintUpdateJobStore.cs" Link="Linked\PrintUpdateJobStore.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrintUpdateJobStore.Retention.cs" Link="Linked\PrintUpdateJobStore.Retention.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrintUpdateJobStore.Withdrawal.cs" Link="Linked\PrintUpdateJobStore.Withdrawal.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrinterUpdateWithdrawalRedactor.cs" Link="Linked\PrinterUpdateWithdrawalRedactor.cs" />
     <Compile Include="..\PrinterAPP\Services\IAppDataPathProvider.cs" Link="Linked\IAppDataPathProvider.cs" />
     <!-- Request-log boundary, now MAUI-free (A0): the LogType→Color map moved to a UI converter, so the
          interface + LogEntry source-link into net10.0. This unblocks source-linking EventStreamingService

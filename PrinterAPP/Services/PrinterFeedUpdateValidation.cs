@@ -22,8 +22,24 @@ public static class PrinterFeedUpdateValidation
 
     public static string? Validate(PrinterFeedUpdate update)
     {
+        var identityError = ValidateIdentityAndRouting(update);
+        if (identityError is not null)
+            return identityError;
+
+        // A withdrawal is an identity/tombstone envelope only. It must reach the durable store and
+        // cursor even after its original instructions and structured preparation payload are gone.
+        if (update.IsWithdrawn)
+            return ValidateWithdrawal(update);
+
+        return ValidatePreparation(update);
+    }
+
+    private static string? ValidateIdentityAndRouting(PrinterFeedUpdate update)
+    {
         if (update.JobId == Guid.Empty) return "Update jobId is required.";
-        if (update.Revision <= 0) return "Update revision must be positive.";
+        if (update.Revision is not (1 or 2)) return "Update revision is not supported.";
+        if (update.IsWithdrawn != (update.Revision == 2))
+            return "Only revision 2 may withdraw a printer update.";
         if (update.JobType != DevicePrintJobType.Update) return "Update jobType is not Update.";
         if (!UpdateJobRouting.IsUpdateTarget(update.Target))
             return "Update target is not a kitchen destination.";
@@ -31,13 +47,24 @@ public static class PrinterFeedUpdateValidation
         if (!string.Equals(update.Audience, "Kitchen", StringComparison.OrdinalIgnoreCase))
             return "Update audience is not Kitchen.";
         if (string.IsNullOrWhiteSpace(update.OrderNumber)) return "Update orderNumber is required.";
+        if (update.CreatedAt == default) return "Update createdAt is required.";
+        return null;
+    }
 
+    private static string? ValidateWithdrawal(PrinterFeedUpdate update)
+    {
+        if (!string.IsNullOrWhiteSpace(update.Text) || update.Changes is { Count: > 0 })
+            return "Withdrawn updates cannot carry preparation content.";
+        return null;
+    }
+
+    private static string? ValidatePreparation(PrinterFeedUpdate update)
+    {
         var changes = update.Changes ?? Array.Empty<PrinterFeedChange>();
         if (string.IsNullOrWhiteSpace(update.Text) && changes.Count == 0)
             return "Update text or structured changes are required.";
         var changeError = ValidateChanges(changes);
         if (changeError is not null) return changeError;
-        if (update.CreatedAt == default) return "Update createdAt is required.";
         return null;
     }
 
@@ -54,9 +81,11 @@ public static class PrinterFeedUpdateValidation
                 KitchenChangeKind.Void => IsValidSnapshot(change.Previous) && change.Current is null,
                 KitchenChangeKind.Replace =>
                     IsValidSnapshot(change.Previous) && IsValidSnapshot(change.Current),
-                KitchenChangeKind.InstructionChange => IsValidSnapshot(change.Previous)
-                    && IsValidSnapshot(change.Current)
-                    && HaveSameInstructionTarget(change.Previous, change.Current),
+                KitchenChangeKind.InstructionChange => change.Previous is { } previous
+                    && change.Current is { } current
+                    && IsValidSnapshot(previous)
+                    && IsValidSnapshot(current)
+                    && HaveSameInstructionTarget(previous, current),
                 _ => false,
             };
             if (!validSnapshots)

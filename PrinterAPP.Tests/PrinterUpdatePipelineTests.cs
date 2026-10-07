@@ -128,11 +128,150 @@ public sealed class PrinterUpdatePipelineTests
         Assert.Contains(outbox.Acks, ack => ack.Status == DevicePrintStatus.Sent);
     }
 
+    [Fact]
+    public async Task Missing_authorization_fails_closed_and_leaves_a_retryable_no_send()
+    {
+        var update = PrinterUpdateTestData.Update(Guid.NewGuid());
+        var store = new RecordingUpdateStore();
+        Assert.True(store.AddOrGet(update, out _, out _));
+        var feed = new TestFeed();
+        var outbox = new RecordingOutbox();
+        var printer = new StubUpdatePrinter(_ => KitchenPrintOutcome.Sent);
+        var pipeline = CreatePipeline(feed, store, outbox, printer,
+            new StubAuthorization(_ => PrinterUpdateAuthorizationResult.Unavailable));
+
+        await pipeline.StartAsync();
+        feed.Emit(update);
+        Assert.True(await WaitUntilAsync(() => store.Records[update.Key].State == PrintUpdateJobState.Failed));
+        await pipeline.StopAsync();
+
+        Assert.True(store.Records[update.Key].IsPending);
+        Assert.Equal(0, printer.UpdatePrintCalls);
+        Assert.Contains(outbox.Acks, ack => ack.Status == DevicePrintStatus.Failed
+            && ack.JobId == update.JobId && ack.Revision == update.Revision);
+    }
+
+    [Fact]
+    public async Task Withdrawn_authorization_redacts_local_payload_and_never_prints()
+    {
+        var update = PrinterUpdateTestData.Update(Guid.NewGuid(), text: "customer asked to remove onions") with
+        {
+            Changes = new[]
+            {
+                new PrinterFeedChange
+                {
+                    Kind = KitchenChangeKind.InstructionChange,
+                    Previous = new OrderItem
+                    {
+                        Id = "line-1", ProductName = "Burger", Quantity = 1,
+                        SpecialInstructions = "leave off the onions",
+                    },
+                    Current = new OrderItem
+                    {
+                        Id = "line-1", ProductName = "Burger", Quantity = 1,
+                        SpecialInstructions = "leave off the onions",
+                    },
+                },
+            },
+        };
+        var store = new RecordingUpdateStore();
+        Assert.True(store.AddOrGet(update, out _, out _));
+        var feed = new TestFeed();
+        var outbox = new RecordingOutbox();
+        var printer = new StubUpdatePrinter(_ => KitchenPrintOutcome.Sent);
+        var pipeline = CreatePipeline(feed, store, outbox, printer,
+            new StubAuthorization(_ => PrinterUpdateAuthorizationResult.Withdrawn));
+
+        await pipeline.StartAsync();
+        feed.Emit(update);
+        Assert.True(await WaitUntilAsync(() => store.Records[update.Key].State == PrintUpdateJobState.Withdrawn
+            && store.Records[update.Key].FinalAcknowledgementQueued));
+        await pipeline.StopAsync();
+
+        var saved = store.Records[update.Key].Update;
+        Assert.True(saved.IsWithdrawn);
+        Assert.Empty(saved.Text);
+        Assert.Equal("line-1", saved.Changes[0].Current!.Id);
+        Assert.Equal(1, saved.Changes[0].Current!.Quantity);
+        Assert.Null(saved.Changes[0].Current!.SpecialInstructions);
+        Assert.Equal(0, printer.UpdatePrintCalls);
+        Assert.Contains(outbox.Acks, ack => ack.Status == DevicePrintStatus.Skipped
+            && ack.FailureReason == "Withdrawn"
+            && ack.JobId == update.JobId && ack.Revision == update.Revision);
+    }
+
+    [Fact]
+    public async Task Revision_two_withdrawal_is_acknowledged_without_authorization_or_output()
+    {
+        var withdrawal = PrinterUpdateTestData.Update(Guid.NewGuid(), revision: 2, text: "") with
+        {
+            IsWithdrawn = true,
+        };
+        var store = new RecordingUpdateStore();
+        Assert.True(store.AddOrGet(withdrawal, out _, out _));
+        var feed = new TestFeed();
+        var outbox = new RecordingOutbox();
+        var printer = new StubUpdatePrinter(_ => KitchenPrintOutcome.Sent);
+        var authorization = new StubAuthorization(
+            (Func<PrinterFeedUpdate, PrinterUpdateAuthorizationResult>)(_ =>
+                throw new InvalidOperationException(
+                    "Withdrawal metadata must not call the authorization endpoint.")));
+        var pipeline = CreatePipeline(feed, store, outbox, printer, authorization);
+
+        await pipeline.StartAsync();
+        feed.Emit(withdrawal);
+        Assert.True(await WaitUntilAsync(() => store.Records[withdrawal.Key].State == PrintUpdateJobState.Withdrawn
+            && store.Records[withdrawal.Key].FinalAcknowledgementQueued));
+        await pipeline.StopAsync();
+
+        Assert.Equal(0, authorization.CallCount);
+        Assert.Equal(0, printer.UpdatePrintCalls);
+        Assert.Contains(outbox.Acks, ack => ack.Status == DevicePrintStatus.Skipped
+            && ack.FailureReason == "Withdrawn"
+            && ack.JobId == withdrawal.JobId && ack.Revision == 2);
+    }
+
+    [Fact]
+    public async Task Local_withdrawal_arriving_during_authorization_blocks_the_preprint_call()
+    {
+        var update = PrinterUpdateTestData.Update(Guid.NewGuid());
+        var withdrawal = update with
+        {
+            Revision = 2,
+            IsWithdrawn = true,
+            Text = string.Empty,
+            Changes = Array.Empty<PrinterFeedChange>(),
+            CreatedAt = DateTime.UtcNow.AddSeconds(1),
+        };
+        var store = new RecordingUpdateStore();
+        Assert.True(store.AddOrGet(update, out _, out _));
+        var feed = new TestFeed();
+        var outbox = new RecordingOutbox();
+        var printer = new StubUpdatePrinter(_ => KitchenPrintOutcome.Sent);
+        var authorizationCompleted = new TaskCompletionSource<PrinterUpdateAuthorizationResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        var authorization = new StubAuthorization(_ => authorizationCompleted.Task);
+        var pipeline = CreatePipeline(feed, store, outbox, printer, authorization);
+
+        await pipeline.StartAsync();
+        feed.Emit(update);
+        Assert.True(await WaitUntilAsync(() => authorization.CallCount == 1));
+        Assert.True(store.AddOrGet(withdrawal, out _, out _));
+        authorizationCompleted.SetResult(PrinterUpdateAuthorizationResult.Authorized);
+        Assert.True(await WaitUntilAsync(() => store.Records[update.Key].State == PrintUpdateJobState.Withdrawn));
+        await pipeline.StopAsync();
+
+        Assert.Equal(0, printer.UpdatePrintCalls);
+        Assert.Empty(store.Records[update.Key].Update.Text);
+        Assert.True(store.Records[update.Key].Update.IsWithdrawn);
+    }
+
     private static OrderPipeline CreatePipeline(
         TestFeed feed,
         RecordingUpdateStore store,
         RecordingOutbox outbox,
-        IOrderPrintService printer) => new(
+        IOrderPrintService printer,
+        IPrinterUpdateAuthorizationService? authorization = null) => new(
             feed,
             printer,
             new EmptyHistory(),
@@ -142,7 +281,8 @@ public sealed class PrinterUpdatePipelineTests
             new EmptyDeviceIdentity(),
             new NoopRequestLogService(),
             NullLogger<OrderPipeline>.Instance,
-            store);
+            store,
+            authorization ?? new StubAuthorization(_ => PrinterUpdateAuthorizationResult.Authorized));
 
     private static async Task<bool> WaitUntilAsync(Func<bool> condition)
     {
@@ -182,10 +322,18 @@ public sealed class PrinterUpdatePipelineTests
         private readonly Func<PrinterFeedUpdate, KitchenPrintOutcome> _outcome;
         public int UpdatePrintCalls { get; private set; }
         public StubUpdatePrinter(Func<PrinterFeedUpdate, KitchenPrintOutcome> outcome) => _outcome = outcome;
-        public Task<KitchenPrintOutcome> PrintUpdateAsync(PrinterFeedUpdate update, CancellationToken cancellationToken = default)
+        public async Task<KitchenPrintOutcome> PrintUpdateAsync(
+            PrinterFeedUpdate update,
+            Func<CancellationToken, Task<PrinterUpdateAuthorizationResult>> authorizeImmediatelyBeforeSend,
+            CancellationToken cancellationToken = default)
         {
+            var authorization = await authorizeImmediatelyBeforeSend(cancellationToken);
+            if (authorization.Status == PrinterUpdateAuthorizationStatus.Withdrawn)
+                return KitchenPrintOutcome.Skipped;
+            if (authorization.Status != PrinterUpdateAuthorizationStatus.Authorized)
+                return KitchenPrintOutcome.Failed;
             UpdatePrintCalls++;
-            return Task.FromResult(_outcome(update));
+            return _outcome(update);
         }
         public Task<KitchenPrintOutcome> PrintUpdateCopyAsync(PrinterFeedUpdate update, CancellationToken cancellationToken = default) =>
             Task.FromResult(KitchenPrintOutcome.Sent);
@@ -193,6 +341,24 @@ public sealed class PrinterUpdatePipelineTests
             Task.FromResult((true, KitchenPrintOutcome.Sent, KitchenPrintOutcome.Sent, KitchenPrintOutcome.Sent));
         public Task<bool> PrintOrderAsync(Order order, PrinterType printerType, bool isManualPrint = false, CancellationToken cancellationToken = default) =>
             Task.FromResult(true);
+    }
+
+    private sealed class StubAuthorization(
+        Func<PrinterFeedUpdate, Task<PrinterUpdateAuthorizationResult>> result) : IPrinterUpdateAuthorizationService
+    {
+        public int CallCount { get; private set; }
+
+        public StubAuthorization(Func<PrinterFeedUpdate, PrinterUpdateAuthorizationResult> result)
+            : this(update => Task.FromResult(result(update)))
+        {
+        }
+
+        public Task<PrinterUpdateAuthorizationResult> CheckAsync(
+            PrinterFeedUpdate update, CancellationToken cancellationToken = default)
+        {
+            CallCount++;
+            return result(update);
+        }
     }
 
     private sealed class RecordingUpdateStore : IPrintUpdateJobStore
@@ -203,10 +369,36 @@ public sealed class PrinterUpdatePipelineTests
         public bool TryAdvanceUpdateCursor(string? cursor) => true;
         public bool AddOrGet(PrinterFeedUpdate update, out PrintUpdateJobRecord record, out bool shouldDispatch)
         {
+            if (!update.IsWithdrawn && Records.TryGetValue(
+                new PrintUpdateJobKey(update.JobId, 2, update.Target), out var withdrawal))
+            {
+                record = withdrawal;
+                shouldDispatch = false;
+                return true;
+            }
             if (Records.TryGetValue(update.Key, out record!))
             {
+                if (record.Update.IsWithdrawn && update.Revision == 1)
+                {
+                    shouldDispatch = false;
+                    return true;
+                }
                 shouldDispatch = record.IsPending;
                 return true;
+            }
+            if (update.IsWithdrawn && Records.TryGetValue(
+                new PrintUpdateJobKey(update.JobId, 1, update.Target), out var original))
+            {
+                var originalState = original.State is PrintUpdateJobState.Pending
+                    or PrintUpdateJobState.Failed or PrintUpdateJobState.NotConfigured
+                    ? PrintUpdateJobState.Withdrawn : original.State;
+                Records[original.Key] = original with
+                {
+                    Update = PrinterUpdateWithdrawalRedactor.Redact(original.Update),
+                    State = originalState,
+                    FinalAcknowledgementQueued = originalState == PrintUpdateJobState.Withdrawn
+                        ? false : original.FinalAcknowledgementQueued,
+                };
             }
             record = new PrintUpdateJobRecord { Update = update, FirstSeenAt = DateTime.UtcNow };
             Records.Add(update.Key, record);
@@ -225,6 +417,23 @@ public sealed class PrinterUpdatePipelineTests
             Records[key] = record with { State = PrintUpdateJobState.Processing, FinalAcknowledgementQueued = false };
             return true;
         }
+        public bool MarkWithdrawn(PrintUpdateJobKey key)
+        {
+            if (!Records.TryGetValue(key, out var record))
+                return false;
+            var state = record.IsPending ? PrintUpdateJobState.Withdrawn : record.State;
+            Records[key] = record with
+            {
+                Update = PrinterUpdateWithdrawalRedactor.Redact(record.Update),
+                State = state,
+                FailureReason = state == PrintUpdateJobState.Withdrawn ? "Withdrawn by the backend." : record.FailureReason,
+                FinalAcknowledgementQueued = state == PrintUpdateJobState.Withdrawn
+                    ? false : record.FinalAcknowledgementQueued,
+            };
+            return true;
+        }
+        public bool IsWithdrawalRequested(PrintUpdateJobKey key) =>
+            Records.TryGetValue(key, out var record) && record.Update.IsWithdrawn;
         public bool Complete(PrintUpdateJobKey key, PrintUpdateJobState state, string? failureReason = null)
         {
             if (!Records.TryGetValue(key, out var record))
