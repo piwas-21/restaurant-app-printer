@@ -148,10 +148,11 @@ Grep for the type/method/key you're adding or modifying. List every callsite. Co
 ## §7 — Quality gates (source of truth `.github/workflows/ci.yml` + `.pre-commit-config.yaml`)
 
 - **Pre-commit** (blocking): trailing-ws / EOF / YAML-JSON-XML checks / large-files / secret-scan (detect-secrets) / no-commit-to-protected; file-length (§4). No build gate in pre-commit — `dotnet build PrinterAPP.sln` is a manual pre-merge step on Windows.
-- **CI** (`ci.yml`), four jobs: `dotnet_test` runs the plain .NET tests and compiles the source-linked E2E project;
+- **CI** (`ci.yml`), seven jobs: `dotnet_test` runs the plain .NET tests and compiles the source-linked E2E project;
   `maui_compile` builds the Android app head on Ubuntu; `maui_windows_compile` builds the Windows app head on
-  Windows (isolating its TFM as the release workflow does); `checks` runs file-length, Gitleaks, TruffleHog and
-  Trivy. Both app-head builds use Debug and require no signing secrets. Windows device/runtime checks and
+  Windows (isolating its TFM as the release workflow does); `file_length`, `gitleaks`, `trufflehog` and
+  `trivy_fs` publish the four scan names required by the branch rules. Each scan runs independently.
+  Both app-head builds use Debug and require no signing secrets. Windows device/runtime checks and
   installer validation remain separate; `dotnet format` and CodeQL are still pending (#4).
 - **Weekly** `security-audit.yml` (cron): OSV full-tree, Trivy fs (HIGH/CRITICAL), gitleaks full-history, `dotnet list package --vulnerable` — fails red on findings.
 - **New-dev setup**: `pwsh -File scripts/setup_hooks.ps1` (Windows) or `bash scripts/setup_hooks.sh` (macOS/Linux — hooks only; build needs Windows).
