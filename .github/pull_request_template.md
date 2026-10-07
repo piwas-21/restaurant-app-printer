@@ -66,12 +66,12 @@
 - [ ] Branch is off `develop`; MR targets `develop` (releases ship via a `develop` → `main` release PR — CLAUDE.md §8)
 
 ## Test plan
-<!-- Manual testing steps; specific scenarios to verify. The app talks to a thermal printer — physical hardware testing is required for any printing-path change. -->
+<!-- Manual testing steps; specific scenarios to verify. For printing-path changes, use installed-build sink/emulator evidence under workspace SD1; Windows build/tests follow SD5. -->
 - [ ] ...
 - [ ] ...
 
 ## Screenshots / printer output
-<!-- For UI changes: screenshots. For printing-path changes: a photo of the printed receipt is the gold standard. -->
+<!-- For UI changes: screenshots. For printing-path changes: include installed-build sink evidence; a receipt photo is optional additional evidence. -->
 
 ## Release notes
 <!-- Anything operations / users need to know: new config keys, new permissions, breaking config-file changes that require manual user action. -->
