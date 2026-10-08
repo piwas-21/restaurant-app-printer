@@ -17,10 +17,9 @@ public static class FeedStartupPolicy
     /// Windows keeps honouring the persisted <c>IsServiceRunning</c> flag. On Android the manual
     /// Start control was historically absent and existing installs could never persist
     /// <c>IsServiceRunning=true</c>, so a configured <c>ApiBaseUrl</c> is treated as intent to
-    /// listen. <c>ApiBaseUrl</c> defaults to a non-empty value, so in practice the Android feed
-    /// always comes up — the intended behaviour for an always-on printer appliance (a Stop tap lasts
-    /// the session, not across restarts). A blank <c>ApiBaseUrl</c> means an unconfigured device,
-    /// which must not be treated as a feed that failed.
+    /// listen. A blank default keeps a fresh or missing-config install unconfigured; once an operator
+    /// saves a tenant URL, Android preserves its existing automatic restart behaviour. A blank
+    /// <c>ApiBaseUrl</c> means an unconfigured device, which must not be treated as a failed feed.
     /// </summary>
     public static bool ShouldBeListening(PrinterConfiguration config) =>
 #if WINDOWS

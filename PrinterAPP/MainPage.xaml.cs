@@ -261,6 +261,15 @@ public partial class MainPage : ContentPage
             }
             else
             {
+                if (string.IsNullOrWhiteSpace(_config.ApiBaseUrl))
+                {
+                    await DisplayAlert(
+                        "Configuration required",
+                        "Save the tenant API URL before starting the printer service.",
+                        "OK");
+                    return;
+                }
+
                 // Start SSE service
                 StatusLabel.Text = "Starting SSE service...";
                 StatusLabel.TextColor = CraftColors.WarningText;
