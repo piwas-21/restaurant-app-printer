@@ -11,6 +11,7 @@ public class EventStreamingService : IEventStreamingService
     private readonly IRequestLogService _requestLogService;
     private readonly IFeedCursorStore _cursorStore;
     private readonly IPrintUpdateJobStore? _updateJobStore;
+    private readonly IDeviceIdentityService? _deviceIdentity;
     private readonly ILogger<EventStreamingService> _logger;
     private CancellationTokenSource? _cancellationTokenSource;
     private Task? _kitchenListeningTask;
@@ -76,6 +77,7 @@ public class EventStreamingService : IEventStreamingService
     // actually printed something forces an immediate write, because that is the state whose loss
     // causes a duplicate ticket.
     private static readonly TimeSpan CursorSaveInterval = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan RetryFloorAllowance = TimeSpan.FromSeconds(1);
     private DateTime _lastCursorSaveAt = DateTime.MinValue;
     private bool _cursorSavePending;
 
@@ -100,12 +102,14 @@ public class EventStreamingService : IEventStreamingService
         IFeedCursorStore cursorStore,
         ILogger<EventStreamingService> logger,
         TimeSpan? pollInterval = null,
-        IPrintUpdateJobStore? updateJobStore = null)
+        IPrintUpdateJobStore? updateJobStore = null,
+        IDeviceIdentityService? deviceIdentity = null)
     {
         _printerService = printerService;
         _requestLogService = requestLogService;
         _cursorStore = cursorStore;
         _updateJobStore = updateJobStore;
+        _deviceIdentity = deviceIdentity;
         _logger = logger;
         _pollInterval = pollInterval is { } supplied && supplied > TimeSpan.Zero
             ? supplied
@@ -203,7 +207,9 @@ public class EventStreamingService : IEventStreamingService
         }
     }
 
-    private async Task ListenToStreamAsync(string apiBaseUrl, string endpoint, CancellationToken cancellationToken)
+    // Internal for the source-linked contract test: this keeps the SSE framing and route payload
+    // dispatch under test without making the obsolete streaming loop part of the public API.
+    internal async Task ListenToStreamAsync(string apiBaseUrl, string endpoint, CancellationToken cancellationToken)
     {
         var url = $"{apiBaseUrl.TrimEnd('/')}/api/events/{endpoint}";
         var retryDelay = TimeSpan.FromSeconds(5);
@@ -211,143 +217,10 @@ public class EventStreamingService : IEventStreamingService
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            HttpClient? httpClient = null;
-            DateTime lastMessageReceived = DateTime.UtcNow;
-
             try
             {
-                _logger.LogInformation("Connecting to SSE stream: {Url}", url);
-                OnConnectionStatusChanged($"Connecting to {endpoint}...");
-
-                // Create new HttpClient for each connection attempt with TCP keep-alive
-                var handler = new SocketsHttpHandler
-                {
-                    PooledConnectionLifetime = TimeSpan.FromMinutes(10),
-                    PooledConnectionIdleTimeout = TimeSpan.FromMinutes(5),
-                    KeepAlivePingPolicy = HttpKeepAlivePingPolicy.Always,
-                    KeepAlivePingDelay = TimeSpan.FromSeconds(15),
-                    KeepAlivePingTimeout = TimeSpan.FromSeconds(10)
-                };
-                httpClient = new HttpClient(handler)
-                {
-                    Timeout = Timeout.InfiniteTimeSpan
-                };
-
-                using var request = new HttpRequestMessage(HttpMethod.Get, url);
-                request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
-                request.Headers.Connection.Add("keep-alive");
-                request.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true };
-
-                // Capture request details
-                var requestHeaders = new Dictionary<string, string>();
-                foreach (var header in request.Headers)
-                {
-                    requestHeaders[header.Key] = string.Join(", ", header.Value);
-                }
-
-                // Log SSE connection with full request details
-                _requestLogService.LogSSEConnection(endpoint, "Connecting...", url, requestHeaders);
-
-                using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
-                response.EnsureSuccessStatusCode();
-
-                // Capture response details
-                var responseHeaders = new Dictionary<string, string>();
-                foreach (var header in response.Headers)
-                {
-                    responseHeaders[header.Key] = string.Join(", ", header.Value);
-                }
-                foreach (var header in response.Content.Headers)
-                {
-                    responseHeaders[header.Key] = string.Join(", ", header.Value);
-                }
-
-                // Log SSE response with full details
-                _requestLogService.LogSSEResponse(endpoint, (int)response.StatusCode, responseHeaders);
-
-                OnConnectionStatusChanged($"Connected to {endpoint} stream");
-                _logger.LogInformation("Connected to SSE stream: {Endpoint}", endpoint);
-
-                await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
-                using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 256, leaveOpen: true);
-
-                string? eventType = null;
-                var dataBuilder = new StringBuilder();
-
-                // Reset retry delay and last message time on successful connection
+                await ListenToStreamConnectionAsync(url, endpoint, cancellationToken);
                 retryDelay = TimeSpan.FromSeconds(5);
-                lastMessageReceived = DateTime.UtcNow;
-
-                // Start background task to check for connection timeout
-                var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                _ = Task.Run(async () =>
-                {
-                    while (!timeoutCts.Token.IsCancellationRequested)
-                    {
-                        await Task.Delay(5000, timeoutCts.Token).ConfigureAwait(false);
-                        var timeSinceLastMessage = DateTime.UtcNow - lastMessageReceived;
-                        if (timeSinceLastMessage.TotalSeconds > 35)
-                        {
-                            _logger.LogWarning("Connection timeout - no messages for {Seconds}s, cancelling...", timeSinceLastMessage.TotalSeconds);
-                            timeoutCts.Cancel();
-                        }
-                    }
-                }, timeoutCts.Token);
-
-                try
-                {
-                    string? line;
-                    while ((line = await reader.ReadLineAsync(timeoutCts.Token)) != null)
-                    {
-                        // Update last message time for any data received
-                        lastMessageReceived = DateTime.UtcNow;
-
-                        if (line.StartsWith("event:"))
-                        {
-                            eventType = line.Substring(6).Trim();
-
-                            // Log heartbeat events but don't process them further
-                            if (eventType == "heartbeat")
-                            {
-                                _logger.LogDebug("Heartbeat received from {Endpoint}", endpoint);
-                            }
-                        }
-                        else if (line.StartsWith("data:"))
-                        {
-                            // Only collect data if it's not a heartbeat
-                            if (eventType != "heartbeat")
-                            {
-                                dataBuilder.AppendLine(line.Substring(5).Trim());
-                            }
-                        }
-                        else if (line.StartsWith(":"))
-                        {
-                            // SSE comment line - also a form of heartbeat
-                            _logger.LogDebug("Comment/heartbeat received from {Endpoint}", endpoint);
-                        }
-                        else if (string.IsNullOrEmpty(line))
-                        {
-                            // Empty line indicates end of message - process event
-                            if (dataBuilder.Length > 0 && eventType != "heartbeat")
-                            {
-                                var data = dataBuilder.ToString().Trim();
-                                _logger.LogInformation("Processing SSE event: {EventType}", eventType);
-                                await ProcessEventAsync(eventType ?? "message", data, endpoint, cancellationToken);
-                            }
-
-                            // Reset for next message
-                            dataBuilder.Clear();
-                            eventType = null;
-                        }
-                    }
-                }
-                finally
-                {
-                    timeoutCts.Cancel();
-                    timeoutCts.Dispose();
-                }
-
-                _logger.LogWarning("SSE stream ended for {Endpoint}", endpoint);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -368,186 +241,168 @@ public class EventStreamingService : IEventStreamingService
                     retryDelay = TimeSpan.FromSeconds(Math.Min(retryDelay.TotalSeconds * 2, maxRetryDelay));
                 }
             }
-            finally
+        }
+    }
+
+    private async Task ListenToStreamConnectionAsync(
+        string url,
+        string endpoint,
+        CancellationToken cancellationToken)
+    {
+        _logger.LogInformation("Connecting to SSE stream: {Url}", url);
+        OnConnectionStatusChanged($"Connecting to {endpoint}...");
+
+        using var httpClient = CreateSseHttpClient();
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        request.Headers.Accept.Add(new System.Net.Http.Headers.MediaTypeWithQualityHeaderValue("text/event-stream"));
+        request.Headers.Connection.Add("keep-alive");
+        request.Headers.CacheControl = new System.Net.Http.Headers.CacheControlHeaderValue { NoCache = true };
+        _requestLogService.LogSSEConnection(endpoint, "Connecting...", url, HeaderSnapshot(request.Headers));
+
+        using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        _requestLogService.LogSSEResponse(
+            endpoint, (int)response.StatusCode,
+            HeaderSnapshot(response.Headers, response.Content.Headers));
+
+        OnConnectionStatusChanged($"Connected to {endpoint} stream");
+        _logger.LogInformation("Connected to SSE stream: {Endpoint}", endpoint);
+        await ConsumeSseStreamAsync(response, endpoint, cancellationToken);
+        _logger.LogWarning("SSE stream ended for {Endpoint}", endpoint);
+    }
+
+    private static HttpClient CreateSseHttpClient()
+    {
+        var handler = new SocketsHttpHandler
+        {
+            PooledConnectionLifetime = TimeSpan.FromMinutes(10),
+            PooledConnectionIdleTimeout = TimeSpan.FromMinutes(5),
+            KeepAlivePingPolicy = HttpKeepAlivePingPolicy.Always,
+            KeepAlivePingDelay = TimeSpan.FromSeconds(15),
+            KeepAlivePingTimeout = TimeSpan.FromSeconds(10),
+        };
+        return new HttpClient(handler) { Timeout = Timeout.InfiniteTimeSpan };
+    }
+
+    private static Dictionary<string, string> HeaderSnapshot(
+        params System.Net.Http.Headers.HttpHeaders[] headers)
+    {
+        var snapshot = new Dictionary<string, string>();
+        foreach (var collection in headers)
+        {
+            foreach (var header in collection)
+                snapshot[header.Key] = string.Join(", ", header.Value);
+        }
+        return snapshot;
+    }
+
+    private async Task ConsumeSseStreamAsync(
+        HttpResponseMessage response,
+        string endpoint,
+        CancellationToken cancellationToken)
+    {
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false,
+            bufferSize: 256, leaveOpen: true);
+        var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        var state = new SseMessageState();
+        var lastMessageReceived = DateTime.UtcNow;
+        _ = MonitorSseTimeoutAsync(timeoutCts, () => lastMessageReceived);
+
+        try
+        {
+            string? line;
+            while ((line = await reader.ReadLineAsync(timeoutCts.Token)) is not null)
             {
-                httpClient?.Dispose();
+                lastMessageReceived = DateTime.UtcNow;
+                await ProcessSseLineAsync(line, state, endpoint, cancellationToken);
+            }
+        }
+        finally
+        {
+            timeoutCts.Cancel();
+            timeoutCts.Dispose();
+        }
+    }
+
+    private async Task ProcessSseLineAsync(
+        string line,
+        SseMessageState state,
+        string endpoint,
+        CancellationToken cancellationToken)
+    {
+        if (line.StartsWith("event:"))
+        {
+            state.EventType = line.Substring(6).Trim();
+            if (state.EventType == "heartbeat")
+                _logger.LogDebug("Heartbeat received from {Endpoint}", endpoint);
+            return;
+        }
+
+        if (line.StartsWith("data:"))
+        {
+            if (state.EventType != "heartbeat")
+                state.Data.AppendLine(line.Substring(5).Trim());
+            return;
+        }
+
+        if (line.StartsWith(':'))
+        {
+            _logger.LogDebug("Comment/heartbeat received from {Endpoint}", endpoint);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(line))
+        {
+            if (state.Data.Length > 0 && state.EventType != "heartbeat")
+            {
+                var data = state.Data.ToString().Trim();
+                _logger.LogInformation("Processing SSE event: {EventType}", state.EventType);
+                await ProcessEventAsync(state.EventType ?? "message", data, endpoint, cancellationToken);
+            }
+            state.Data.Clear();
+            state.EventType = null;
+        }
+    }
+
+    private async Task MonitorSseTimeoutAsync(
+        CancellationTokenSource timeoutCts,
+        Func<DateTime> lastMessage)
+    {
+        while (!timeoutCts.Token.IsCancellationRequested)
+        {
+            await Task.Delay(5000, timeoutCts.Token).ConfigureAwait(false);
+            var elapsed = DateTime.UtcNow - lastMessage();
+            if (elapsed.TotalSeconds > 35)
+            {
+                _logger.LogWarning("Connection timeout - no messages for {Seconds}s, cancelling...",
+                    elapsed.TotalSeconds);
+                timeoutCts.Cancel();
             }
         }
     }
 
-    private async Task ProcessEventAsync(string eventType, string data, string sourceEndpoint, CancellationToken cancellationToken)
+    private sealed class SseMessageState
+    {
+        public string? EventType { get; set; }
+        public StringBuilder Data { get; } = new();
+    }
+
+    internal Task ProcessEventAsync(string eventType, string data, string sourceEndpoint, CancellationToken cancellationToken)
     {
         try
         {
             _logger.LogDebug("Processing SSE event - Type: {EventType}, Source: {Source}, Data: {Data}",
                 eventType, sourceEndpoint, data);
 
-            // Handle connection event
             if (eventType == "connected")
             {
                 _logger.LogInformation("Received connection confirmation from {Source}", sourceEndpoint);
                 _requestLogService.LogSSEEvent("connected", $"Connection confirmed from {sourceEndpoint}", data, "Service");
-                return;
             }
-
-            // Parse order event - handle both old format and new format
-            if (eventType == "order-created" || eventType == "order-updated" || eventType == "order_created" ||
-                eventType == "order_updated" || eventType == "order" || eventType == "message" ||
-                eventType == "order-status-changed" || eventType == "order-ready" || eventType == "order-completed")
+            else if (IsOrderEventType(eventType))
             {
-                // Log raw event with truncated data for display
-                var truncatedData = data.Length > 100 ? data.Substring(0, 100) + "..." : data;
-
-                try
-                {
-                    // Try to parse as OrderEvent wrapper first (new format)
-                    var orderEvent = JsonSerializer.Deserialize<OrderEvent>(data, new JsonSerializerOptions
-                    {
-                        PropertyNameCaseInsensitive = true
-                    });
-
-                    // Pattern match (not `orderEvent?.Order != null`) so the compiler narrows orderEvent
-                    // to non-null in this block — clears CS8604 at OnOrderReceived(orderEvent) below.
-                    if (orderEvent is { Order: not null })
-                    {
-                        var order = orderEvent.Order;
-
-                        // FILTER: Only process orders with Confirmed status
-                        if (!string.Equals(order.Status, "Confirmed", StringComparison.OrdinalIgnoreCase))
-                        {
-                            _logger.LogDebug("Skipping order {OrderNumber} - status is {Status}, not Confirmed",
-                                order.OrderNumber, order.Status);
-                            return;
-                        }
-
-                        // DEDUPLICATION: Check if we've already processed this order
-                        var orderKey = order.OrderNumber;
-                        if (IsOrderAlreadyProcessed(orderKey))
-                        {
-                            _logger.LogInformation("Skipping duplicate order {OrderNumber}", order.OrderNumber);
-                            return;
-                        }
-
-                        // Mark order as processed
-                        MarkOrderAsProcessed(orderKey);
-
-                        // Log order details for debugging
-                        _logger.LogInformation("Received order {OrderNumber} with {ItemCount} items (Status: {Status})",
-                            order.OrderNumber,
-                            order.Items?.Count ?? 0,
-                            order.Status);
-
-                        if (order.Items != null && order.Items.Any())
-                        {
-                            foreach (var item in order.Items)
-                            {
-                                _logger.LogInformation("  - Item: {Quantity}x {ProductName}",
-                                    item.Quantity, item.ProductName);
-                            }
-                        }
-                        else
-                        {
-                            // There used to be an "enrich it from /api/orders/{id}" fallback here. It
-                            // never ran once, for three independent reasons, and its comment claimed
-                            // the opposite — so it is gone rather than repaired:
-                            //
-                            //  1. It derived the id with int.TryParse(order.OrderNumber). Order numbers
-                            //     are yyyyMMdd + a 4-digit sequence (OrderNumberGenerator), i.e. a
-                            //     12-digit string like 202607290001 — larger than int.MaxValue, so the
-                            //     parse failed on every real order and the request was never issued.
-                            //  2. /api/orders/{id} binds a Guid, so an int could not address an order
-                            //     there even if the parse had succeeded.
-                            //  3. It sent X-Api-Key to that endpoint, which is JWT-only and (since the
-                            //     2026-07 order IDOR fix) scoped to staff or the order's owner. A device
-                            //     key authenticates neither, so it would 401.
-                            //
-                            // Reviving it would need a device-facing detail endpoint — but NOT any new
-                            // plumbing for the id: the feed already carries it as order.Id. Nothing has
-                            // asked for that, and the feed includes the line graph, so an item-less
-                            // order is a never-observed edge rather than a gap being papered over.
-                            //
-                            // Note what happens next, because this branch does NOT stop it: control
-                            // falls through and the order is dispatched, and the cashier receipt is
-                            // printed unconditionally (kitchen tickets are gated on item count). So a
-                            // blank receipt does come out of the cashier printer. Say that plainly.
-                            _logger.LogWarning(
-                                "Order {OrderNumber} arrived from {Endpoint} with no items",
-                                order.OrderNumber, sourceEndpoint);
-                            _requestLogService.LogWarning(
-                                PollingLogOperation,
-                                $"Order {order.OrderNumber} arrived with no line items — its cashier receipt will print blank",
-                                "The device cannot recover the missing lines; it prints what the feed sent. " +
-                                "Check this order in the dashboard and reprint it from the Orders tab if the ticket is wrong.",
-                                sourceEndpoint);
-                        }
-
-                        // Log parsed order with full JSON data, keyed by the same order number the
-                        // dedup path above uses as orderKey.
-                        _requestLogService.LogOrderReceived(
-                            order.OrderNumber,
-                            order.TableId,
-                            order.TableLabel,
-                            order.TableNumber,
-                            order.Total,
-                            data,
-                            "Service");
-
-                        // Notify subscribers
-                        OnOrderReceived(orderEvent);
-                        return;
-                    }
-                }
-                catch
-                {
-                    // If that fails, try to parse as Order directly (old format fallback)
-                    var order = JsonSerializer.Deserialize<Order>(data, new JsonSerializerOptions
-                    {
-                        PropertyNameCaseInsensitive = true
-                    });
-
-                    if (order != null)
-                    {
-                        // FILTER: Only process orders with Confirmed status
-                        if (!string.Equals(order.Status, "Confirmed", StringComparison.OrdinalIgnoreCase))
-                        {
-                            _logger.LogDebug("Skipping order {OrderNumber} - status is {Status}, not Confirmed",
-                                order.OrderNumber, order.Status);
-                            return;
-                        }
-
-                        // DEDUPLICATION: Check if we've already processed this order
-                        var orderKey = order.OrderNumber;
-                        if (IsOrderAlreadyProcessed(orderKey))
-                        {
-                            _logger.LogInformation("Skipping duplicate order {OrderNumber}", order.OrderNumber);
-                            return;
-                        }
-
-                        // Mark order as processed
-                        MarkOrderAsProcessed(orderKey);
-
-                        // Log parsed order with full JSON data, keyed by the same order number the
-                        // dedup path above uses as orderKey.
-                        _requestLogService.LogOrderReceived(
-                            order.OrderNumber,
-                            order.TableId,
-                            order.TableLabel,
-                            order.TableNumber,
-                            order.Total,
-                            data,
-                            "Service");
-
-                        var orderEvent = new OrderEvent
-                        {
-                            EventType = eventType,
-                            Order = order,
-                            Timestamp = DateTime.UtcNow
-                        };
-
-                        // Notify subscribers
-                        OnOrderReceived(orderEvent);
-                    }
-                }
+                ProcessOrderPayload(eventType, data, sourceEndpoint);
             }
         }
         catch (JsonException ex)
@@ -560,11 +415,111 @@ public class EventStreamingService : IEventStreamingService
             _logger.LogError(ex, "Error processing SSE event");
             _requestLogService.LogError("Event Processing Error", ex.Message, ex.StackTrace);
         }
+
+        return Task.CompletedTask;
+    }
+
+    private static bool IsOrderEventType(string eventType) =>
+        eventType is "order-created" or "order-updated" or "order_created" or "order_updated"
+            or "order" or "message" or "order-status-changed" or "order-ready" or "order-completed";
+
+    private void ProcessOrderPayload(string eventType, string data, string sourceEndpoint)
+    {
+        try
+        {
+            var orderEvent = JsonSerializer.Deserialize<OrderEvent>(data, PrinterJsonSerialization.Options);
+            if (orderEvent?.Order is null)
+                throw new JsonException("The SSE payload did not contain an Order wrapper.");
+
+            HandleOrder(orderEvent, data, sourceEndpoint, includeItemDiagnostics: true);
+            return;
+        }
+        catch (JsonException)
+        {
+            // The direct Order shape is the legacy feed contract.
+        }
+
+        var order = JsonSerializer.Deserialize<Order>(data, PrinterJsonSerialization.Options);
+        if (order is not null)
+        {
+            HandleOrder(new OrderEvent
+            {
+                EventType = eventType,
+                Order = order,
+                Timestamp = DateTime.UtcNow,
+            }, data, sourceEndpoint, includeItemDiagnostics: false);
+        }
+    }
+
+    private void HandleOrder(
+        OrderEvent orderEvent,
+        string data,
+        string sourceEndpoint,
+        bool includeItemDiagnostics)
+    {
+        if (orderEvent.Order is not { } order)
+            return;
+        if (!OrderRoutingStateValidation.TryValidate(order, out var routeError))
+        {
+            LogMalformedRoute(order.OrderNumber, routeError);
+            return;
+        }
+
+        if (!string.Equals(order.Status, "Confirmed", StringComparison.OrdinalIgnoreCase))
+        {
+            _logger.LogDebug("Skipping order {OrderNumber} - status is {Status}, not Confirmed",
+                order.OrderNumber, order.Status);
+            return;
+        }
+
+        if (IsOrderAlreadyProcessed(order.OrderNumber))
+        {
+            _logger.LogInformation("Skipping duplicate order {OrderNumber}", order.OrderNumber);
+            return;
+        }
+
+        MarkOrderAsProcessed(order.OrderNumber);
+        if (includeItemDiagnostics)
+            LogOrderItemDiagnostics(order, sourceEndpoint);
+
+        _requestLogService.LogOrderReceived(
+            order.OrderNumber, order.TableId, order.TableLabel, order.TableNumber,
+            order.Total, data, "Service");
+        OnOrderReceived(orderEvent);
+    }
+
+    private void LogOrderItemDiagnostics(Order order, string sourceEndpoint)
+    {
+        _logger.LogInformation("Received order {OrderNumber} with {ItemCount} items (Status: {Status})",
+            order.OrderNumber, order.Items?.Count ?? 0, order.Status);
+        if (order.Items is { Count: > 0 })
+        {
+            foreach (var item in order.Items)
+                _logger.LogInformation("  - Item: {Quantity}x {ProductName}", item.Quantity, item.ProductName);
+            return;
+        }
+
+        _logger.LogWarning("Order {OrderNumber} arrived from {Endpoint} with no items",
+            order.OrderNumber, sourceEndpoint);
+        _requestLogService.LogWarning(
+            PollingLogOperation,
+            $"Order {order.OrderNumber} arrived with no line items — its cashier receipt will print blank",
+            "The device cannot recover the missing lines; it prints what the feed sent. " +
+            "Check this order in the dashboard and reprint it from the Orders tab if the ticket is wrong.",
+            sourceEndpoint);
     }
 
     protected virtual void OnOrderReceived(OrderEvent orderEvent)
     {
         OrderReceived?.Invoke(this, orderEvent);
+    }
+
+    private void LogMalformedRoute(string orderNumber, string? reason)
+    {
+        var message = reason ?? "Invalid printer routing state.";
+        _logger.LogError("Rejected routed SSE order {OrderNumber}: {Reason}", orderNumber, message);
+        _requestLogService.LogError(
+            "Printer Routing", $"Rejected routed order {orderNumber}", message + " Retry will be attempted.");
     }
 
     protected virtual void OnConnectionStatusChanged(string status)
@@ -667,6 +622,7 @@ public class EventStreamingService : IEventStreamingService
                     ? proposedUpdateCursor
                     : liveUpdateCursor;
                 // Never persist a cursor past the earliest still-unconfirmed order's poll window.
+                ExpireUnrecoverableUnconfirmedOrders();
                 var persistedLastPoll = _unconfirmedPollWindows.Values.Append(targetLastPoll).Min();
 
                 snapshot = new FeedCursor
@@ -738,6 +694,79 @@ public class EventStreamingService : IEventStreamingService
 
         // Forced: this is the write that makes the difference between a duplicate ticket and none.
         PersistCursor(force: true);
+    }
+
+    /// <inheritdoc />
+    public void ReleaseOrderForRetry(
+        string orderNumber,
+        DateTime? createdAt = null,
+        DateTime? updatedAt = null)
+    {
+        if (string.IsNullOrEmpty(orderNumber))
+        {
+            return;
+        }
+
+        bool released;
+        lock (_processedOrdersLock)
+        {
+            // Confirmation wins if it raced this recovery path. Removing a confirmed key would
+            // turn a successful print into a duplicate on the next poll.
+            if (!_processedOrders.ContainsKey(orderNumber)
+                || _persistableOrders.Contains(orderNumber))
+            {
+                return;
+            }
+
+            released = _processedOrders.Remove(orderNumber);
+            // Keep a poll-delivered order's floor until a later retry confirms it. Without this,
+            // the poll cursor advances beyond a failed/no-work order before the backend can assign
+            // its route. SSE-only orders have no floor and are simply released from dedup.
+            if (!_unconfirmedPollWindows.ContainsKey(orderNumber)
+                && TryGetRetryFloor(createdAt, updatedAt, DateTime.UtcNow, out var retryFloor))
+            {
+                _unconfirmedPollWindows[orderNumber] = retryFloor;
+            }
+            _expiredUnconfirmed.Remove(orderNumber);
+        }
+
+        if (released)
+        {
+            _logger.LogInformation(
+                "Order {OrderNumber} was not confirmed printed; releasing it for feed retry",
+                orderNumber);
+            // A polling delivery may have pinned the durable cursor to this order's window. Save
+            // immediately while retaining that floor so a later route assignment is observable.
+            PersistCursor(force: true);
+        }
+    }
+
+    private static bool TryGetRetryFloor(
+        DateTime? createdAt,
+        DateTime? updatedAt,
+        DateTime now,
+        out DateTime floor)
+    {
+        var earliest = now - FeedCursorStore.MaxLookBack;
+        var candidates = new[] { createdAt, updatedAt }
+            .Where(value => value is { } timestamp && timestamp != default)
+            .Select(value => value.GetValueOrDefault())
+            .Select(timestamp => timestamp.Kind == DateTimeKind.Utc
+                ? timestamp
+                : timestamp.ToUniversalTime())
+            .Where(timestamp => timestamp <= now)
+            .ToList();
+        if (candidates.Count == 0)
+        {
+            floor = default;
+            return false;
+        }
+
+        var candidate = candidates.Min();
+        floor = candidate <= earliest + RetryFloorAllowance
+            ? earliest
+            : candidate - RetryFloorAllowance;
+        return true;
     }
 
     /// <summary>
@@ -876,7 +905,14 @@ public class EventStreamingService : IEventStreamingService
                 string? updateCursor;
                 lock (_processedOrdersLock)
                 {
-                    pollWindowStart = _lastPollTime;
+                    // A failed/no-work print releases its session dedup claim but keeps this
+                    // per-order floor. Query from the oldest active floor so the same order can be
+                    // observed again in this process, not only after a restart. Successful orders
+                    // remove their own floor, so unrelated retries do not rewind the feed forever.
+                    ExpireUnrecoverableUnconfirmedOrders();
+                    pollWindowStart = _unconfirmedPollWindows.Values
+                        .Append(_lastPollTime)
+                        .Min();
                     updateCursor = _lastUpdateCursor;
                 }
 
@@ -891,6 +927,8 @@ public class EventStreamingService : IEventStreamingService
                     httpClient.DefaultRequestHeaders.Add("X-Api-Key", config.ApiKey);
                 else
                     _logger.LogWarning("   ⚠️ No API key configured - request may fail if auth required");
+                if (_deviceIdentity is not null && !string.IsNullOrWhiteSpace(_deviceIdentity.DeviceId))
+                    httpClient.DefaultRequestHeaders.Add("X-Device-Id", _deviceIdentity.DeviceId);
 
                 var page = await FetchFeedPageAsync(
                     httpClient, baseUrl, pollWindowStart, language, updateCursor, cancellationToken);

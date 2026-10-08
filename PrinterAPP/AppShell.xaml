@@ -20,6 +20,11 @@
             Route="OrderManagementPage" />
 
         <ShellContent
+            Title="Corrections"
+            ContentTemplate="{DataTemplate local:PrinterCorrectionsPage}"
+            Route="PrinterCorrectionsPage" />
+
+        <ShellContent
             Title="Diagnostics"
             Icon="tab_diagnostics.png"
             ContentTemplate="{DataTemplate local:DiagnosticsPage}"

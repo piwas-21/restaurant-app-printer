@@ -11,13 +11,13 @@ on:
 permissions:
   contents: read
 
-# Independent jobs so a failure in one platform still releases the other.
-# Windows -> self-contained .exe installers (consumed by the in-app auto-updater),
-#            built per-RID in a matrix, then published by a single release job.
-# Android -> a sideloadable .apk attached to the GitHub Release.
+# Both platforms must build successfully before any asset is published. Windows produces
+# self-contained .exe installers per RID; Android produces one release-signed APK. A single
+# final job validates the complete three-file set and publishes it in one call.
 #
-# Android signing secrets (repo Settings -> Secrets and variables -> Actions). If absent, the
-# Android job falls back to a Debug-signed APK that installs for TESTING but is NOT for production:
+# Android signing secrets (repo Settings -> Secrets and variables -> Actions). All four are
+# required for a release tag; missing or invalid signing material fails the build and prevents
+# every public release asset from being published:
 #   ANDROID_KEYSTORE_BASE64   - base64 of your release keystore (.jks/.keystore)
 #   ANDROID_KEYSTORE_PASSWORD - keystore (store) password
 #   ANDROID_KEY_ALIAS         - key alias
@@ -41,12 +41,12 @@ jobs:
   #
   # Uploading is a separate job on purpose: two matrix legs racing to create the SAME
   # release tag in the releases repo is a real race, so the legs only produce artifacts
-  # and one job publishes both files in a single call — exactly the call that ran before.
+  # and one job publishes all three files only after every platform build succeeds.
   build-windows:
     runs-on: windows-latest
     strategy:
-      # A failure in one arch must not cancel the other: the file's stated design goal
-      # ("a failure in one platform still releases the other"), extended to arches.
+      # A failure in one arch must not cancel the other so both diagnostics are available.
+      # The publish job still requires this entire matrix job to succeed.
       fail-fast: false
       matrix:
         rid: [win-x64, win-x86]
@@ -96,50 +96,6 @@ jobs:
         if-no-files-found: error
         retention-days: 7
 
-  release-windows:
-    needs: build-windows
-    # `always()` so a release still happens with whatever arch DID build — the same
-    # property fail-fast: false gives the matrix. `!cancelled()` alone would not be enough
-    # here, because `needs` failure would otherwise skip this job.
-    if: ${{ always() && startsWith(github.ref, 'refs/tags/') }}
-    runs-on: ubuntu-latest
-    steps:
-    - name: Download the built installers
-      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-      with:
-        pattern: windows-installer-*
-        merge-multiple: true
-        path: publish
-
-    - name: Refuse to publish an empty Windows release
-      shell: bash
-      run: |
-        set -euo pipefail
-        ls -l publish/
-        # Publishing a release with no installer would leave the auto-updater seeing a
-        # newer version it cannot download, on every device, until the next tag.
-        if ! ls publish/PrinterApp-Setup-*.exe >/dev/null 2>&1; then
-          echo "::error::no Windows installer was produced — both matrix legs failed"
-          exit 1
-        fi
-        if [ ! -f publish/PrinterApp-Setup-x86.exe ] || [ ! -f publish/PrinterApp-Setup-x64.exe ]; then
-          echo "::warning::only one architecture built; releasing it alone (see the build-windows logs)"
-        fi
-
-    - name: Upload Windows Release Assets
-      uses: softprops/action-gh-release@v3
-      with:
-        # Publish to the PUBLIC releases repo so the client (and the in-app updater)
-        # can download without a GitHub account. Source stays private.
-        repository: piwas-21/printer-app-releases
-        # The tag was pushed to the source repo; name the release tag explicitly so it's
-        # deterministic in the target repo (which has its own commit history).
-        tag_name: ${{ github.ref_name }}
-        files: publish/PrinterApp-Setup-*.exe
-        # Fine-grained PAT with Contents:read/write on piwas-21/printer-app-releases ONLY.
-        # The default GITHUB_TOKEN can't reach another repo. See RELEASE_WORKFLOW.md.
-        token: ${{ secrets.RELEASES_REPO_TOKEN }}
-
   build-android:
     runs-on: ubuntu-latest
 
@@ -161,58 +117,109 @@ jobs:
     - name: Restore MAUI workloads (android only on Linux — Windows TFM is OS-conditioned)
       run: dotnet workload restore PrinterAPP/PrinterAPP.csproj
 
-    - name: Decode signing keystore (if configured)
-      id: keystore
+    - name: Require and decode Android release signing material
+      id: signing
       env:
-        KS_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
       run: |
-        if [ -n "$KS_B64" ]; then
-          echo "$KS_B64" | base64 -d > "$RUNNER_TEMP/printerapp.keystore"
-          echo "present=true" >> "$GITHUB_OUTPUT"
-        else
-          echo "::warning::No ANDROID_KEYSTORE_BASE64 secret — building a Debug-signed APK (testing only, not for production)."
-          echo "present=false" >> "$GITHUB_OUTPUT"
-        fi
+        set -euo pipefail
+        for secret_name in \
+          ANDROID_KEYSTORE_BASE64 \
+          ANDROID_KEYSTORE_PASSWORD \
+          ANDROID_KEY_ALIAS \
+          ANDROID_KEY_PASSWORD; do
+          if [[ -z "${!secret_name}" ]]; then
+            echo "::error::Required Android release signing secret is missing: ${secret_name}"
+            exit 1
+          fi
+        done
 
-    - name: Publish signed Release APK
-      if: steps.keystore.outputs.present == 'true'
+        umask 077
+        keystore_path="$RUNNER_TEMP/printerapp.keystore"
+        printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
+        if [[ ! -s "$keystore_path" ]]; then
+          echo "::error::The Android release keystore decoded to an empty file."
+          exit 1
+        fi
+        echo "keystore_path=$keystore_path" >> "$GITHUB_OUTPUT"
+
+    - name: Publish release-signed APK
       env:
-        STORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-        KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-        KEY_PASS: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
       run: |
+        set -euo pipefail
         dotnet publish PrinterAPP/PrinterAPP.csproj -c Release -f net10.0-android \
           -p:AndroidPackageFormat=apk \
           -p:SentryDsn="$SENTRY_DSN" \
           -p:AndroidKeyStore=true \
-          -p:AndroidSigningKeyStore="$RUNNER_TEMP/printerapp.keystore" \
-          -p:AndroidSigningKeyAlias="$KEY_ALIAS" \
-          -p:AndroidSigningStorePass="$STORE_PASS" \
-          -p:AndroidSigningKeyPass="$KEY_PASS" \
+          -p:AndroidSigningKeyStore="${{ steps.signing.outputs.keystore_path }}" \
+          -p:AndroidSigningKeyAlias="$ANDROID_KEY_ALIAS" \
+          -p:AndroidSigningStorePass="$ANDROID_KEYSTORE_PASSWORD" \
+          -p:AndroidSigningKeyPass="$ANDROID_KEY_PASSWORD" \
           -o ./android-publish
 
-    - name: Build Debug APK (no release keystore — testing only)
-      if: steps.keystore.outputs.present == 'false'
+    - name: Collect exactly one signed APK
       run: |
-        dotnet publish PrinterAPP/PrinterAPP.csproj -c Debug -f net10.0-android \
-          -p:AndroidPackageFormat=apk \
-          -o ./android-publish
-
-    - name: Collect APK
-      run: |
+        set -euo pipefail
+        mapfile -d '' signed_apks < <(find ./android-publish -type f -name '*-Signed.apk' -print0)
+        if [[ ${#signed_apks[@]} -ne 1 ]]; then
+          echo "::error::Expected exactly one release-signed APK; found ${#signed_apks[@]}."
+          exit 1
+        fi
         mkdir -p android-out
-        apk=$(find ./android-publish -name "*-Signed.apk" | head -1)
-        if [ -z "$apk" ]; then apk=$(find ./android-publish -name "*.apk" | head -1); fi
-        if [ -z "$apk" ]; then echo "No APK produced" && exit 1; fi
-        cp "$apk" "android-out/PrinterApp-Android.apk"
-        ls -la android-out
+        cp -- "${signed_apks[0]}" android-out/PrinterApp-Android.apk
 
-    - name: Upload Android Release Asset
+    - name: Remove release keystore
+      if: always()
+      run: rm -f "$RUNNER_TEMP/printerapp.keystore"
+
+    - name: Upload signed APK for the release job
+      uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+      with:
+        name: android-signed-apk
+        path: android-out/PrinterApp-Android.apk
+        if-no-files-found: error
+        retention-days: 7
+
+  publish-release:
+    # Default success() semantics intentionally skip publication unless BOTH platform
+    # build jobs succeeded, including every Windows RID in its matrix.
+    needs: [build-windows, build-android]
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout source for release asset validation
+      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+    - name: Download both Windows installers
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      with:
+        pattern: windows-installer-*
+        merge-multiple: true
+        path: release-assets
+
+    - name: Download the signed Android APK
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      with:
+        name: android-signed-apk
+        path: release-assets
+
+    - name: Validate the complete release asset set
+      run: python3 scripts/verify_release_assets.py release-assets
+
+    - name: Publish all release assets together
       uses: softprops/action-gh-release@v3
-      if: startsWith(github.ref, 'refs/tags/')
       with:
         repository: piwas-21/printer-app-releases
         tag_name: ${{ github.ref_name }}
-        files: android-out/PrinterApp-Android.apk
+        files: |
+          release-assets/PrinterApp-Setup-x64.exe
+          release-assets/PrinterApp-Setup-x86.exe
+          release-assets/PrinterApp-Android.apk
         token: ${{ secrets.RELEASES_REPO_TOKEN }}

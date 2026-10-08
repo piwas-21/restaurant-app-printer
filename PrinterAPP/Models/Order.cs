@@ -5,6 +5,7 @@ public class Order
 {
     public string Id { get; set; } = string.Empty;
     public string OrderNumber { get; set; } = string.Empty;
+    public OrderAmendmentPrintContext? AmendmentPrintContext { get; set; }
     public string? UserId { get; set; }
     public string? CustomerName { get; set; }
     public string? CustomerEmail { get; set; }
@@ -38,6 +39,7 @@ public class Order
     public decimal Tip { get; set; }
 
     /// <summary>ISO code the order displays money in (backend OrderDto.Currency). Null = unknown: render bare amounts, never an invented label (POS C18).</summary>
+    public ExternalOrder? ExternalOrder { get; set; }
     public string? Currency { get; set; }
     public decimal Total { get; set; }
     public decimal TotalPaid { get; set; }
@@ -83,6 +85,12 @@ public class Order
     public List<OrderItem> Items { get; set; } = new();
     public List<Payment> Payments { get; set; } = new();
     public List<OrderStatusHistory> StatusHistory { get; set; } = new();
+
+    /// <summary>
+    /// Durable printer routing returned by the forward backend. Null is intentional: older
+    /// backend responses omit this additive field and retain the legacy broadcast behavior.
+    /// </summary>
+    public List<OrderRoutingState>? RoutingStates { get; set; }
 
     /// <summary>
     /// The same order with a different item list — how a kitchen ticket is built without mutating

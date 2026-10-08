@@ -45,10 +45,25 @@ public sealed class PrinterConfigurationStoreTests : IDisposable
     {
         var config = await CreateStore().LoadAsync();
 
-        Assert.Equal(new PrinterConfiguration().ApiBaseUrl, config.ApiBaseUrl);
+        Assert.Equal(string.Empty, config.ApiBaseUrl);
         Assert.Equal(string.Empty, config.ApiKey);
+        Assert.False(config.IsServiceRunning);
+        Assert.False(FeedStartupPolicy.ShouldBeListening(config));
         Assert.False(File.Exists(NewConfigPath));
         Assert.Equal(0, _secrets.SetCalls);
+    }
+
+    [Fact]
+    public async Task Load_missing_config_stays_unconfigured_even_if_a_secret_key_remains()
+    {
+        await _secrets.TrySetAsync(PrinterConfigurationStore.ApiKeySecretName, "stored-key-43");
+
+        var config = await CreateStore().LoadAsync();
+
+        Assert.Equal(string.Empty, config.ApiBaseUrl);
+        Assert.Equal("stored-key-43", config.ApiKey);
+        Assert.False(FeedStartupPolicy.ShouldBeListening(config));
+        Assert.False(File.Exists(NewConfigPath));
     }
 
     [Fact]
@@ -234,6 +249,9 @@ public sealed class PrinterConfigurationStoreTests : IDisposable
         var loaded = await store.LoadAsync();
 
         Assert.Equal(saved.ApiBaseUrl, loaded.ApiBaseUrl);
+        Assert.False(loaded.IsServiceRunning);
+        Assert.True(FeedStartupPolicy.ShouldBeListening(loaded),
+            "A saved tenant URL must preserve Android's automatic feed restart behavior.");
         Assert.Equal(saved.ApiKey, loaded.ApiKey);
         Assert.Equal(saved.KitchenPrinterName, loaded.KitchenPrinterName);
         Assert.Equal(saved.KitchenPaperWidth, loaded.KitchenPaperWidth);

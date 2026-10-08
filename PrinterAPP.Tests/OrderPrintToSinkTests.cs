@@ -17,7 +17,7 @@ namespace PrinterAPP.Tests;
 /// <see cref="NetworkTcpTransport"/> and the ESC/POS bytes for a real order land at the socket, framed by
 /// the init + cut commands. Hermetic (no backend) → runs on every PR. See docs/E2E-STRATEGY.md.
 /// </summary>
-public class OrderPrintToSinkTests
+public partial class OrderPrintToSinkTests
 {
     private static readonly JsonSerializerOptions BackendJsonOptions = new()
     {
@@ -43,7 +43,7 @@ public class OrderPrintToSinkTests
                 CashierAutoPrint = true,
                 CashierPrintCopies = 1,
             };
-            var service = new OrderPrintService(
+            var service = new OrderPrintService(new MarketplaceReceiptComposer(),
                 new StubPrinterService(config),
                 new CapturingRequestLogService(),
                 NullLogger<OrderPrintService>.Instance,
@@ -108,7 +108,7 @@ public class OrderPrintToSinkTests
         using var paths = new TempPathProvider();
 
         var log = new CapturingRequestLogService();
-        var service = new OrderPrintService(
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
             new StubPrinterService(new PrinterConfiguration
             {
                 CashierPrinterName = sink.PrinterName,
@@ -210,6 +210,59 @@ public class OrderPrintToSinkTests
         // The combo line rides along as context for the component, parenthesised so it does not
         // read as a dish the back kitchen has to make.
         Assert.Contains("(1x Menu Deal)", backTicket);
+    }
+
+    /// <summary>
+    /// Synthetic checkout shape for the taco menu: each menu item has its selected meats as
+    /// nested order rows. The loopback sink must retain each selected row and its quantity on the
+    /// kitchen ticket, including one-choice and multi-choice cases.
+    /// </summary>
+    [Fact]
+    public async Task PrintOrderToAllPrinters_TacosOneTwoThree_RoutesEverySelectedMeatOnce()
+    {
+        using var cashier = new Sink();
+        using var front = new Sink();
+        using var back = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        var order = BundleOrder(
+            Item("Menu Tacos 1", "FrontKitchen", children:
+            [
+                Item("Meat Choice 1A", "FrontKitchen"),
+            ]),
+            Item("Menu Tacos 2", "FrontKitchen", children:
+            [
+                Item("Meat Choice 2A", "FrontKitchen"),
+                Item("Meat Choice 2B", "FrontKitchen"),
+            ]),
+            Item("Menu Tacos 3", "FrontKitchen", children:
+            [
+                Item("Meat Choice 3A", "FrontKitchen"),
+                Item("Meat Choice 3B", "FrontKitchen"),
+                Item("Meat Choice 3C", "FrontKitchen"),
+            ]));
+
+        var result = await PrintToSinksAsync(order, cashier, front, back, cts.Token);
+
+        Assert.True(result.FrontKitchen, "front kitchen print reported failure");
+        var frontTicket = await front.ReadTicketAsync(cts.Token);
+
+        Assert.Equal(1, Occurrences(frontTicket, "1x Menu Tacos 1"));
+        Assert.Equal(1, Occurrences(frontTicket, "1x Menu Tacos 2"));
+        Assert.Equal(1, Occurrences(frontTicket, "1x Menu Tacos 3"));
+
+        foreach (var selectedMeat in new[]
+                 {
+                     "Meat Choice 1A",
+                     "Meat Choice 2A", "Meat Choice 2B",
+                     "Meat Choice 3A", "Meat Choice 3B", "Meat Choice 3C",
+                 })
+        {
+            Assert.Equal(1, Occurrences(frontTicket, $"+ 1x {selectedMeat}"));
+        }
+
+        Assert.Equal(6, Occurrences(frontTicket, "+ 1x Meat Choice"));
+        Assert.False(back.ReceivedAnything, "back kitchen was sent a ticket it has nothing to make");
     }
 
     /// <summary>
@@ -326,7 +379,7 @@ public class OrderPrintToSinkTests
 
         Assert.NotNull(order);
         using var paths = new TempPathProvider();
-        var service = new OrderPrintService(
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
             new StubPrinterService(new PrinterConfiguration
             {
                 CashierPrinterName = sink.PrinterName,
@@ -346,6 +399,46 @@ public class OrderPrintToSinkTests
         Assert.Contains("- NO Oignons", ticket);
         Assert.Contains("+ 1x Frites", ticket);
         Assert.Contains("+ 1x Boisson", ticket);
+    }
+
+    /// <summary>
+    /// Replays a sanitized current-contract Menu Tacos feed response through the real feed parser,
+    /// then through cashier and kitchen composition into loopback printer sinks. The two zero-price
+    /// meat components remain visible while the cashier receipt keeps the €14.00 menu total.
+    /// </summary>
+    [Fact]
+    public async Task PrintOrderToAllPrinters_MenuTacosFeedJson_RendersChoicesRoutesAndTotal()
+    {
+        var feed = OrderFeedParser.Parse(TacosMenuFeedFixture.Json);
+
+        Assert.True(feed.IsSuccess, feed.FailureMessage);
+        Assert.True(feed.HasDataEnvelope);
+        Assert.Empty(feed.Errors);
+        var order = Assert.Single(feed.Orders);
+        Assert.Equal("TEST-TACOS-FEED-0001", order.OrderNumber);
+
+        using var cashier = new Sink();
+        using var front = new Sink();
+        using var back = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        var result = await PrintToSinksAsync(order, cashier, front, back, cts.Token);
+
+        Assert.True(result.Cashier, "cashier print reported failure");
+        Assert.Equal(KitchenPrintStatus.Sent, result.FrontKitchen.Status);
+        Assert.False(back.ReceivedAnything, "back kitchen was sent a ticket it has nothing to make");
+
+        var cashierTicket = await cashier.ReadTicketAsync(cts.Token);
+        var kitchenTicket = await front.ReadTicketAsync(cts.Token);
+
+        Assert.Contains("EUR 14.00", cashierTicket);
+        Assert.Contains("Menu Tacos 2 Viande", cashierTicket);
+        Assert.Contains("+ 1x Poulet", kitchenTicket);
+        Assert.Contains("+ 1x Kebab", kitchenTicket);
+        Assert.Contains("+ Sauce Algérienne", kitchenTicket);
+        Assert.Contains("+ EXTRA Cheddar x1", kitchenTicket);
+        Assert.Contains("+ 1x Frites", kitchenTicket);
+        Assert.Contains("+ 1x Cola", kitchenTicket);
     }
 
     /// <summary>A fixed venue language choice must localize the receipt labels on the wire.</summary>
@@ -416,6 +509,207 @@ public class OrderPrintToSinkTests
         Assert.Contains("Subtotal", englishTicket);
     }
 
+    [Fact]
+    public async Task PrintOrderToAllPrinters_RoutedOrder_OnlyUsesAssignedDeviceTarget()
+    {
+        using var cashier = new Sink();
+        using var front = new Sink();
+        using var back = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var paths = new TempPathProvider();
+
+        var order = BundleOrder(Item("Soup", "FrontKitchen"));
+        order.RoutingStates =
+        [
+            new()
+            {
+                JobId = Guid.NewGuid(), Revision = 1, Target = DevicePrintTarget.Cashier,
+                DeviceId = "front-device", Status = DevicePrintStatus.Queued,
+            },
+            new()
+            {
+                JobId = Guid.NewGuid(), Revision = 1, Target = DevicePrintTarget.FrontKitchen,
+                DeviceId = "front-device", Status = DevicePrintStatus.Queued,
+            },
+        ];
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
+            new StubPrinterService(new PrinterConfiguration
+            {
+                CashierPrinterName = cashier.PrinterName,
+                FrontKitchenPrinterName = front.PrinterName,
+                BackKitchenPrinterName = back.PrinterName,
+            }),
+            new CapturingRequestLogService(),
+            NullLogger<OrderPrintService>.Instance,
+            paths,
+            new StubDeviceIdentity("front-device"));
+
+        var result = await service.PrintOrderToAllPrintersAsync(order, cancellationToken: cts.Token);
+
+        Assert.True(result.Cashier);
+        Assert.True(result.FrontKitchen.IsSuccess);
+        Assert.True(cashier.ReceivedAnything);
+        Assert.True(front.ReceivedAnything);
+        Assert.False(back.ReceivedAnything);
+        await front.ReadTicketAsync(cts.Token);
+    }
+
+    [Theory]
+    [InlineData(DevicePrintStatus.Printed)]
+    [InlineData(DevicePrintStatus.Sent)]
+    [InlineData(DevicePrintStatus.Failed)]
+    [InlineData(DevicePrintStatus.Skipped)]
+    public async Task PrintOrderToAllPrinters_NonQueuedLocalRoute_IsNoWork(
+        DevicePrintStatus status)
+    {
+        using var cashier = new Sink();
+        using var front = new Sink();
+        using var back = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var paths = new TempPathProvider();
+
+        var order = BundleOrder(Item("Soup", "FrontKitchen"));
+        order.RoutingStates =
+        [
+            new()
+            {
+                JobId = Guid.NewGuid(), Revision = 1, Target = DevicePrintTarget.FrontKitchen,
+                DeviceId = "front-device", Status = status,
+            },
+        ];
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
+            new StubPrinterService(new PrinterConfiguration
+            {
+                CashierPrinterName = cashier.PrinterName,
+                FrontKitchenPrinterName = front.PrinterName,
+                BackKitchenPrinterName = back.PrinterName,
+            }),
+            new CapturingRequestLogService(),
+            NullLogger<OrderPrintService>.Instance,
+            paths,
+            new StubDeviceIdentity("front-device"));
+
+        var result = await service.PrintOrderToAllPrintersAsync(order, cancellationToken: cts.Token);
+
+        Assert.False(result.Cashier);
+        Assert.Equal(KitchenPrintStatus.NoWork, result.FrontKitchen.Status);
+        Assert.Equal(KitchenPrintStatus.NoWork, result.BackKitchen.Status);
+        Assert.Equal(KitchenPrintStatus.NoWork, result.GeneralDefault.Status);
+        Assert.False(cashier.ReceivedAnything);
+        Assert.False(front.ReceivedAnything);
+        Assert.False(back.ReceivedAnything);
+    }
+
+    [Fact]
+    public async Task Manual_reprint_ignores_terminal_route_and_prints_operator_requested_copy()
+    {
+        using var cashier = new Sink();
+        using var front = new Sink();
+        using var back = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var paths = new TempPathProvider();
+        var order = BundleOrder(Item("Soup", "FrontKitchen"));
+        order.RoutingStates =
+        [new()
+        {
+            JobId = Guid.NewGuid(), Revision = 1, Target = DevicePrintTarget.FrontKitchen,
+            DeviceId = "front-device", Status = DevicePrintStatus.Printed,
+        }];
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
+            new StubPrinterService(new PrinterConfiguration
+            {
+                CashierPrinterName = cashier.PrinterName,
+                FrontKitchenPrinterName = front.PrinterName,
+            }),
+            new CapturingRequestLogService(),
+            NullLogger<OrderPrintService>.Instance,
+            paths,
+            new StubDeviceIdentity("front-device"));
+
+        var result = await service.PrintOrderToAllPrintersAsync(
+            order, isManualPrint: true, cancellationToken: cts.Token);
+
+        Assert.True(result.Cashier);
+        Assert.True(result.FrontKitchen.IsSuccess);
+        Assert.True(cashier.ReceivedAnything);
+        Assert.True(front.ReceivedAnything);
+        await front.ReadTicketAsync(cts.Token);
+    }
+
+
+    [Theory]
+    [InlineData(null, "Not reported by provider")]
+    [InlineData("0", "EUR 0.00")]
+    public async Task MarketplaceCashierReceipt_ReachesSinkWithSourceMoneyAndTaxEvidence(string? tax, string expectedTax)
+    {
+        using var sink = new Sink(); using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var order = MarketplaceOrder(); order.PermittedActions = [new() { Action = "PrintReceipt", Allowed = true }];
+        order.ExternalOrder!.ReportedTax = tax is null ? null : decimal.Parse(tax, System.Globalization.CultureInfo.InvariantCulture);
+        var (ok, ticket) = await PrintToSinkAsync(order, sink, cts.Token);
+        Assert.True(ok); Assert.Contains("Uber Eats 9116D", ticket); Assert.Contains("TEST ORDER", ticket);
+        Assert.Contains("Payment handled by Uber Eats", ticket); Assert.Contains(expectedTax, ticket);
+        Assert.Contains("EUR 5.00", ticket); Assert.DoesNotContain("CHF", ticket);
+        Assert.DoesNotContain("11.47", ticket); Assert.DoesNotContain("CARD AT RESTAURANT", ticket);
+        Assert.Contains("ALLERGY: no peanuts", ticket); Assert.Contains("TEST ONLY: no food, no courier", ticket);
+    }
+
+    [Fact]
+    public async Task HeldMarketplaceOrder_ProducesNoOutputOnAnyDestination()
+    {
+        using var cashier = new Sink(); using var front = new Sink(); using var back = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var result = await PrintToSinksAsync(MarketplaceOrder(), cashier, front, back, cts.Token);
+        Assert.False(result.Cashier); Assert.Equal(KitchenPrintOutcome.Unknown, result.FrontKitchen);
+        Assert.Equal(KitchenPrintOutcome.Unknown, result.BackKitchen);
+        Assert.False(cashier.ReceivedAnything); Assert.False(front.ReceivedAnything); Assert.False(back.ReceivedAnything);
+    }
+
+    [Fact]
+    public async Task ReleasedMarketplaceKitchenTicket_ReachesItsSinkWithoutMoney()
+    {
+        using var cashier = new Sink(); using var front = new Sink(); using var back = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var order = MarketplaceOrder(); order.IsKitchenReleased = true;
+        order.PermittedActions = [new() { Action = "PrintKitchen", Allowed = true }];
+        var result = await PrintToSinksAsync(order, cashier, front, back, cts.Token);
+        Assert.True(result.FrontKitchen); Assert.False(cashier.ReceivedAnything);
+        var ticket = await front.ReadTicketAsync(cts.Token);
+        Assert.Contains("Uber Eats 9116D", ticket); Assert.Contains("TEST ORDER", ticket);
+        Assert.Contains("ALLERGY: no peanuts", ticket); Assert.Contains("TEST ONLY: no food, no courier", ticket);
+        Assert.DoesNotContain("EUR", ticket); Assert.DoesNotContain("5.00", ticket);
+        Assert.DoesNotContain("Payment handled", ticket); Assert.DoesNotContain("Not reported", ticket);
+    }
+
+    [Theory]
+    [InlineData("CHF")]
+    [InlineData("\u001b@FORGED")]
+    public async Task MarketplacePayment_CannotReplaceInvalidFrozenCurrencyWithTenderCurrency(string tenderCurrency)
+    {
+        using var sink = new Sink();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var order = MarketplaceOrder();
+        order.PermittedActions = [new() { Action = "PrintReceipt", Allowed = true }];
+        order.ExternalOrder!.Currency = "invalid";
+        order.Payments![0].Currency = tenderCurrency;
+        var (ok, ticket) = await PrintToSinkAsync(order, sink, cts.Token);
+        Assert.True(ok);
+        Assert.Contains("Uber Eats: 5.00", ticket, StringComparison.Ordinal);
+        Assert.DoesNotContain(tenderCurrency, ticket, StringComparison.Ordinal);
+        Assert.DoesNotContain("CHF", ticket, StringComparison.Ordinal);
+    }
+
+    private static Order MarketplaceOrder() => new()
+    {
+        OrderNumber = "SOURCE-1", Type = "Delivery", Status = "PendingApproval", Currency = "CHF",
+        OrderDate = DateTime.UtcNow, Total = 5, SubTotal = 5, TotalPaid = 5,
+        Notes = "TEST ONLY: no food, no courier",
+        ExternalOrder = new() { Provider = "uber-eats", ExternalDisplayId = "9116D", Currency = "EUR",
+            MerchantTotal = 5, ReportedTax = null, IsSandbox = true, ExternalState = "CREATED" },
+        Items = [new() { ProductName = "Test meal", Quantity = 1, ItemTotal = 5, UnitPrice = 5,
+            KitchenType = "FrontKitchen", SpecialInstructions = "ALLERGY: no peanuts" }],
+        Payments = [new() { PaymentMethod = "CreditCard", Amount = 5, Status = "Completed" }],
+    };
+
     private static Order MinimalOrder() => new()
     {
         OrderNumber = "202609040002",
@@ -441,7 +735,7 @@ public class OrderPrintToSinkTests
         };
         configure?.Invoke(config);
 
-        var service = new OrderPrintService(
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
             new StubPrinterService(config),
             new CapturingRequestLogService(),
             NullLogger<OrderPrintService>.Instance,
@@ -480,7 +774,7 @@ public class OrderPrintToSinkTests
         PrintToSinksAsync(Order order, Sink cashier, Sink front, Sink back, CancellationToken ct)
     {
         using var paths = new TempPathProvider();
-        var service = new OrderPrintService(
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
             new StubPrinterService(new PrinterConfiguration
             {
                 CashierPrinterName = cashier.PrinterName,
@@ -530,12 +824,13 @@ public class OrderPrintToSinkTests
         /// <summary>
         /// The ticket as text. The sender connects, writes and closes per print, so the connection
         /// sits in the accept backlog until read — no need to race an accept against the print.
-        /// Decoded as Latin1: the assertions are ASCII, which PC857 leaves unchanged.
+        /// Decoded with the PC857 codepage selected in the ESC/POS stream.
         /// </summary>
         public async Task<string> ReadTicketAsync(CancellationToken ct)
         {
             var bytes = await AcceptAndReadAllAsync(_listener, ct);
-            return Encoding.Latin1.GetString(bytes);
+            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+            return Encoding.GetEncoding(857).GetString(bytes);
         }
 
         public void Dispose() => _listener.Stop();
@@ -593,6 +888,14 @@ public class OrderPrintToSinkTests
         public Task<bool> PrintTestReceiptAsync(string printerName, PrinterConfiguration config) => throw new NotSupportedException();
         public Task<HttpStatusCode?> TestPrinterFeedAsync(string apiUrl, string? apiKey) => throw new NotSupportedException();
         public Task SaveConfigurationAsync(PrinterConfiguration config) => throw new NotSupportedException();
+    }
+
+    private sealed class StubDeviceIdentity(string deviceId) : IDeviceIdentityService
+    {
+        public string DeviceId { get; } = deviceId;
+        public string Platform => "Test";
+        public string AppVersion => "test";
+        public void ApplySentryTags(string tenantSlug) { }
     }
 
     /// <summary>

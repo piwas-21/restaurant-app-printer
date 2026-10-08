@@ -34,6 +34,12 @@ public static class EscPosCommands
     /// <summary>ESC G 0 — emphasized off.</summary>
     public const string EmphasizedOff = "\x1B\x47\x00";
 
+    /// <summary>Bold plus emphasized mode for the darkest supported text.</summary>
+    public const string ExtraDarkOn = BoldOn + EmphasizedOn;
+
+    /// <summary>Disable both bold and emphasized modes.</summary>
+    public const string ExtraDarkOff = BoldOff + EmphasizedOff;
+
     /// <summary>GS ! 0 — normal size (1x width, 1x height).</summary>
     public const string SizeNormal = "\x1D\x21\x00";
 
@@ -51,6 +57,9 @@ public static class EscPosCommands
 
     /// <summary>ESC d 3 — feed 3 lines.</summary>
     public const string Feed3Lines = "\x1B\x64\x03";
+
+    /// <summary>ESC d 5 — feed 5 lines.</summary>
+    public const string Feed5Lines = "\x1B\x64\x05";
 
     /// <summary>GS V 0 — full cut.</summary>
     public const string FullCut = "\x1D\x56\x00";

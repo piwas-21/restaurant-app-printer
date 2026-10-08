@@ -19,6 +19,9 @@ public enum KitchenPrintStatus
     /// <summary>The input names a destination the client cannot safely interpret.</summary>
     Unknown,
 
+    /// <summary>No route for this destination is assigned to this device; no output was owed.</summary>
+    NoWork,
+
     /// <summary>The operator deliberately disabled automatic printing.</summary>
     Skipped,
 }
@@ -38,6 +41,7 @@ public readonly record struct KitchenPrintOutcome(KitchenPrintStatus Status)
     public static KitchenPrintOutcome Failed { get; } = new(KitchenPrintStatus.Failed);
     public static KitchenPrintOutcome NotConfigured { get; } = new(KitchenPrintStatus.NotConfigured);
     public static KitchenPrintOutcome Unknown { get; } = new(KitchenPrintStatus.Unknown);
+    public static KitchenPrintOutcome NoWork { get; } = new(KitchenPrintStatus.NoWork);
     public static KitchenPrintOutcome Skipped { get; } = new(KitchenPrintStatus.Skipped);
 
     /// <summary>True only when the ticket actually went out. Non-printing outcomes are false.</summary>

@@ -22,6 +22,7 @@ public sealed class WindowsSpoolerTransport : IPrinterTransport
     public const string DocumentName = "Restaurant Order";
 
     private readonly string _printerName;
+    public bool DeliveryMayHaveOccurred { get; private set; }
 
     /// <param name="printerName">The Windows spooler printer name (as enumerated/selected).</param>
     public WindowsSpoolerTransport(string printerName)
@@ -35,10 +36,11 @@ public sealed class WindowsSpoolerTransport : IPrinterTransport
     {
         ArgumentNullException.ThrowIfNull(data);
         ct.ThrowIfCancellationRequested();
+        DeliveryMayHaveOccurred = false;
 #if WINDOWS
         // The winspool calls are synchronous Win32 API; they were called synchronously from the
         // async print path before this refactor too, so this preserves the existing behaviour.
-        WriteRaw(_printerName, data);
+        WriteRaw(_printerName, data, () => DeliveryMayHaveOccurred = true);
         return Task.CompletedTask;
 #else
         throw new PlatformNotSupportedException(
@@ -66,7 +68,7 @@ public sealed class WindowsSpoolerTransport : IPrinterTransport
     /// sequence, moved from <c>WindowsPrinterService</c>. Cleanup ordering matches the legacy code
     /// (page/doc ended and the handle closed on every path, including failures).
     /// </summary>
-    private static void WriteRaw(string printerName, byte[] bytes)
+    private static void WriteRaw(string printerName, byte[] bytes, Action markDeliveryMayHaveOccurred)
     {
         var docInfo = new DOC_INFO_1
         {
@@ -86,6 +88,7 @@ public sealed class WindowsSpoolerTransport : IPrinterTransport
                     throw new Win32Exception(Marshal.GetLastWin32Error(), $"StartPagePrinter failed for '{printerName}'");
                 try
                 {
+                    markDeliveryMayHaveOccurred();
                     if (!WritePrinter(hPrinter, bytes, bytes.Length, out int written))
                         throw new Win32Exception(Marshal.GetLastWin32Error(), $"WritePrinter failed for '{printerName}'");
                     if (written != bytes.Length)

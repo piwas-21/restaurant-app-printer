@@ -51,6 +51,7 @@ public class TelemetryClientTests
         FeedRunning = true,
         ApiBaseUrl = "https://api.example.com",
         KitchenPrinter = "192.168.1.50",
+        SupportsUpdateAuthorization = true,
     };
 
     [Fact]
@@ -80,6 +81,7 @@ public class TelemetryClientTests
         Assert.DoesNotContain("super-secret-key", handler.Body);
         using var doc = JsonDocument.Parse(handler.Body!);
         Assert.True(doc.RootElement.TryGetProperty("feedRunning", out _));   // camelCase
+        Assert.True(doc.RootElement.GetProperty("supportsUpdateAuthorization").GetBoolean());
         Assert.False(doc.RootElement.TryGetProperty("apiKey", out _));       // no key field at all
     }
 

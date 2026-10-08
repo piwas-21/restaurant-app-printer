@@ -76,7 +76,7 @@ PrinterAPP/
 ### Key patterns
 
 - **Service-oriented with dependency injection** via `MauiProgram.cs`. Every service registered as `AddSingleton<IFoo, Foo>()`.
-- **MVVM with code-behind**: standard MAUI pattern. View binds to code-behind directly; pure ViewModel layer is intentionally absent at this scale.
+- **MVVM with code-behind**: keep lightweight screens directly bound where that stays clear; use a ViewModel when a screen owns stateful history, projection, or command workflows. Keep code-behind to UI events and dialogs.
 - **Intelligent printer routing**: orders dispatch to Cashier, Front Kitchen, or Back Kitchen printers based on each line's `KitchenType`. Since backend PR #237 made `OrderDto.Items` **root-only**, a bundle's components live only in `OrderItem.SideItems`, nested to arbitrary depth — so routing walks the whole tree (`KitchenTicketFilter`, a pure function like `FeedWatchdogDecision`), never just the top level. A component whose kitchen differs from its parent's goes to *its own* kitchen's ticket, which carries the parent line as context. **Anything that reasons about "the order's items" must recurse** — a top-level-only scan silently prints no ticket at all for that kitchen.
 - **5-second SSE polling** — the first poll fires immediately on start (a restarted Android foreground service must not leave the pass blind), every one after it 5 s apart; the interval is a constructor parameter defaulting to 5 s so tests can drive the loop without paying its wall clock — with a 1-hour deduplication window so re-emitted orders during reconnects don't double-print. The poll cursor and dedup set are **persisted** (`IFeedCursorStore`), so a restart resumes instead of re-printing the last 30 minutes. A dedup entry is persisted only once the print path confirms the order (`ConfirmOrderHandled`) — a kill between dispatch and print must re-drive the order, never silently suppress it. Three timings are coupled and must stay ordered — `unconfirmed retention (25 min) < cursor look-back clamp (30 min) < dedup window (1 h)`. The clamp must stay under the dedup window or a re-fetch reaches orders no surviving dedup entry guards (reprints); unconfirmed retention must stay under the clamp or an unconfirmed order's cursor floor is discarded by the very load it exists to influence (silently dropped ticket). An unconfirmed order that ages out is reported to the Errors page — past that point it genuinely cannot be recovered.
 - **Feed watchdog** (`IFeedWatchdog`): restarts a feed that died or stopped completing polls. It must never override a deliberate stop — see `FeedWatchdogDecision`, where all of that logic lives as a pure, tested function.
@@ -148,15 +148,12 @@ Grep for the type/method/key you're adding or modifying. List every callsite. Co
 ## §7 — Quality gates (source of truth `.github/workflows/ci.yml` + `.pre-commit-config.yaml`)
 
 - **Pre-commit** (blocking): trailing-ws / EOF / YAML-JSON-XML checks / large-files / secret-scan (detect-secrets) / no-commit-to-protected; file-length (§4). No build gate in pre-commit — `dotnet build PrinterAPP.sln` is a manual pre-merge step on Windows.
-- **CI** (`ci.yml`), three jobs: `dotnet test` on `PrinterAPP.Tests` (plain net10.0, ubuntu-latest — no
-  MAUI workloads needed, since DEV-PHASES W1); **`maui_compile`**, which builds the MAUI app head for
-  the **android TFM** on ubuntu (`dotnet workload restore` + `dotnet build -f net10.0-android`); and
-  `checks`, one job running file-length (§4), Gitleaks, TruffleHog (PRs only) and Trivy fs in sequence
-  (four sub-minute jobs each billed a whole minute is four billed minutes for ~40 s of work — this repo
-  is private and billed). ⚠️ Still Windows-only, therefore still uncovered by CI: the **Windows TFM** —
-  the `#if WINDOWS` bodies (`WindowsPrinterService`'s P/Invoke) and Windows-only XAML, plus
-  `dotnet format` and CodeQL (issue #4). `build-windows.{ps1,sh}` remains the pre-merge source of truth
-  for those.
+- **CI** (`ci.yml`), seven jobs: `dotnet_test` runs the plain .NET tests and compiles the source-linked E2E project;
+  `maui_compile` builds the Android app head on Ubuntu; `maui_windows_compile` builds the Windows app head on
+  Windows (isolating its TFM as the release workflow does); `file_length`, `gitleaks`, `trufflehog` and
+  `trivy_fs` publish the four scan names required by the branch rules. Each scan runs independently.
+  Both app-head builds use Debug and require no signing secrets. Windows device/runtime checks and
+  installer validation remain separate; `dotnet format` and CodeQL are still pending (#4).
 - **Weekly** `security-audit.yml` (cron): OSV full-tree, Trivy fs (HIGH/CRITICAL), gitleaks full-history, `dotnet list package --vulnerable` — fails red on findings.
 - **New-dev setup**: `pwsh -File scripts/setup_hooks.ps1` (Windows) or `bash scripts/setup_hooks.sh` (macOS/Linux — hooks only; build needs Windows).
 

@@ -1,5 +1,4 @@
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using PrinterAPP.Models;
 
 namespace PrinterAPP.Services;
@@ -7,11 +6,6 @@ namespace PrinterAPP.Services;
 /// <summary>Resilient parser for orders and additive update jobs in one printer-feed response.</summary>
 public static class OrderFeedParser
 {
-    private static readonly JsonSerializerOptions Options = new()
-    {
-        PropertyNameCaseInsensitive = true,
-        Converters = { new JsonStringEnumConverter() },
-    };
     /// <summary>Parses a feed body without throwing for malformed JSON or individual entries.</summary>
     public static OrderFeedParseResult Parse(string json)
     {
@@ -61,7 +55,7 @@ public static class OrderFeedParser
     private static void ParseOrdersIfPresent(JsonElement data, ParsedData parsed)
     {
         if (TryGetPropertyIgnoreCase(data, "items", out var items) && items.ValueKind == JsonValueKind.Array)
-            ParseOrders(items, parsed.Orders, parsed.Errors);
+            ParseOrders(items, parsed);
     }
     private static void ReadNextUpdateCursor(JsonElement data, ParsedData parsed)
     {
@@ -121,40 +115,60 @@ public static class OrderFeedParser
     }
     private static OrderFeedParseResult ToResult(ParsedData parsed) => new(parsed.Orders, parsed.Errors)
     {
-        Updates = parsed.Updates, UpdateErrors = parsed.UpdateErrors, NextUpdateCursor = parsed.NextUpdateCursor,
-        HasMoreUpdates = parsed.HasMoreUpdates, IsSuccess = parsed.IsSuccess, HasDataEnvelope = true,
+        Updates = parsed.Updates,
+        UpdateErrors = parsed.UpdateErrors,
+        NextUpdateCursor = parsed.NextUpdateCursor,
+        HasMoreUpdates = parsed.HasMoreUpdates,
+        IsSuccess = parsed.IsSuccess,
+        HasDataEnvelope = true,
         FailureMessage = parsed.FailureMessage,
     };
     private static OrderFeedParseResult InvalidBody(Exception ex) => new(
         Array.Empty<Order>(), new[] { new OrderFeedParseError(-1, null, $"Response body was not valid JSON: {ex.Message}") })
     {
-        IsSuccess = false, HasDataEnvelope = false,
+        IsSuccess = false,
+        HasDataEnvelope = false,
     };
     private static OrderFeedParseResult InvalidEnvelope(string? failureMessage) => new(
         Array.Empty<Order>(), Array.Empty<OrderFeedParseError>())
     {
-        IsSuccess = false, HasDataEnvelope = false, FailureMessage = failureMessage,
+        IsSuccess = false,
+        HasDataEnvelope = false,
+        FailureMessage = failureMessage,
     };
-    private static void ParseOrders(JsonElement items, ICollection<Order> orders, ICollection<OrderFeedParseError> errors)
+    private static void ParseOrders(JsonElement items, ParsedData parsed)
     {
         var index = 0;
         foreach (var element in items.EnumerateArray())
         {
             try
             {
-                var order = element.Deserialize<Order>(Options);
+                var order = element.Deserialize<Order>(PrinterJsonSerialization.Options);
                 if (order is null)
-                    errors.Add(new OrderFeedParseError(index, TryReadOrderNumber(element), "Order element deserialised to null."));
+                    parsed.Errors.Add(new OrderFeedParseError(index, TryReadOrderNumber(element), "Order element deserialised to null."));
+                else if (!OrderRoutingStateValidation.TryValidate(order, out var routeError))
+                {
+                    parsed.Errors.Add(new OrderFeedParseError(index, order.OrderNumber,
+                        routeError ?? "Invalid printer routing state."));
+                    parsed.Fail($"Malformed printer routing state for order {order.OrderNumber}: {routeError}");
+                }
                 else
-                    orders.Add(order);
+                    parsed.Orders.Add(order);
             }
             catch (Exception ex)
             {
-                errors.Add(new OrderFeedParseError(index, TryReadOrderNumber(element), ex.Message));
+                parsed.Errors.Add(new OrderFeedParseError(index, TryReadOrderNumber(element), ex.Message));
+                if (HasNonEmptyRoutingStates(element))
+                    parsed.Fail($"Malformed printer routing state: {ex.Message}");
             }
             index++;
         }
     }
+
+    private static bool HasNonEmptyRoutingStates(JsonElement element) =>
+        TryGetPropertyIgnoreCase(element, "routingStates", out var routes)
+        && routes.ValueKind == JsonValueKind.Array
+        && routes.GetArrayLength() > 0;
     private static void ParseUpdates(JsonElement updateArray, ICollection<PrinterFeedUpdate> updates,
         ICollection<OrderFeedParseError> errors)
     {
@@ -163,12 +177,12 @@ public static class OrderFeedParser
         {
             try
             {
-                var update = element.Deserialize<PrinterFeedUpdate>(Options);
+                var update = element.Deserialize<PrinterFeedUpdate>(PrinterJsonSerialization.Options);
                 if (update is null)
                     errors.Add(new OrderFeedParseError(index, TryReadUpdateOrderNumber(element), "Update element deserialised to null."));
                 else
                 {
-                    var validationError = ValidateUpdate(element, update);
+                    var validationError = PrinterFeedUpdateValidation.Validate(element, update);
                     if (validationError is not null)
                         errors.Add(new OrderFeedParseError(index, TryReadUpdateOrderNumber(element), validationError));
                     else
@@ -182,28 +196,6 @@ public static class OrderFeedParser
             index++;
         }
     }
-    private static string? ValidateUpdate(JsonElement element, PrinterFeedUpdate update)
-    {
-        foreach (var property in RequiredUpdateProperties)
-        {
-            if (!TryGetPropertyIgnoreCase(element, property, out _))
-                return $"Update {property} is required.";
-        }
-        if (update.JobId == Guid.Empty) return "Update jobId is required.";
-        if (update.Revision <= 0) return "Update revision must be positive.";
-        if (update.JobType != DevicePrintJobType.Update) return "Update jobType is not Update.";
-        if (update.Target is not (DevicePrintTarget.General or DevicePrintTarget.Default))
-            return "Update target is not General or Default.";
-        if (update.OrderId == Guid.Empty) return "Update orderId is required.";
-        if (!string.Equals(update.Audience, "Kitchen", StringComparison.OrdinalIgnoreCase))
-            return "Update audience is not Kitchen.";
-        if (string.IsNullOrWhiteSpace(update.OrderNumber)) return "Update orderNumber is required.";
-        if (string.IsNullOrWhiteSpace(update.Text)) return "Update text is required.";
-        if (update.CreatedAt == default) return "Update createdAt is required.";
-        return null;
-    }
-    private static readonly string[] RequiredUpdateProperties = [
-        "jobId", "revision", "jobType", "target", "orderId", "orderNumber", "audience", "text", "createdAt"];
     private static string? TryReadOrderNumber(JsonElement element) => TryReadScalar(element, "orderNumber");
     private static string? TryReadUpdateOrderNumber(JsonElement element) => TryReadScalar(element, "orderNumber");
     private static string? TryReadScalar(JsonElement element, string propertyName)
@@ -212,7 +204,9 @@ public static class OrderFeedParser
             return null;
         return value.ValueKind switch
         {
-            JsonValueKind.String => value.GetString(), JsonValueKind.Number => value.ToString(), _ => null,
+            JsonValueKind.String => value.GetString(),
+            JsonValueKind.Number => value.ToString(),
+            _ => null,
         };
     }
     private static bool TryGetPropertyIgnoreCase(JsonElement element, string name, out JsonElement value)

@@ -57,11 +57,11 @@ Edit `PrinterAPP/PrinterAPP.csproj` and increment all three version values:
 
 ```xml
 <!-- `<Version>` becomes the assembly version that UpdateService compares with the release tag. -->
-<Version>1.0.30</Version>
+<Version>1.0.31</Version>
 <!-- Android's user-visible version label. -->
-<ApplicationDisplayVersion>1.0.30</ApplicationDisplayVersion>
+<ApplicationDisplayVersion>1.0.31</ApplicationDisplayVersion>
 <!-- Android's integer versionCode; it must be greater than the previous APK's code. -->
-<ApplicationVersion>29</ApplicationVersion>
+<ApplicationVersion>30</ApplicationVersion>
 ```
 
 `ApplicationDisplayVersion` alone does not fix an updater that is built with an older assembly
@@ -70,40 +70,56 @@ previous build. Keep both values increasing alongside `<Version>` for every rele
 
 ## Step 2: Commit and Tag
 
-GitHub Actions (`build-release.yml`) builds **both platforms** on a version tag and attaches them to
-the release:
-- **Windows** (`build-windows` matrix, one leg per RID, then the `release-windows` job) —
-  `PrinterApp-Setup-x64.exe` / `-x86.exe` (consumed by the in-app auto-updater). The legs build in
-  parallel and only upload artifacts; `release-windows` attaches both files in one call, so the two
-  legs cannot race to create the same release. If one arch fails, the other is still released, and a
-  release with **no** installer is refused outright — the auto-updater would otherwise see a newer
-  version it cannot download.
-- **Android** (`build-android` job) — `PrinterApp-Android.apk` (sideload).
+GitHub Actions (`build-release.yml`) builds **both platforms** on a version tag and publishes only
+after every build succeeds and the complete asset set passes validation:
+- **Windows** (`build-windows` matrix, one leg per RID) — `PrinterApp-Setup-x64.exe` and
+  `PrinterApp-Setup-x86.exe` (consumed by the in-app auto-updater). The legs build in parallel and
+  only upload artifacts.
+- **Android** (`build-android` job) — exactly one release-signed `PrinterApp-Android.apk` (sideload).
+- **Publication** (`publish-release`) — waits for both platform jobs, validates exactly these three
+  assets as non-empty regular files, then uploads them in one release action. Missing signing
+  secrets, an invalid keystore, a failed Windows architecture, or an incomplete/extra asset set
+  prevents this workflow from publishing any assets; there is no Debug APK fallback or
+  build-driven partial release.
 
-1. Commit your changes:
+1. Branch from `origin/develop`, commit with explicit paths and push through the local review hook:
    ```bash
-   git add .
-   git commit -m "chore: bump version to 1.0.3"
-   git push
+   git commit -m "chore: prepare printer v1.0.31" -- PrinterAPP/PrinterAPP.csproj RELEASE_WORKFLOW.md
+   git push -u origin HEAD
    ```
+   Open the source PR to `develop`. Complete manual review, CI, unresolved-thread and authenticated
+   Sonar gate/zero-open-issue checks, then merge through the workspace's `scripts/pr-merge-gate.sh`.
 
-2. Create and push a tag:
+2. Open a release PR from `develop` to `main` and merge through the same gate. Release PRs use a merge
+   commit so `develop` remains an ancestor of `main`; never delete either protected branch.
+
+3. Fetch and inspect the released `origin/main` revision. Confirm its three version values match
+   the intended release, then create the tag on that exact commit:
    ```bash
-   git tag v1.0.3
-   git push origin v1.0.3
+   git fetch origin main
+   git show origin/main:PrinterAPP/PrinterAPP.csproj
+   git tag v1.0.31 origin/main
+   git push origin v1.0.31
    ```
+   A tag must identify reviewed, released source. Do not tag an unmerged feature branch or push source
+   directly to `main` or `develop`.
 
-## Step 3: Wait for Build
+## Step 3: Wait for Build and Asset Validation
 
 1. Go to your GitHub repository -> **Actions** tab.
-2. You will see a "Build and Release" workflow running.
-3. Wait ~5 minutes for it to complete.
+2. You will see a "Build and Release" workflow running. Both Windows matrix legs and the Android
+   release-signed build must succeed before `publish-release` can run.
+3. The publish job downloads the three build artifacts and checks their exact names, regular-file
+   type, and non-empty size before creating or updating the public release. A red build or validation
+   job means this workflow run did not publish release assets.
 
-## Step 4: Publish Release
+## Step 4: Verify the Published Release
 
-1. Go to **Releases**.
-2. You will see a new release created automatically (or a draft).
-3. The files `PrinterApp-Setup-x64.exe` and `PrinterApp-Setup-x86.exe` will be attached automatically.
+1. Go to **Releases** in `piwas-21/printer-app-releases`.
+2. Confirm the tag has exactly `PrinterApp-Setup-x64.exe`, `PrinterApp-Setup-x86.exe`, and
+   `PrinterApp-Android.apk` attached.
+3. Verify the Android signer with `apksigner verify --print-certs PrinterApp-Android.apk` and
+   compare its certificate against the established release signer before distributing it.
 4. Edit the release to add release notes if desired.
 
 ## Step 5: Restaurant Can Now Update
@@ -122,9 +138,10 @@ the release:
 
 ## Android signing (one-time setup)
 
-The `build-android` job signs the APK with a release keystore read from GitHub Actions secrets.
-**Until these secrets are set, the job builds a Debug-signed APK** — installable for testing, but
-**not** for production distribution (debug key + debuggable build).
+The `build-android` job signs the APK with the release keystore read from GitHub Actions secrets.
+All four secrets are mandatory for a tag build. Missing values, invalid base64, or signing failures
+fail the Android job; the public release job is skipped. The workflow never substitutes a
+Debug-signed APK for a production asset.
 
 1. Generate a keystore (keep it safe and backed up — losing it means you can't ship updates that
    install over an existing install):
@@ -135,7 +152,9 @@ The `build-android` job signs the APK with a release keystore read from GitHub A
 2. In **repo Settings -> Secrets and variables -> Actions**, add:
    - `ANDROID_KEYSTORE_BASE64` — `base64 -i printerapp.keystore` (the whole file, base64-encoded)
    - `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` (e.g. `printerapp`), `ANDROID_KEY_PASSWORD`
-3. Re-tag (or re-run the workflow); the Android job now produces a signed Release APK.
+3. Re-run the release workflow after verifying the secrets exist; the Android job produces a
+   release-signed APK, and publication proceeds only if the Android build and both Windows builds
+   succeed.
 
 > Play Store managed distribution + in-app updates are a later Phase 5 add-on; sideload covers the
 > initial Android rollout.

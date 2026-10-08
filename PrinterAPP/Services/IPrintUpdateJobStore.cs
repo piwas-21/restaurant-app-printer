@@ -17,11 +17,23 @@ public interface IPrintUpdateJobStore
     /// <summary>Returns durable retryable jobs. Processing jobs are not returned in-process.</summary>
     IReadOnlyList<PrintUpdateJobRecord> GetPending();
 
+    /// <summary>Returns terminal outcomes whose final acknowledgement is not yet durable in the outbox.</summary>
+    IReadOnlyList<PrintUpdateJobRecord> GetPendingFinalAcknowledgements() => Array.Empty<PrintUpdateJobRecord>();
+
     /// <summary>Atomically gives one pipeline owner the job.</summary>
     bool TryBegin(PrintUpdateJobKey key);
 
+    /// <summary>Redacts a withdrawn job while retaining its identity and any ambiguous print state.</summary>
+    bool MarkWithdrawn(PrintUpdateJobKey key) => false;
+
+    /// <summary>True after server withdrawal has invalidated a locally cached revision-one payload.</summary>
+    bool IsWithdrawalRequested(PrintUpdateJobKey key) => false;
+
     /// <summary>Records the outcome and persists the history entry.</summary>
     bool Complete(PrintUpdateJobKey key, PrintUpdateJobState state, string? failureReason = null);
+
+    /// <summary>Marks a final outcome snapshot as durably queued after the outbox accepts it.</summary>
+    bool MarkFinalAcknowledgementQueued(PrintUpdateJobKey key) => true;
 
     /// <summary>Returns all retained update history, oldest first.</summary>
     IReadOnlyList<PrintUpdateJobRecord> GetHistory();

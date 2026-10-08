@@ -91,6 +91,89 @@ public class PrintAckOutboxTests : IDisposable
     }
 
     [Fact]
+    public async Task RoutedAck_RestartFlushesStableJobIdentityExactlyOnce()
+    {
+        var jobId = Guid.NewGuid();
+        var ack = Ack();
+        ack.JobId = jobId;
+        ack.Revision = 4;
+        ack.JobType = DevicePrintJobType.Order;
+
+        await _outbox.EnqueueAsync(new[] { ack });
+
+        var reopened = new PrintAckOutbox(new TempPaths(_dir), NullLogger<PrintAckOutbox>.Instance);
+        var flushed = new List<PrintAck>();
+        await reopened.FlushAsync(batch =>
+        {
+            flushed.AddRange(batch);
+            return Task.FromResult(true);
+        });
+
+        var persisted = Assert.Single(flushed);
+        Assert.Equal(jobId, persisted.JobId);
+        Assert.Equal(4, persisted.Revision);
+        Assert.Equal(DevicePrintJobType.Order, persisted.JobType);
+
+        var secondFlush = 0;
+        await reopened.FlushAsync(_ =>
+        {
+            secondFlush++;
+            return Task.FromResult(true);
+        });
+        Assert.Equal(0, secondFlush);
+    }
+
+    [Fact]
+    public async Task Enqueue_ThrowsWhenDurablePathCannotBeWritten()
+    {
+        var pathFile = Path.Combine(_dir, "not-a-directory");
+        File.WriteAllText(pathFile, "occupied");
+        var failing = new PrintAckOutbox(new TempPaths(pathFile), NullLogger<PrintAckOutbox>.Instance);
+
+        await Assert.ThrowsAnyAsync<Exception>(() => failing.EnqueueAsync(new[] { Ack() }));
+    }
+
+    [Fact]
+    public async Task Enqueue_coalesces_only_the_same_routed_job_identity()
+    {
+        var orderId = Guid.NewGuid();
+        var jobId = Guid.NewGuid();
+        var first = new PrintAck
+        {
+            OrderId = orderId, Target = DevicePrintTarget.FrontKitchen,
+            Status = DevicePrintStatus.Queued, ReceivedAt = DateTime.UtcNow,
+            JobId = jobId, Revision = 1, JobType = DevicePrintJobType.Order,
+        };
+        var terminal = new PrintAck
+        {
+            OrderId = orderId, Target = DevicePrintTarget.FrontKitchen,
+            Status = DevicePrintStatus.Printed, ReceivedAt = first.ReceivedAt,
+            Copies = 1, JobId = jobId, Revision = 1, JobType = DevicePrintJobType.Order,
+        };
+        var otherTarget = new PrintAck
+        {
+            OrderId = orderId, Target = DevicePrintTarget.BackKitchen,
+            Status = DevicePrintStatus.Queued, ReceivedAt = first.ReceivedAt,
+            JobId = jobId, Revision = 1, JobType = DevicePrintJobType.Order,
+        };
+
+        await _outbox.EnqueueAsync(new[] { first, terminal, otherTarget });
+
+        List<PrintAck>? sent = null;
+        await _outbox.FlushAsync(batch =>
+        {
+            sent = batch.ToList();
+            return Task.FromResult(true);
+        });
+
+        Assert.Equal(2, sent!.Count);
+        Assert.Equal(DevicePrintStatus.Printed,
+            Assert.Single(sent, ack => ack.Target == DevicePrintTarget.FrontKitchen).Status);
+        Assert.Equal(DevicePrintTarget.BackKitchen,
+            Assert.Single(sent, ack => ack.Target == DevicePrintTarget.BackKitchen).Target);
+    }
+
+    [Fact]
     public async Task Flush_ChunksLargeQueueIntoBackendSizedBatches()
     {
         await _outbox.EnqueueAsync(Enumerable.Range(0, 501).Select(_ => Ack()).ToList());

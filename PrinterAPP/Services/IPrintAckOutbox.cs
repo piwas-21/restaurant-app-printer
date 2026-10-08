@@ -9,7 +9,10 @@ namespace PrinterAPP.Services;
 /// </summary>
 public interface IPrintAckOutbox
 {
-    /// <summary>Persists acks to the queue. Best-effort — never throws.</summary>
+    /// <summary>
+    /// Persists acks to the queue. Throws when the durable write cannot be completed; callers that
+    /// use the ack as confirmation evidence must not advance their source cursor after a failure.
+    /// </summary>
     Task EnqueueAsync(IEnumerable<PrintAck> acks, CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -92,6 +92,13 @@ public class OrderProcessedEventArgs : EventArgs
     public Exception? Error { get; init; }
 
     /// <summary>
+    /// True when physical output may have happened but a routed acknowledgement could not be
+    /// durably persisted. The feed remains retryable; exactly-once paper cannot be claimed after a
+    /// local disk failure and a retry may duplicate output.
+    /// </summary>
+    public bool AckPersistenceAmbiguous { get; init; }
+
+    /// <summary>
     /// True only when every target reported success, including
     /// <see cref="GeneralDefault"/> actually being sent — <see cref="KitchenPrintStatus.NotConfigured"/>
     /// fails this, by design. A false flag is a genuine print failure:

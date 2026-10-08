@@ -9,6 +9,12 @@ namespace PrinterAPP.Services;
 public interface IPrinterTransport
 {
     /// <summary>
+    /// True after a send has crossed the transport's delivery boundary and a later failure could
+    /// mean that some bytes reached the destination. Callers must not automatically resend then.
+    /// </summary>
+    bool DeliveryMayHaveOccurred => false;
+
+    /// <summary>
     /// Sends an already-encoded ESC/POS byte payload to the printer. Throws on failure so the
     /// caller can log and surface the error (it does not silently swallow).
     /// </summary>

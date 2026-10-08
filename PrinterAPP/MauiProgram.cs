@@ -1,6 +1,7 @@
 ﻿using System.Reflection;
 using Microsoft.Extensions.Logging;
 using PrinterAPP.Services;
+using PrinterAPP.ViewModels;
 using Sentry.Maui;
 
 namespace PrinterAPP
@@ -67,6 +68,14 @@ namespace PrinterAPP
             builder.Services.AddSingleton<IPrinterService, WindowsPrinterService>();
             builder.Services.AddSingleton<IRequestLogService, RequestLogService>();
             builder.Services.AddSingleton<IEventStreamingService, EventStreamingService>();
+            builder.Services.AddSingleton<IPrinterUpdateAuthorizationService>(sp =>
+                new PrinterUpdateAuthorizationService(
+                    new HttpClient { Timeout = TimeSpan.FromSeconds(10) },
+                    sp.GetRequiredService<IPrinterService>(),
+                    sp.GetRequiredService<ILogger<PrinterUpdateAuthorizationService>>()));
+            builder.Services.AddSingleton<IMarketplaceReceiptComposer, MarketplaceReceiptComposer>();
+            builder.Services.AddSingleton<IPrinterOutputService, PrinterOutputService>();
+            builder.Services.AddSingleton<IPrinterCorrectionCopyService, PrinterCorrectionCopyService>();
             builder.Services.AddSingleton<IOrderPrintService, OrderPrintService>();
             builder.Services.AddSingleton<IOrderHistoryService, OrderHistoryService>();
             builder.Services.AddSingleton<IUpdateService, UpdateService>();
@@ -98,6 +107,8 @@ namespace PrinterAPP
             // Register pages
             builder.Services.AddSingleton<MainPage>();
             builder.Services.AddSingleton<OrderManagementPage>();
+            builder.Services.AddTransient<PrinterCorrectionsPage>();
+            builder.Services.AddTransient<PrinterCorrectionHistoryViewModel>();
             builder.Services.AddSingleton<DiagnosticsPage>();
             builder.Services.AddTransient<UpdaterWindow>();
 

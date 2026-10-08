@@ -81,4 +81,30 @@ public class TelemetryPayloadsTests
         Assert.Null(hb.KitchenPrinter);
         Assert.Null(hb.CashierPrinter);
     }
+
+    [Fact]
+    public void Heartbeat_ReportsCompleteTargetSnapshotWithoutSecrets()
+    {
+        var config = new PrinterConfiguration
+        {
+            ApiKey = "sentinel-api-key", // pragma: allowlist secret -- verifies heartbeat redaction
+            CashierPrinterName = "cashier",
+            FrontKitchenPrinterName = "front",
+            KitchenPrinterName = "back",
+            KitchenRoutingMode = KitchenRoutingMode.Stations,
+        };
+
+        var heartbeat = TelemetryPayloads.Heartbeat(config, "Android", "1.0.30", true, null);
+
+        Assert.Equal(5, heartbeat.TargetCapabilities!.Count);
+        Assert.Equal(KitchenRoutingMode.Stations, heartbeat.KitchenRoutingMode);
+        Assert.True(heartbeat.SupportsUpdateAuthorization);
+        Assert.Equal("cashier", heartbeat.TargetCapabilities
+            .Single(capability => capability.Target == DevicePrintTarget.Cashier).PrinterName);
+        Assert.Equal("front", heartbeat.TargetCapabilities
+            .Single(capability => capability.Target == DevicePrintTarget.FrontKitchen).PrinterName);
+        Assert.Equal("back", heartbeat.TargetCapabilities
+            .Single(capability => capability.Target == DevicePrintTarget.BackKitchen).PrinterName);
+        Assert.DoesNotContain("sentinel-api-key", System.Text.Json.JsonSerializer.Serialize(heartbeat));
+    }
 }

@@ -187,4 +187,118 @@ public class OrderFeedParserTests
         Assert.Equal("T-QA", order.TableLabel);
         Assert.Null(order.TableNumber);
     }
+
+    [Fact]
+    public void Null_or_empty_routing_states_retain_the_legacy_contract()
+    {
+        var nullStates = OrderFeedParser.Parse(Feed("""
+            { "orderNumber": "LEGACY-NULL", "status": "Confirmed", "routingStates": null,
+              "items": [ { "productName": "Pide", "quantity": 1 } ] }
+            """));
+        var emptyStates = OrderFeedParser.Parse(Feed("""
+            { "orderNumber": "LEGACY-EMPTY", "status": "Confirmed", "routingStates": [],
+              "items": [ { "productName": "Pide", "quantity": 1 } ] }
+            """));
+
+        Assert.Single(nullStates.Orders);
+        Assert.Single(emptyStates.Orders);
+        Assert.True(nullStates.IsSuccess);
+        Assert.True(emptyStates.IsSuccess);
+    }
+
+    [Theory]
+    [InlineData("00000000-0000-0000-0000-000000000000", 1, "FrontKitchen", "Queued")]
+    [InlineData("11111111-1111-1111-1111-111111111111", 0, "FrontKitchen", "Queued")]
+    [InlineData("11111111-1111-1111-1111-111111111111", 1, "FrontKitchen", "Printed")]
+    public void Malformed_non_legacy_routes_fail_closed_without_returning_an_order(
+        string jobId, int revision, string target, string status)
+    {
+        var json = $$"""
+        {
+          "orderNumber": "ROUTE-BAD",
+          "status": "Confirmed",
+          "routingStates": [
+            { "jobId": "{{jobId}}", "revision": {{revision}}, "target": "{{target}}",
+              "status": "{{status}}", "deviceId": "front-device" }
+          ],
+          "items": [ { "productName": "Soup", "quantity": 1 } ]
+        }
+        """;
+
+        var result = OrderFeedParser.Parse(Feed(json));
+
+        if (jobId == "11111111-1111-1111-1111-111111111111" && revision == 1 && status == "Printed")
+        {
+            Assert.Single(result.Orders);
+            Assert.True(result.IsSuccess);
+        }
+        else
+        {
+            Assert.Empty(result.Orders);
+            Assert.False(result.IsSuccess);
+            Assert.Contains("routing", result.FailureMessage, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    [Fact]
+    public void Unknown_target_enum_fails_closed()
+    {
+        var result = OrderFeedParser.Parse(Feed("""
+        {
+          "orderNumber": "ROUTE-ENUM",
+          "status": "Confirmed",
+          "routingStates": [
+            { "jobId": "11111111-1111-1111-1111-111111111111", "revision": 1,
+              "target": 99, "status": "Queued", "deviceId": "front-device" }
+          ],
+          "items": [ { "productName": "Soup", "quantity": 1 } ]
+        }
+        """));
+
+        Assert.Empty(result.Orders);
+        Assert.False(result.IsSuccess);
+        Assert.Contains("routing", result.FailureMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Unknown_status_enum_fails_closed()
+    {
+        var result = OrderFeedParser.Parse(Feed("""
+        {
+          "orderNumber": "ROUTE-STATUS",
+          "status": "Confirmed",
+          "routingStates": [
+            { "jobId": "11111111-1111-1111-1111-111111111111", "revision": 1,
+              "target": "FrontKitchen", "status": "FutureState", "deviceId": "front-device" }
+          ],
+          "items": [ { "productName": "Soup", "quantity": 1 } ]
+        }
+        """));
+
+        Assert.Empty(result.Orders);
+        Assert.False(result.IsSuccess);
+        Assert.Contains("routing", result.FailureMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Duplicate_target_routes_fail_closed()
+    {
+        var result = OrderFeedParser.Parse(Feed("""
+        {
+          "orderNumber": "ROUTE-DUP",
+          "status": "Confirmed",
+          "routingStates": [
+            { "jobId": "11111111-1111-1111-1111-111111111111", "revision": 1,
+              "target": "FrontKitchen", "status": "Queued", "deviceId": "front-a" },
+            { "jobId": "22222222-2222-2222-2222-222222222222", "revision": 1,
+              "target": "FrontKitchen", "status": "Queued", "deviceId": "front-b" }
+          ],
+          "items": [ { "productName": "Soup", "quantity": 1 } ]
+        }
+        """));
+
+        Assert.Empty(result.Orders);
+        Assert.False(result.IsSuccess);
+        Assert.Contains("duplicate", result.FailureMessage, StringComparison.OrdinalIgnoreCase);
+    }
 }

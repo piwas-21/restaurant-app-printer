@@ -6,7 +6,8 @@ public class PrinterConfiguration
     public const int DefaultUpdateRetryIntervalSeconds = 5;
     public const int MinimumUpdateRetryIntervalSeconds = 1;
 
-    public string ApiBaseUrl { get; set; } = "https://www.rumirestaurant.ch";
+    // A new install must be explicitly pointed at its tenant before any feed or fleet traffic starts.
+    public string ApiBaseUrl { get; set; } = string.Empty;
     public string ApiKey { get; set; } = "";  // X-Api-Key header value for printer-feed authentication
 
     // Front Kitchen Printer Settings (for drinks, desserts, etc.)
@@ -25,7 +26,7 @@ public class PrinterConfiguration
     public int KitchenPrintCopies { get; set; } = 1;
     public int KitchenPaperWidth { get; set; } = 80;
 
-    // Retry cadence for durable update jobs that remain Failed, NotConfigured or Unknown.
+    // Retry cadence for known no-delivery failures and missing destinations. Unknown delivery is held for review.
     public int UpdateRetryIntervalSeconds { get; set; } = DefaultUpdateRetryIntervalSeconds;
 
     // Kitchen routing policy (issue #113): Stations (default) = the shipped Front/Back split,

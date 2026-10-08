@@ -3,14 +3,15 @@ using System.Text.Json.Serialization;
 namespace PrinterAPP.Models;
 
 /// <summary>
-/// One additive printer-feed update job. The backend currently emits kitchen operational notes as
-/// immutable revision-one jobs. The job identity is <see cref="JobId"/>, <see cref="Revision"/> and
-/// <see cref="Target"/>; it is never derived from note text or timestamps.
+/// One additive printer-feed update job. Revision one carries an immutable kitchen update; revision
+/// two may withdraw its private preparation payload. The job identity is <see cref="JobId"/>,
+/// <see cref="Revision"/> and <see cref="Target"/>; it is never derived from note text or timestamps.
 /// </summary>
 public sealed record PrinterFeedUpdate
 {
     public Guid JobId { get; init; }
     public int Revision { get; init; }
+    public bool IsWithdrawn { get; init; }
     public DevicePrintJobType JobType { get; init; } = DevicePrintJobType.Update;
     public DevicePrintTarget Target { get; init; } = DevicePrintTarget.General;
     public Guid OrderId { get; init; }
@@ -20,6 +21,14 @@ public sealed record PrinterFeedUpdate
     public Guid? TableId { get; init; }
     /// <summary>Display label captured with the order; null on legacy update jobs.</summary>
     public string? TableLabel { get; init; }
+    /// <summary>Explicit table visit associated with this amendment, when the order has one.</summary>
+    public Guid? ServiceSessionId { get; init; }
+    /// <summary>Stable operation identity shared by all station jobs for this amendment.</summary>
+    public Guid? AmendmentId { get; init; }
+    /// <summary>Visit-account revision after the amendment, when available.</summary>
+    public long? AccountRevision { get; init; }
+    /// <summary>Frozen preparation deltas; empty on legacy text-only update jobs.</summary>
+    public IReadOnlyList<PrinterFeedChange> Changes { get; init; } = Array.Empty<PrinterFeedChange>();
     public string Audience { get; init; } = "Kitchen";
     public string Text { get; init; } = string.Empty;
     public DateTime CreatedAt { get; init; }

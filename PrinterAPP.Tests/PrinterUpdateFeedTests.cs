@@ -70,6 +70,67 @@ public sealed class PrinterUpdateFeedTests : IDisposable
     }
 
     [Fact]
+    public async Task Failed_newer_withdrawal_save_rolls_back_cache_and_does_not_advance_feed_cursor()
+    {
+        using var paths = new FakeAppDataPathProvider();
+        var original = PrinterUpdateTestData.Update(
+            Guid.NewGuid(), createdAt: DateTime.UtcNow.AddMinutes(-1), text: "private note");
+        var withdrawal = original with
+        {
+            Revision = 2,
+            IsWithdrawn = true,
+            Text = string.Empty,
+            Changes = Array.Empty<PrinterFeedChange>(),
+            CreatedAt = original.CreatedAt.AddSeconds(1),
+        };
+        var seededRecords = new[]
+        {
+            new PrintUpdateJobRecord
+            {
+                Update = original with { IsWithdrawn = true },
+                State = PrintUpdateJobState.Unknown,
+                FirstSeenAt = original.CreatedAt,
+                FailureReason = "ambiguous",
+                FinalAcknowledgementQueued = true,
+            },
+            new PrintUpdateJobRecord
+            {
+                Update = withdrawal,
+                State = PrintUpdateJobState.Withdrawn,
+                FirstSeenAt = withdrawal.CreatedAt,
+                FailureReason = "Withdrawn",
+                FinalAcknowledgementQueued = true,
+            },
+        };
+        var options = new JsonSerializerOptions { Converters = { new JsonStringEnumConverter() } };
+        var jobFile = Path.Combine(paths.AppDataDirectory, "print-update-jobs.json");
+        File.WriteAllText(jobFile, JsonSerializer.Serialize(seededRecords, options));
+
+        var store = new PrintUpdateJobStore(paths, NullLogger<PrintUpdateJobStore>.Instance);
+        Assert.True(store.TryAdvanceUpdateCursor("cursor-before"));
+        Assert.Equal(2, store.GetHistory().Count);
+        File.Delete(store.FilePath);
+        Directory.CreateDirectory(store.FilePath);
+
+        var newerWithdrawal = withdrawal with { CreatedAt = withdrawal.CreatedAt.AddSeconds(1) };
+        var server = AddServer(PrinterUpdateTestData.Feed(new[] { newerWithdrawal }, "cursor-after"));
+        var service = CreateFeed(server, store);
+
+        await service.StartListeningAsync();
+        Assert.True(await WaitUntilAsync(() => server.UpdateCursors.Count > 0));
+        await Task.Delay(100);
+        await service.StopListeningAsync();
+
+        Assert.Equal("cursor-before", store.LoadUpdateCursor());
+        Assert.DoesNotContain("cursor-after", server.UpdateCursors);
+        var unchangedWithdrawal = Assert.Single(store.GetHistory(), record => record.Key == withdrawal.Key);
+        Assert.Equal(withdrawal.CreatedAt, unchangedWithdrawal.Update.CreatedAt);
+        var unchangedOriginal = Assert.Single(store.GetHistory(), record => record.Key == original.Key);
+        Assert.Equal(PrintUpdateJobState.Unknown, unchangedOriginal.State);
+        Assert.Equal("private note", unchangedOriginal.Update.Text);
+    }
+
+    [Fact]
     public void Parser_rejects_updates_with_an_empty_cursor()
     {
         var update = PrinterUpdateTestData.Update();
@@ -115,6 +176,155 @@ public sealed class PrinterUpdateFeedTests : IDisposable
         Assert.Equal(update.TableId, parsed.TableId);
         Assert.Equal("T-QA", parsed.TableLabel);
         Assert.Null(parsed.TableNumber);
+    }
+
+    [Fact]
+    public void Parser_accepts_typed_changes_and_preserves_visit_amendment_and_item_snapshots()
+    {
+        var update = PrinterUpdateTestData.Update(text: string.Empty) with
+        {
+            ServiceSessionId = Guid.Parse("44444444-4444-4444-4444-444444444444"),
+            AmendmentId = Guid.Parse("55555555-5555-5555-5555-555555555555"),
+            AccountRevision = 9,
+            Changes = new[]
+            {
+                new PrinterFeedChange
+                {
+                    Kind = KitchenChangeKind.Add,
+                    Current = new OrderItem
+                    {
+                        Id = "line-1",
+                        ProductName = "Burger",
+                        Quantity = 2,
+                        IngredientCustomizations = new List<IngredientCustomization>
+                        {
+                            new() { IngredientId = "onion", IngredientName = "Onion", IsRemoved = true },
+                        },
+                    },
+                },
+            },
+        };
+
+        var result = OrderFeedParser.Parse(PrinterUpdateTestData.Feed(new[] { update }, "cursor-1"));
+
+        var parsed = Assert.Single(result.Updates);
+        Assert.Equal(update.ServiceSessionId, parsed.ServiceSessionId);
+        Assert.Equal(update.AmendmentId, parsed.AmendmentId);
+        Assert.Equal(9, parsed.AccountRevision);
+        var added = Assert.Single(parsed.Changes);
+        Assert.Equal(KitchenChangeKind.Add, added.Kind);
+        Assert.Equal("Burger", added.Current!.ProductName);
+        Assert.Equal(2, added.Current.Quantity);
+        Assert.Equal("Onion", Assert.Single(added.Current.IngredientCustomizations!).IngredientName);
+    }
+
+    [Fact]
+    public void Parser_rejects_typed_change_without_the_snapshot_required_by_its_kind()
+    {
+        var update = PrinterUpdateTestData.Update() with
+        {
+            Changes = new[] { new PrinterFeedChange { Kind = KitchenChangeKind.Void } },
+        };
+
+        var result = OrderFeedParser.Parse(PrinterUpdateTestData.Feed(new[] { update }, "cursor-1"));
+
+        Assert.False(result.IsSuccess);
+        Assert.Empty(result.Updates);
+        Assert.Contains(result.UpdateErrors, error =>
+            error.Message.Contains("invalid item snapshots", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void Parser_accepts_instruction_change_when_identity_and_quantity_match()
+    {
+        var update = PrinterUpdateTestData.Update(text: string.Empty) with
+        {
+            Changes = new[]
+            {
+                new PrinterFeedChange
+                {
+                    Kind = KitchenChangeKind.InstructionChange,
+                    Previous = new OrderItem
+                    {
+                        Id = "33333333-3333-3333-3333-333333333333",
+                        ProductName = "Salad",
+                        Quantity = 1,
+                        IngredientCustomizations = new List<IngredientCustomization>
+                        {
+                            new() { IngredientName = "Croutons", IsRemoved = true },
+                        },
+                    },
+                    Current = new OrderItem
+                    {
+                        Id = "33333333333333333333333333333333",
+                        ProductName = "Salad",
+                        Quantity = 1,
+                        IngredientCustomizations = new List<IngredientCustomization>
+                        {
+                            new() { IngredientName = "Cheese", IsRemoved = true },
+                        },
+                    },
+                },
+            },
+        };
+
+        var result = OrderFeedParser.Parse(PrinterUpdateTestData.Feed(new[] { update }, "cursor-1"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(KitchenChangeKind.InstructionChange, Assert.Single(result.Updates).Changes[0].Kind);
+    }
+
+    [Theory]
+    [InlineData("line-1", "line-2", 1, 1)]
+    [InlineData("line-1", "line-1", 1, 2)]
+    [InlineData("", "line-1", 1, 1)]
+    public void Parser_rejects_instruction_change_with_different_identity_or_quantity(
+        string previousId, string currentId, int previousQuantity, int currentQuantity)
+    {
+        var update = PrinterUpdateTestData.Update(text: string.Empty) with
+        {
+            Changes = new[]
+            {
+                new PrinterFeedChange
+                {
+                    Kind = KitchenChangeKind.InstructionChange,
+                    Previous = new OrderItem
+                    {
+                        Id = previousId,
+                        ProductName = "Salad",
+                        Quantity = previousQuantity,
+                    },
+                    Current = new OrderItem
+                    {
+                        Id = currentId,
+                        ProductName = "Salad",
+                        Quantity = currentQuantity,
+                    },
+                },
+            },
+        };
+
+        var result = OrderFeedParser.Parse(PrinterUpdateTestData.Feed(new[] { update }, "cursor-1"));
+
+        Assert.False(result.IsSuccess);
+        Assert.Empty(result.Updates);
+        Assert.Contains(result.UpdateErrors, error =>
+            error.Message.Contains("invalid item snapshots", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Theory]
+    [InlineData(DevicePrintTarget.General)]
+    [InlineData(DevicePrintTarget.Default)]
+    [InlineData(DevicePrintTarget.FrontKitchen)]
+    [InlineData(DevicePrintTarget.BackKitchen)]
+    public void Parser_accepts_each_kitchen_update_target(DevicePrintTarget target)
+    {
+        var update = PrinterUpdateTestData.Update() with { Target = target };
+
+        var result = OrderFeedParser.Parse(PrinterUpdateTestData.Feed(new[] { update }, "cursor-1"));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(target, Assert.Single(result.Updates).Target);
     }
 
     private EventStreamingService CreateFeed(FeedServer server, IPrintUpdateJobStore store) =>

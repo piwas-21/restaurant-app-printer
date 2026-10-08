@@ -17,6 +17,7 @@ public enum KitchenDestinationResolutionKind
     ConfiguredDefault,
     LegacyKitchenPrinter,
     SoleConfiguredStation,
+    ConfiguredStation,
     NotConfigured,
 }
 

@@ -1,54 +1,41 @@
 using System.Globalization;
 using System.Text;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using PrinterAPP.Models;
 
 namespace PrinterAPP.Services;
 
 public class OrderPrintService : IOrderPrintService
 {
+    private readonly IMarketplaceReceiptComposer _marketplace;
     private readonly IPrinterService _printerService;
     private readonly IRequestLogService _requestLogService;
     private readonly ILogger<OrderPrintService> _logger;
     private readonly PrintStyleSettingsService _styleService;
-
-    // ESC/POS Commands for MAXIMUM darkness printing
-    private const string ESC_INIT = "\x1B\x40"; // Initialize printer
-    private const string ESC_BOLD_ON = "\x1B\x45\x01"; // Bold on
-    private const string ESC_BOLD_OFF = "\x1B\x45\x00"; // Bold off
-    private const string ESC_EMPHASIZED_ON = "\x1B\x47\x01"; // Emphasized/Double-strike on
-    private const string ESC_EMPHASIZED_OFF = "\x1B\x47\x00"; // Emphasized off
-    private const string ESC_SIZE_NORMAL = "\x1D\x21\x00"; // Normal size (1x width, 1x height)
-    private const string ESC_SIZE_TALL = "\x1D\x21\x01"; // Tall only (1x width, 2x height)
-    private const string ESC_SIZE_WIDE = "\x1D\x21\x10"; // Wide only (2x width, 1x height)
-    private const string ESC_DOUBLE_ON = "\x1D\x21\x11"; // Double width and height (2x, 2x)
-    private const string ESC_DOUBLE_OFF = "\x1D\x21\x00"; // Normal size
-    private const string ESC_LARGE_ON = "\x1D\x21\x22"; // 2x width, 3x height (larger size for kitchen)
-    private const string ESC_ALIGN_CENTER = "\x1B\x61\x01"; // Center align
-    private const string ESC_ALIGN_LEFT = "\x1B\x61\x00"; // Left align
-    private const string ESC_CUT = "\x1D\x56\x00"; // Full cut
-    private const string ESC_PARTIAL_CUT = "\x1D\x56\x01"; // Partial cut
-    private const string ESC_FEED_AND_CUT = "\x1B\x64\x03"; // Feed 3 lines and cut
-    private const string ESC_CODEPAGE_TURKISH = "\x1B\x74\x09"; // Set PC857 code page (Turkish MS-DOS - supports Turkish + Western European)
-
-    // Combined commands for MAXIMUM darkness
-    private const string EXTRA_DARK_ON = ESC_BOLD_ON + ESC_EMPHASIZED_ON; // Bold + Emphasized for maximum darkness
-    private const string EXTRA_DARK_OFF = ESC_BOLD_OFF + ESC_EMPHASIZED_OFF; // Turn off all emphasis
-    private const string ESC_FEED_LINES = "\x1B\x64\x05"; // Feed 5 lines before cut
+    private readonly IDeviceIdentityService? _deviceIdentity;
+    private readonly IPrinterOutputService _printerOutputService;
 
     // KitchenType values as the backend emits them (OrderItemDto.KitchenType).
     private const string FRONT_KITCHEN = "FrontKitchen";
     private const string BACK_KITCHEN = "BackKitchen";
 
     public OrderPrintService(
+        IMarketplaceReceiptComposer marketplace,
         IPrinterService printerService,
         IRequestLogService requestLogService,
         ILogger<OrderPrintService> logger,
-        IAppDataPathProvider pathProvider)
+        IAppDataPathProvider pathProvider,
+        IDeviceIdentityService? deviceIdentity = null,
+        IPrinterOutputService? printerOutputService = null)
     {
+        _marketplace = marketplace;
         _printerService = printerService;
         _requestLogService = requestLogService;
+        _deviceIdentity = deviceIdentity;
         _logger = logger;
+        _printerOutputService = printerOutputService
+            ?? new PrinterOutputService(NullLogger<PrinterOutputService>.Instance);
         // Path provider injected (was `new PrintStyleSettingsService()` with a MAUI default) so this
         // service is source-linkable into the headless print-to-sink test.
         _styleService = new PrintStyleSettingsService(pathProvider);
@@ -97,61 +84,111 @@ public class OrderPrintService : IOrderPrintService
 
         var config = await _printerService.LoadConfigurationAsync();
         var policy = new KitchenRoutingPolicy(config.KitchenRoutingMode);
-        bool cashierSuccess = false;
-        var frontKitchenSuccess = KitchenPrintOutcome.Failed;
-        var backKitchenSuccess = KitchenPrintOutcome.Failed;
-        var generalDefaultSuccess = KitchenPrintOutcome.Failed;
+        // Manual reprints are an operator-directed local action and preserve the existing "all
+        // configured destinations" behavior. Only the unattended feed path is device-routed.
+        var routeSelection = isManualPrint
+            ? OrderRoutingStateValidation.RoutingSelection.Legacy
+            : OrderRoutingStateValidation.Select(order, _deviceIdentity?.DeviceId);
+        if (!routeSelection.IsLegacy && !routeSelection.IsValid)
+        {
+            _logger.LogError("Rejected routed order {OrderNumber}: {Reason}",
+                order.OrderNumber, routeSelection.FailureReason);
+            _requestLogService.LogError(
+                "Printer Routing", $"Rejected routed order {order.OrderNumber}",
+                routeSelection.FailureReason ?? "Invalid route state");
+            return (false, KitchenPrintOutcome.Unknown, KitchenPrintOutcome.Unknown,
+                KitchenPrintOutcome.Unknown);
+        }
 
-        // 1. ALWAYS print to Cashier (full receipt with prices)
-        try
+        if (!routeSelection.IsLegacy && routeSelection.EligibleTargets.Count == 0)
         {
-            cashierSuccess = await PrintOrderAsync(order, PrinterType.Cashier, isManualPrint, cancellationToken);
-            _logger.LogInformation("Cashier print: {Result}", cashierSuccess ? "✓" : "✗");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error printing to cashier");
+            _logger.LogWarning("No queued route assigned to this device for order {OrderNumber}",
+                order.OrderNumber);
+            _requestLogService.LogWarning(
+                "Printer Routing", $"No local print work for order {order.OrderNumber}",
+                "The server route is not queued for this device; no output or acknowledgement was recorded.");
+            return (false, KitchenPrintOutcome.NoWork, KitchenPrintOutcome.NoWork,
+                KitchenPrintOutcome.NoWork);
         }
 
-        // 2. Route the item tree under the tenant's policy (issue #113). Both station tickets are
-        // built up front so that "does this kitchen get a ticket at all" is answered by the very
-        // thing that will be printed — the two used to be decided separately, and separately is how
-        // they drifted apart. Since backend PR #237 (issue #234) made OrderDto.Items root-only, a
-        // top-level scan misses every bundle component: a FrontKitchen combo containing BackKitchen
-        // fries produced no back-kitchen ticket, and printed the fries on the front kitchen's.
-        // KitchenTicketFilter walks the whole tree instead.
-        if (policy.Mode == KitchenRoutingMode.SingleKitchen)
-        {
-            // Every printable line belongs on ONE General ticket at the resolved destination; the
-            // stations are owed nothing, which reports the same trivially-true the empty-kitchen
-            // path has always reported.
-            var generalSelection = KitchenTicketFilter.SelectionForDestination(
-                order.Items, policy, KitchenTicketDestination.General);
-            generalDefaultSuccess = await PrintGeneralOrDefaultTicketAsync(
-                order.WithItems(generalSelection.Items.ToList()),
-                config, isManualPrint, "General Kitchen", generalSelection.HasUnknown);
-            frontKitchenSuccess = KitchenPrintOutcome.Sent;
-            backKitchenSuccess = KitchenPrintOutcome.Sent;
-        }
-        else
-        {
-            (frontKitchenSuccess, backKitchenSuccess) =
-                await PrintStationTicketsAsync(order, config, isManualPrint);
-
-            // Unassigned roots and their riders are Default work (the routing matrix in
-            // CASHIER-POS-REDESIGN-PLAN §9 — "unassigned" must never mean "silently omitted"):
-            // they used to drop out of both station tickets and print nothing at all.
-            var defaultSelection = KitchenTicketFilter.SelectionForDestination(
-                order.Items, policy, KitchenTicketDestination.Default);
-            generalDefaultSuccess = await PrintGeneralOrDefaultTicketAsync(
-                order.WithItems(defaultSelection.Items.ToList()),
-                config, isManualPrint, "Default Kitchen", defaultSelection.HasUnknown);
-        }
+        var routedTargets = routeSelection.IsLegacy ? null : routeSelection.EligibleTargets;
+        var cashierSuccess = await PrintCashierAsync(order, isManualPrint, cancellationToken, routedTargets);
+        var kitchenOutcomes = await PrintKitchenTicketsAsync(
+            order, config, policy, isManualPrint, routedTargets);
+        var frontKitchenSuccess = kitchenOutcomes.Front;
+        var backKitchenSuccess = kitchenOutcomes.Back;
+        var generalDefaultSuccess = kitchenOutcomes.General;
 
         _logger.LogInformation("🖨️ Print complete for order {OrderNumber}: Cashier={C}, Front={F}, Back={B}, General/Default={G}",
             order.OrderNumber, cashierSuccess, frontKitchenSuccess, backKitchenSuccess, generalDefaultSuccess);
 
         return (cashierSuccess, frontKitchenSuccess, backKitchenSuccess, generalDefaultSuccess);
+    }
+
+    private async Task<bool> PrintCashierAsync(
+        Order order,
+        bool isManualPrint,
+        CancellationToken cancellationToken,
+        IReadOnlySet<DevicePrintTarget>? routedTargets)
+    {
+        if (routedTargets is not null && !routedTargets.Contains(DevicePrintTarget.Cashier))
+            return false;
+
+        try
+        {
+            var success = await PrintOrderAsync(order, PrinterType.Cashier, isManualPrint, cancellationToken);
+            _logger.LogInformation("Cashier print: {Result}", success ? "✓" : "✗");
+            return success;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error printing to cashier");
+            return false;
+        }
+    }
+
+    private async Task<(KitchenPrintOutcome Front, KitchenPrintOutcome Back, KitchenPrintOutcome General)>
+        PrintKitchenTicketsAsync(
+            Order order,
+            PrinterConfiguration config,
+            KitchenRoutingPolicy policy,
+            bool isManualPrint,
+            IReadOnlySet<DevicePrintTarget>? routedTargets)
+    {
+        if (!_marketplace.CanPrint(order, PrinterType.Kitchen))
+            return (KitchenPrintOutcome.Unknown, KitchenPrintOutcome.Unknown, KitchenPrintOutcome.Unknown);
+
+        var front = KitchenPrintOutcome.Sent;
+        var back = KitchenPrintOutcome.Sent;
+        var general = KitchenPrintOutcome.Sent;
+
+        if (policy.Mode == KitchenRoutingMode.SingleKitchen)
+        {
+            if (AllowsGeneralOrDefault(routedTargets))
+            {
+                var selection = KitchenTicketFilter.SelectionForDestination(
+                    order.Items, policy, KitchenTicketDestination.General);
+                general = await PrintGeneralOrDefaultTicketAsync(
+                    order.WithItems(selection.Items.ToList()), config, isManualPrint,
+                    "General Kitchen", selection.HasUnknown,
+                    routedTargets?.Contains(DevicePrintTarget.General) == true);
+            }
+        }
+        else
+        {
+            (front, back) = await PrintStationTicketsAsync(order, config, isManualPrint, routedTargets);
+            if (AllowsGeneralOrDefault(routedTargets))
+            {
+                var selection = KitchenTicketFilter.SelectionForDestination(
+                    order.Items, policy, KitchenTicketDestination.Default);
+                general = await PrintGeneralOrDefaultTicketAsync(
+                    order.WithItems(selection.Items.ToList()), config, isManualPrint,
+                    "Default Kitchen", selection.HasUnknown,
+                    routedTargets?.Contains(DevicePrintTarget.Default) == true);
+            }
+        }
+
+        return (front, back, general);
     }
 
     /// <summary>
@@ -161,26 +198,23 @@ public class OrderPrintService : IOrderPrintService
     /// </summary>
     public async Task<KitchenPrintOutcome> PrintUpdateAsync(
         PrinterFeedUpdate update,
+        Func<CancellationToken, Task<PrinterUpdateAuthorizationResult>> authorizeImmediatelyBeforeSend,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(update);
-        if (update.JobId == Guid.Empty
-            || update.Revision <= 0
-            || update.JobType != DevicePrintJobType.Update
-            || !UpdateJobRouting.IsUpdateTarget(update.Target)
-            || update.OrderId == Guid.Empty
-            || string.IsNullOrWhiteSpace(update.OrderNumber)
-            || string.IsNullOrWhiteSpace(update.Text)
-            || update.CreatedAt == default
-            || !string.Equals(update.Audience, "Kitchen", StringComparison.OrdinalIgnoreCase))
+        ArgumentNullException.ThrowIfNull(authorizeImmediatelyBeforeSend);
+        var validationError = PrinterFeedUpdateValidation.Validate(update);
+        if (validationError is not null)
         {
+            _logger.LogWarning("Rejecting invalid update job {JobId}: {Reason}", update.JobId, validationError);
             return KitchenPrintOutcome.Unknown;
         }
 
         var config = await _printerService.LoadConfigurationAsync();
-        if (!config.KitchenAutoPrint)
+        if (!UpdateJobRouting.AutoPrintEnabled(update.Target, config))
         {
-            _logger.LogInformation("Automatic update printing is disabled for job {JobId}", update.JobId);
+            _logger.LogInformation("Automatic printing is disabled for update job {JobId} at {Target}",
+                update.JobId, update.Target);
             return KitchenPrintOutcome.Skipped;
         }
 
@@ -194,10 +228,31 @@ public class OrderPrintService : IOrderPrintService
         }
 
         var content = UpdateReceiptComposer.Compose(update);
-        var sent = await PrintRawContentAsync(printerName, content);
+        PrinterUpdateAuthorizationResult authorization;
+        try
+        {
+            authorization = await authorizeImmediatelyBeforeSend(cancellationToken);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex,
+                "Authorization check failed immediately before update {JobId}; no printer bytes were sent",
+                update.JobId);
+            return KitchenPrintOutcome.Failed;
+        }
+
+        if (authorization.Status != PrinterUpdateAuthorizationStatus.Authorized)
+        {
+            _logger.LogInformation("Update job {JobId} was not authorized for output: {Status}",
+                update.JobId, authorization.Status);
+            return authorization.Status == PrinterUpdateAuthorizationStatus.Withdrawn
+                ? KitchenPrintOutcome.Skipped : KitchenPrintOutcome.Failed;
+        }
+
+        var outcome = await _printerOutputService.SendAsync(printerName, content, cancellationToken);
         _logger.LogInformation("Update job {JobId} to {Printer}: {Result}",
-            update.JobId, destination.PrinterName, sent ? "✓" : "✗");
-        return sent ? KitchenPrintOutcome.Sent : KitchenPrintOutcome.Failed;
+            update.JobId, destination.PrinterName, outcome);
+        return outcome;
     }
 
     /// <summary>
@@ -207,7 +262,8 @@ public class OrderPrintService : IOrderPrintService
     private async Task<(KitchenPrintOutcome Front, KitchenPrintOutcome Back)> PrintStationTicketsAsync(
         Order order,
         PrinterConfiguration config,
-        bool isManualPrint)
+        bool isManualPrint,
+        IReadOnlySet<DevicePrintTarget>? routedTargets = null)
     {
         var policy = KitchenRoutingPolicy.Stations;
         var frontSelection = KitchenTicketFilter.SelectionForDestination(
@@ -223,7 +279,11 @@ public class OrderPrintService : IOrderPrintService
         var backKitchenSuccess = KitchenPrintOutcome.Failed;
 
         // Print to FrontKitchen if there are FrontKitchen items
-        if (hasFrontKitchenItems)
+        if (routedTargets is not null && !routedTargets.Contains(DevicePrintTarget.FrontKitchen))
+        {
+            frontKitchenSuccess = KitchenPrintOutcome.Sent;
+        }
+        else if (hasFrontKitchenItems)
         {
             try
             {
@@ -253,9 +313,9 @@ public class OrderPrintService : IOrderPrintService
         }
         else
         {
-            frontKitchenSuccess = frontSelection.HasUnknown
-                ? KitchenPrintOutcome.Unknown
-                : KitchenPrintOutcome.Sent; // No known items to print
+            frontKitchenSuccess = EmptyStationOutcome(
+                routedTargets is not null && routedTargets.Contains(DevicePrintTarget.FrontKitchen),
+                frontSelection.HasUnknown); // No known items to print
         }
 
         // Keep any known leaf work that can be routed, but surface an unknown sibling instead of
@@ -264,7 +324,11 @@ public class OrderPrintService : IOrderPrintService
             frontKitchenSuccess = KitchenPrintOutcome.Unknown;
 
         // Print to BackKitchen if there are BackKitchen items
-        if (hasBackKitchenItems)
+        if (routedTargets is not null && !routedTargets.Contains(DevicePrintTarget.BackKitchen))
+        {
+            backKitchenSuccess = KitchenPrintOutcome.Sent;
+        }
+        else if (hasBackKitchenItems)
         {
             try
             {
@@ -292,9 +356,9 @@ public class OrderPrintService : IOrderPrintService
         }
         else
         {
-            backKitchenSuccess = backSelection.HasUnknown
-                ? KitchenPrintOutcome.Unknown
-                : KitchenPrintOutcome.Sent; // No known items to print
+            backKitchenSuccess = EmptyStationOutcome(
+                routedTargets is not null && routedTargets.Contains(DevicePrintTarget.BackKitchen),
+                backSelection.HasUnknown); // No known items to print
         }
 
         if (backSelection.HasUnknown)
@@ -302,6 +366,9 @@ public class OrderPrintService : IOrderPrintService
 
         return (frontKitchenSuccess, backKitchenSuccess);
     }
+
+    private static KitchenPrintOutcome EmptyStationOutcome(bool routeAssigned, bool hasUnknown) =>
+        routeAssigned || hasUnknown ? KitchenPrintOutcome.Unknown : KitchenPrintOutcome.Sent;
 
     /// <summary>
     /// Composes and sends the ONE General (SingleKitchen) or Default (Stations) kitchen ticket
@@ -316,11 +383,12 @@ public class OrderPrintService : IOrderPrintService
         PrinterConfiguration config,
         bool isManualPrint,
         string header,
-        bool hasUnknown = false)
+        bool hasUnknown = false,
+        bool routeAssigned = false)
     {
         if (filtered.Items.Count == 0)
         {
-            return hasUnknown ? KitchenPrintOutcome.Unknown : KitchenPrintOutcome.Sent;
+            return hasUnknown || routeAssigned ? KitchenPrintOutcome.Unknown : KitchenPrintOutcome.Sent;
         }
 
         // Manual reprints bypass the auto-print toggle (consistent with the Front/Back path).
@@ -366,8 +434,14 @@ public class OrderPrintService : IOrderPrintService
     private static Order CreateFilteredOrder(Order original, string kitchenType) =>
         original.WithItems(KitchenTicketFilter.ItemsForKitchen(original.Items, kitchenType));
 
+    private static bool AllowsGeneralOrDefault(IReadOnlySet<DevicePrintTarget>? routedTargets) =>
+        routedTargets is null
+        || routedTargets.Contains(DevicePrintTarget.General)
+        || routedTargets.Contains(DevicePrintTarget.Default);
+
     public async Task<bool> PrintOrderAsync(Order order, PrinterType printerType, bool isManualPrint = false, CancellationToken cancellationToken = default)
     {
+        if (!_marketplace.CanPrint(order, printerType)) return false;
         try
         {
             var config = await _printerService.LoadConfigurationAsync();
@@ -481,12 +555,13 @@ public class OrderPrintService : IOrderPrintService
     private string FormatKitchenReceipt(Order order, PrinterConfiguration config, int paperWidth, string? kitchenName = null)
     {
         var sb = new StringBuilder();
-        var labels = PrintLabelCatalog.For(PrintLanguagePolicy.Resolve(config.PrintLanguage, order.PreferredLanguage));
+        var language = PrintLanguagePolicy.Resolve(config.PrintLanguage, order.PreferredLanguage);
+        var labels = PrintLabelCatalog.For(language);
         var styles = CurrentStyles();
 
         // Initialize printer and set Turkish code page for character support
-        sb.Append(ESC_INIT);
-        sb.Append(ESC_CODEPAGE_TURKISH);
+        sb.Append(EscPosCommands.Initialize);
+        sb.Append(EscPosCommands.CodepageTurkish);
 
         // KITCHEN NAME HEADER — styled by the settings page (Kitchen Header section)
         if (!string.IsNullOrEmpty(kitchenName))
@@ -508,6 +583,8 @@ public class OrderPrintService : IOrderPrintService
         // Type + Table (Kitchen Order Type section; defaults to Tall)
         sb.Append(ApplyStyle(styles.KitchenOrderType));
         ReceiptComposer.AppendTypeAndTableLine(sb, order, labels);
+        AmendmentReceiptComposer.AppendKitchenIdentity(sb, order, language);
+        _marketplace.AppendIdentity(sb, order, language, showPayment: false);
         sb.Append(ResetStyle(styles.KitchenOrderType));
 
         // Customer name only (no phone) — styled as part of the order info block
@@ -550,8 +627,8 @@ public class OrderPrintService : IOrderPrintService
         sb.AppendLine();
 
         // Feed extra lines before cut to prevent text cutoff
-        sb.Append(ESC_FEED_LINES);
-        sb.Append(ESC_CUT);
+        sb.Append(EscPosCommands.Feed5Lines);
+        sb.Append(EscPosCommands.FullCut);
 
         return sb.ToString();
     }
@@ -559,14 +636,16 @@ public class OrderPrintService : IOrderPrintService
     private string FormatCashierReceipt(Order order, PrinterConfiguration config, int paperWidth)
     {
         var sb = new StringBuilder();
-        var labels = PrintLabelCatalog.For(PrintLanguagePolicy.Resolve(config.PrintLanguage, order.PreferredLanguage));
+        var language = PrintLanguagePolicy.Resolve(config.PrintLanguage, order.PreferredLanguage);
+        var labels = PrintLabelCatalog.For(language);
         var styles = CurrentStyles();
+        var currency = _marketplace.Currency(order);
 
         // Initialize printer and set Turkish code page for character support
         // Some printers need the code page command repeated to properly switch encoding
-        sb.Append(ESC_INIT);
-        sb.Append(ESC_CODEPAGE_TURKISH);
-        sb.Append(ESC_CODEPAGE_TURKISH); // Send twice for stubborn printers
+        sb.Append(EscPosCommands.Initialize);
+        sb.Append(EscPosCommands.CodepageTurkish);
+        sb.Append(EscPosCommands.CodepageTurkish); // Send twice for stubborn printers
 
         // Header (Cashier Header section — defaults: double size, bold, emphasized, centered)
         sb.Append(ApplyStyle(styles.CashierHeader));
@@ -588,6 +667,7 @@ public class OrderPrintService : IOrderPrintService
         // Type + Table on one line
         sb.Append(ApplyStyle(styles.CashierOrderInfo));
         ReceiptComposer.AppendTypeAndTableLine(sb, order, labels);
+        _marketplace.AppendIdentity(sb, order, language, showPayment: true);
         sb.Append(ResetStyle(styles.CashierOrderInfo));
 
         // Customer name, plus a phone number for orders someone may need to call about
@@ -613,9 +693,9 @@ public class OrderPrintService : IOrderPrintService
 
         // Order-level notes (e.g. "ring the doorbell") — printed before the items so they are not
         // lost below a long list.
-        sb.Append(EXTRA_DARK_ON);
+        sb.Append(EscPosCommands.ExtraDarkOn);
         ReceiptComposer.AppendOrderNotesLine(sb, order, labels);
-        sb.Append(EXTRA_DARK_OFF);
+        sb.Append(EscPosCommands.ExtraDarkOff);
 
         sb.AppendLine(new string('-', paperWidth == 80 ? 48 : 32));
 
@@ -628,7 +708,7 @@ public class OrderPrintService : IOrderPrintService
             foreach (var item in order.Items)
             {
                 sb.Append(ApplyStyle(styles.CashierItemLine));
-                ReceiptComposer.AppendCashierItemLines(sb, item, depth: 0, spacing, labels, currency: order.Currency);
+                ReceiptComposer.AppendCashierItemLines(sb, item, depth: 0, spacing, labels, currency: currency);
                 sb.Append(ResetStyle(styles.CashierItemLine));
             }
         }
@@ -642,16 +722,13 @@ public class OrderPrintService : IOrderPrintService
 
         // Subtotal, Tax, Discounts, Delivery Fee, Tip (Cashier Totals section)
         sb.Append(ApplyStyle(styles.CashierTotals));
-        sb.AppendLine($"{labels.Subtotal}: {ReceiptComposer.Money(order.SubTotal, order.Currency)}");
+        sb.AppendLine($"{labels.Subtotal}: {ReceiptComposer.Money(order.SubTotal, currency)}");
 
-        if (order.Tax > 0)
-        {
-            sb.AppendLine($"{labels.Tax}: {ReceiptComposer.Money(order.Tax, order.Currency)}");
-        }
+        _marketplace.AppendTax(sb, order, labels, language);
 
         if (order.Discount > 0)
         {
-            sb.AppendLine($"{labels.Discount} ({order.DiscountPercentage.ToString(CultureInfo.InvariantCulture)}%): -{ReceiptComposer.Money(order.Discount, order.Currency)}");
+            sb.AppendLine($"{labels.Discount} ({order.DiscountPercentage.ToString(CultureInfo.InvariantCulture)}%): -{ReceiptComposer.Money(order.Discount, currency)}");
         }
 
         // Customer-specific discount money is SEPARATE from Discount (backend OrderPricingService:
@@ -659,7 +736,7 @@ public class OrderPrintService : IOrderPrintService
         // breakdown does not reconcile against the total whenever it applied.
         if (order.CustomerDiscountAmount > 0)
         {
-            sb.AppendLine($"{labels.CustomerDiscount}: -{ReceiptComposer.Money(order.CustomerDiscountAmount, order.Currency)}");
+            sb.AppendLine($"{labels.CustomerDiscount}: -{ReceiptComposer.Money(order.CustomerDiscountAmount, currency)}");
         }
 
         if (!string.IsNullOrWhiteSpace(order.PromoCode))
@@ -669,12 +746,12 @@ public class OrderPrintService : IOrderPrintService
 
         if (order.DeliveryFee > 0)
         {
-            sb.AppendLine($"{labels.DeliveryFee}: {ReceiptComposer.Money(order.DeliveryFee, order.Currency)}");
+            sb.AppendLine($"{labels.DeliveryFee}: {ReceiptComposer.Money(order.DeliveryFee, currency)}");
         }
 
         if (order.Tip > 0)
         {
-            sb.AppendLine($"{labels.Tip}: {ReceiptComposer.Money(order.Tip, order.Currency)}");
+            sb.AppendLine($"{labels.Tip}: {ReceiptComposer.Money(order.Tip, currency)}");
         }
 
         sb.Append(ResetStyle(styles.CashierTotals));
@@ -682,21 +759,21 @@ public class OrderPrintService : IOrderPrintService
 
         // Total (Cashier Grand Total section — defaults: double size, bold, emphasized)
         sb.Append(ApplyStyle(styles.CashierGrandTotal));
-        sb.AppendLine($"{labels.Total}: {ReceiptComposer.Money(order.Total, order.Currency)}");
+        sb.AppendLine($"{labels.Total}: {ReceiptComposer.Money(order.Total, currency)}");
         sb.Append(ResetStyle(styles.CashierGrandTotal));
         sb.AppendLine();
 
         // What has already been paid, and what the till still has to collect.
         if (order.TotalPaid > 0)
         {
-            sb.AppendLine($"{labels.Paid}: {ReceiptComposer.Money(order.TotalPaid, order.Currency)}");
+            sb.AppendLine($"{labels.Paid}: {ReceiptComposer.Money(order.TotalPaid, currency)}");
         }
 
-        if (order.RemainingAmount > 0)
+        if (order.ExternalOrder is null && order.RemainingAmount > 0)
         {
-            sb.Append(EXTRA_DARK_ON);
-            sb.AppendLine($"{labels.Due}: {ReceiptComposer.Money(order.RemainingAmount, order.Currency)}");
-            sb.Append(EXTRA_DARK_OFF);
+            sb.Append(EscPosCommands.ExtraDarkOn);
+            sb.AppendLine($"{labels.Due}: {ReceiptComposer.Money(order.RemainingAmount, currency)}");
+            sb.Append(EscPosCommands.ExtraDarkOff);
         }
 
         sb.AppendLine();
@@ -704,17 +781,19 @@ public class OrderPrintService : IOrderPrintService
         // Payment information
         if (order.Payments != null && order.Payments.Any())
         {
-            sb.Append(EXTRA_DARK_ON);
+            sb.Append(EscPosCommands.ExtraDarkOn);
             sb.AppendLine($"{labels.Payment}:");
             foreach (var payment in order.Payments)
             {
-                var paymentLabel = labels.PaymentMethodLabel(payment.PaymentMethod);
+                var paymentLabel = order.ExternalOrder is { } source
+                    ? _marketplace.ProviderName(source)
+                    : labels.PaymentMethodLabel(payment.PaymentMethod);
                 var method = string.IsNullOrWhiteSpace(payment.CardLastFourDigits)
                     ? paymentLabel
                     : $"{paymentLabel} *{payment.CardLastFourDigits}";
-                sb.AppendLine($"{method}: {ReceiptComposer.Money(payment.Amount, order.Currency ?? payment.Currency)}");
+                sb.AppendLine($"{method}: {ReceiptComposer.Money(payment.Amount, order.ExternalOrder is null ? currency ?? payment.Currency : currency)}");
             }
-            sb.Append(EXTRA_DARK_OFF);
+            sb.Append(EscPosCommands.ExtraDarkOff);
             sb.AppendLine();
         }
 
@@ -723,20 +802,20 @@ public class OrderPrintService : IOrderPrintService
         if (order.Type == "Delivery" && address is not null && !string.IsNullOrWhiteSpace(address.FullAddress))
         {
             sb.AppendLine(new string('-', paperWidth == 80 ? 48 : 32));
-            sb.Append(EXTRA_DARK_ON);
+            sb.Append(EscPosCommands.ExtraDarkOn);
             sb.AppendLine(labels.DeliveryTo);
             sb.AppendLine(address.FullAddress);
             if (!string.IsNullOrWhiteSpace(address.DeliveryInstructions))
             {
                 sb.AppendLine($"{labels.Instructions}: {address.DeliveryInstructions}");
             }
-            sb.Append(EXTRA_DARK_OFF);
+            sb.Append(EscPosCommands.ExtraDarkOff);
             sb.AppendLine();
         }
 
         // Footer
         sb.AppendLine(new string('=', paperWidth == 80 ? 48 : 32));
-        sb.Append(ESC_ALIGN_CENTER);
+        sb.Append(EscPosCommands.AlignCenter);
         sb.AppendLine(labels.ThankYou);
         sb.AppendLine();
         sb.AppendLine();
@@ -745,8 +824,8 @@ public class OrderPrintService : IOrderPrintService
         sb.AppendLine();
 
         // Feed extra lines before cut to prevent text cutoff
-        sb.Append(ESC_FEED_LINES);
-        sb.Append(ESC_CUT);
+        sb.Append(EscPosCommands.Feed5Lines);
+        sb.Append(EscPosCommands.FullCut);
 
         return sb.ToString();
     }
@@ -762,50 +841,7 @@ public class OrderPrintService : IOrderPrintService
     /// </summary>
     private async Task<bool> PrintRawContentAsync(string printerName, string content)
     {
-        try
-        {
-            // PC857 encoding (ADR-002) matches the codepage selected in the ESC/POS stream — the
-            // exact encode both legacy branches performed, hoisted (byte-identical payloads).
-            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-            var bytes = Encoding.GetEncoding(857).GetBytes(content);
-
-            // Phase-2b: transport constructed per configured target (a per-printer value), so it
-            // is not a DI singleton. See ADR-006 / PrinterTransportResolver.
-            IPrinterTransport transport = PrinterTransportResolver.Resolve(printerName);
-
-            // A sink write SUCCEEDS, so without this every surface — the request log, the order
-            // history, the pipeline ack, fleet print-ack telemetry — reports a healthy print while
-            // no paper exists and the kitchen sees nothing. A diagnostic left switched on would
-            // therefore be invisible in exactly the situation where it matters most. Warn on every
-            // sink-routed print so the condition is greppable in the logs rather than resting on a
-            // comment. Deliberately not an error: the operator asked for this, and failing the print
-            // would make the capture unusable.
-            if (transport is FileSinkTransport sink)
-            {
-                _logger.LogWarning(
-                    "DIAGNOSTIC SINK ACTIVE for {PrinterName}: order bytes captured to {Directory}, NOT printed. " +
-                    "No paper is produced while this target is configured.",
-                    printerName, sink.CaptureDirectory);
-            }
-
-            if (transport is WindowsSpoolerTransport)
-            {
-                // The spooler transport's winspool calls are synchronous Win32; keep them off the
-                // caller's context exactly as the legacy Task.Run(PrintToWindowsPrinter) did (an
-                // in-transport offload was deliberately declined in PR #47).
-                await Task.Run(() => transport.SendAsync(bytes, CancellationToken.None));
-            }
-            else
-            {
-                await transport.SendAsync(bytes, CancellationToken.None);
-            }
-
-            return true;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to print to {PrinterName}", printerName);
-            return false;
-        }
+        var outcome = await _printerOutputService.SendAsync(printerName, content);
+        return outcome.IsSuccess;
     }
 }
