@@ -59,7 +59,7 @@ API token (Bearer JWT) stored as plaintext JSON. Any application with read acces
 
 **File:** `Models/PrinterConfiguration.cs` (line 13)
 
-`ApiBaseUrl` defaults to HTTPS but can be changed to HTTP via UI. No validation rejects insecure protocols.
+`ApiBaseUrl` is blank on a new install, but once configured the UI accepts HTTP URLs; no validation rejects insecure protocols.
 
 **Fix:** Validate `ApiBaseUrl` setter rejects non-HTTPS URLs (allow `http://localhost` for development only).
 
