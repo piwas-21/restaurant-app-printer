@@ -33,6 +33,12 @@ def assert_release_workflow_contract(workflow: str) -> None:
         raise AssertionError("release assets must use one aggregate publication action")
     if "python3 scripts/verify_release_assets.py release-assets" not in publish_job:
         raise AssertionError("publication must validate the complete asset set first")
+    checkout_index = publish_job.find(
+        "uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0"
+    )
+    validator_index = publish_job.find("python3 scripts/verify_release_assets.py release-assets")
+    if checkout_index < 0 or checkout_index > validator_index:
+        raise AssertionError("the publisher must check out the validation script before using it")
     if "always()" in publish_job:
         raise AssertionError("publication must retain default success-only job semantics")
 
@@ -158,6 +164,17 @@ class ReleaseWorkflowContractTests(unittest.TestCase):
         )
 
         with self.assertRaisesRegex(AssertionError, "both platform build jobs"):
+            assert_release_workflow_contract(changed)
+
+    def test_contract_rejects_missing_publisher_checkout(self) -> None:
+        changed = self.workflow.replace(
+            "    - name: Checkout source for release asset validation\n"
+            "      uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0\n\n",
+            "",
+            1,
+        )
+
+        with self.assertRaisesRegex(AssertionError, "check out the validation script"):
             assert_release_workflow_contract(changed)
 
     def test_contract_rejects_missing_signing_secret(self) -> None:
