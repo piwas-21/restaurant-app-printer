@@ -65,12 +65,53 @@ public class OrderFeedParserTests
     }
 
     [Fact]
+    public void Parses_order_page_cursor_fields_and_accepts_legacy_responses_without_them()
+    {
+        var paged = OrderFeedParser.Parse("""{ "data": { "items": [], "hasMoreOrders": true, "nextOrderCursor": "next-1" } }""");
+        var legacy = OrderFeedParser.Parse("""{ "data": { "items": [] } }""");
+
+        Assert.True(paged.IsSuccess);
+        Assert.True(paged.HasMoreOrders);
+        Assert.Equal("next-1", paged.NextOrderCursor);
+        Assert.True(legacy.IsSuccess);
+        Assert.False(legacy.HasMoreOrders);
+        Assert.Null(legacy.NextOrderCursor);
+    }
+
+    [Theory]
+    [InlineData("""{ "data": { "items": [], "hasMoreOrders": true } }""")]
+    [InlineData("""{ "data": { "items": [], "hasMoreOrders": true, "nextOrderCursor": " " } }""")]
+    public void Rejects_more_order_pages_without_a_progressing_cursor(string json)
+    {
+        var result = OrderFeedParser.Parse(json);
+
+        Assert.False(result.IsSuccess);
+        Assert.Contains("cursor", result.FailureMessage, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Missing_data_envelope_yields_no_orders_and_no_errors()
     {
         var result = OrderFeedParser.Parse("""{ "data": null }""");
 
         Assert.Empty(result.Orders);
         Assert.Empty(result.Errors);
+    }
+
+    [Fact]
+    public void Parses_frozen_section_identity_on_order_children()
+    {
+        const string item = """
+        { "orderNumber": "SECTION-1", "type": "TakeAway", "items": [
+            { "productName": "Tacos", "quantity": 1, "sideItems": [
+              { "productName": "Kebab", "quantity": 2, "sectionId": "meat-section" }
+            ] }
+          ] }
+        """;
+
+        var result = OrderFeedParser.Parse(Feed(item));
+
+        Assert.Equal("meat-section", Assert.Single(Assert.Single(result.Orders).Items).SideItems![0].SectionId);
     }
 
     [Fact]

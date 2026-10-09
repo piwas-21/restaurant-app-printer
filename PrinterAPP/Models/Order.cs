@@ -132,6 +132,9 @@ public class OrderItem
     /// </summary>
     public string? Kind { get; set; }
 
+    /// <summary>Frozen menu-section identity used to keep selected components together on receipts.</summary>
+    public string? SectionId { get; set; }
+
     // Ingredient customizations (added/removed ingredients)
     [JsonPropertyName("ingredientCustomizations")]
     public List<IngredientCustomization>? IngredientCustomizations { get; set; }

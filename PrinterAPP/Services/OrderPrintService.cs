@@ -170,7 +170,7 @@ public class OrderPrintService : IOrderPrintService
                     order.Items, policy, KitchenTicketDestination.General);
                 general = await PrintGeneralOrDefaultTicketAsync(
                     order.WithItems(selection.Items.ToList()), config, isManualPrint,
-                    "General Kitchen", selection.HasUnknown,
+                    "Kitchen", selection.HasUnknown,
                     routedTargets?.Contains(DevicePrintTarget.General) == true);
             }
         }

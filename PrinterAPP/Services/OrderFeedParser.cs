@@ -46,6 +46,9 @@ public static class OrderFeedParser
     {
         var parsed = new ParsedData();
         ParseOrdersIfPresent(data, parsed);
+        ReadNextOrderCursor(data, parsed);
+        ReadHasMoreOrders(data, parsed);
+        ValidateOrderPage(parsed);
         ReadNextUpdateCursor(data, parsed);
         ReadHasMoreUpdates(data, parsed);
         ParseUpdatesIfPresent(data, parsed);
@@ -56,6 +59,37 @@ public static class OrderFeedParser
     {
         if (TryGetPropertyIgnoreCase(data, "items", out var items) && items.ValueKind == JsonValueKind.Array)
             ParseOrders(items, parsed);
+    }
+    private static void ReadNextOrderCursor(JsonElement data, ParsedData parsed)
+    {
+        if (!TryGetPropertyIgnoreCase(data, "nextOrderCursor", out var cursor))
+            return;
+        if (cursor.ValueKind == JsonValueKind.String)
+        {
+            parsed.NextOrderCursor = cursor.GetString();
+            if (string.IsNullOrWhiteSpace(parsed.NextOrderCursor))
+                parsed.NextOrderCursor = null;
+            return;
+        }
+        if (cursor.ValueKind != JsonValueKind.Null)
+            parsed.Fail("The order cursor was not a string or null.");
+    }
+    private static void ReadHasMoreOrders(JsonElement data, ParsedData parsed)
+    {
+        if (!TryGetPropertyIgnoreCase(data, "hasMoreOrders", out var more))
+            return;
+        if (more.ValueKind == JsonValueKind.True)
+        {
+            parsed.HasMoreOrders = true;
+            return;
+        }
+        if (more.ValueKind != JsonValueKind.False)
+            parsed.Fail("The order page flag was not a boolean.");
+    }
+    private static void ValidateOrderPage(ParsedData parsed)
+    {
+        if (parsed.HasMoreOrders && string.IsNullOrWhiteSpace(parsed.NextOrderCursor))
+            parsed.Fail("An order page requires a non-empty next cursor.");
     }
     private static void ReadNextUpdateCursor(JsonElement data, ParsedData parsed)
     {
@@ -117,6 +151,8 @@ public static class OrderFeedParser
     {
         Updates = parsed.Updates,
         UpdateErrors = parsed.UpdateErrors,
+        NextOrderCursor = parsed.NextOrderCursor,
+        HasMoreOrders = parsed.HasMoreOrders,
         NextUpdateCursor = parsed.NextUpdateCursor,
         HasMoreUpdates = parsed.HasMoreUpdates,
         IsSuccess = parsed.IsSuccess,
@@ -232,6 +268,8 @@ public static class OrderFeedParser
         public List<PrinterFeedUpdate> Updates { get; } = [];
         public List<OrderFeedParseError> Errors { get; } = [];
         public List<OrderFeedParseError> UpdateErrors { get; } = [];
+        public string? NextOrderCursor { get; set; }
+        public bool HasMoreOrders { get; set; }
         public string? NextUpdateCursor { get; set; }
         public bool HasMoreUpdates { get; set; }
         public bool IsSuccess { get; set; } = true;
@@ -244,6 +282,8 @@ public sealed record OrderFeedParseResult(IReadOnlyList<Order> Orders, IReadOnly
 {
     public IReadOnlyList<PrinterFeedUpdate> Updates { get; init; } = Array.Empty<PrinterFeedUpdate>();
     public IReadOnlyList<OrderFeedParseError> UpdateErrors { get; init; } = Array.Empty<OrderFeedParseError>();
+    public string? NextOrderCursor { get; init; }
+    public bool HasMoreOrders { get; init; }
     public string? NextUpdateCursor { get; init; }
     public bool HasMoreUpdates { get; init; }
     public bool IsSuccess { get; init; } = true;

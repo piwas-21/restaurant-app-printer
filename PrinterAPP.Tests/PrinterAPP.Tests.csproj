@@ -147,6 +147,7 @@
          PrintLabelCatalog, and both surfaces compose their item blocks through ReceiptComposer. -->
     <Compile Include="..\PrinterAPP\Services\PrintLabels.cs" Link="Linked\PrintLabels.cs" />
     <Compile Include="..\PrinterAPP\Services\PrintLanguagePolicy.cs" Link="Linked\PrintLanguagePolicy.cs" />
+    <Compile Include="..\PrinterAPP\Services\ReceiptItemDisplay.cs" Link="Linked\ReceiptItemDisplay.cs" />
     <Compile Include="..\PrinterAPP\Services\ReceiptComposer.cs" Link="Linked\ReceiptComposer.cs" />
     <Compile Include="..\PrinterAPP\Services\PrintStyleSettingsService.cs" Link="Linked\PrintStyleSettingsService.cs" />
     <Compile Include="..\PrinterAPP\Models\PrintStyleSettings.cs" Link="Linked\PrintStyleSettings.cs" />

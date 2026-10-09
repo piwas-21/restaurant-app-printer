@@ -171,6 +171,59 @@ public class ReceiptComposerTests
     }
 
     [Fact]
+    public void Section_choices_are_grouped_stably_on_both_receipt_surfaces()
+    {
+        var item = new OrderItem
+        {
+            ProductName = "Tacos 3 Viande",
+            Quantity = 1,
+            SideItems =
+            [
+                new OrderItem { ProductName = "Steak", Quantity = 1, Kind = "BundleChild", SectionId = "meat" },
+                new OrderItem { ProductName = "Carrier", Quantity = 1, Kind = "BundleChild" },
+                new OrderItem { ProductName = "Fries", Quantity = 1, Kind = "BundleChild", SectionId = "side" },
+                new OrderItem { ProductName = "Kebab", Quantity = 2, Kind = "BundleChild", SectionId = "meat" },
+                new OrderItem { ProductName = "Cola", Quantity = 1, Kind = "BundleChild", SectionId = "drink" },
+            ],
+        };
+
+        foreach (var ticket in new[] { ComposeCashier(item), ComposeKitchen(item) })
+        {
+            var steak = ticket.IndexOf("Steak", StringComparison.Ordinal);
+            var kebab = ticket.IndexOf("Kebab", StringComparison.Ordinal);
+            var carrier = ticket.IndexOf("Carrier", StringComparison.Ordinal);
+            var fries = ticket.IndexOf("Fries", StringComparison.Ordinal);
+            var cola = ticket.IndexOf("Cola", StringComparison.Ordinal);
+            Assert.True(steak >= 0 && kebab > steak && carrier > kebab && fries > carrier && cola > fries, ticket);
+            Assert.Contains("+ 2x Kebab", ticket);
+        }
+    }
+
+    [Fact]
+    public void Variation_only_special_instruction_is_not_repeated_on_either_receipt()
+    {
+        var item = new OrderItem
+        {
+            ProductName = "Adana Grill",
+            VariationName = "French Fries",
+            SpecialInstructions = " French   Fries ",
+            Quantity = 1,
+            ItemTotal = 25.90m,
+        };
+
+        var cashier = ComposeCashier(item);
+        var kitchen = ComposeKitchen(item);
+
+        Assert.Equal(1, cashier.Split("French Fries", StringSplitOptions.None).Length - 1);
+        Assert.Equal(1, kitchen.Split("French Fries", StringSplitOptions.None).Length - 1);
+        Assert.DoesNotContain("NOTE:", kitchen);
+
+        item.SpecialInstructions = "No salt";
+        Assert.Contains("No salt", ComposeCashier(item));
+        Assert.Contains("No salt", ComposeKitchen(item));
+    }
+
+    [Fact]
     public void Cashier_price_appears_once_on_the_parent_line_only()
     {
         var item = new OrderItem
