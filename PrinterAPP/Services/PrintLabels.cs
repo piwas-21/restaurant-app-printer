@@ -38,7 +38,8 @@ public sealed record PrintLabels(
     string DineIn,
     string TakeAway,
     string Delivery,
-    string NoItems)
+    string NoItems,
+    string PaymentTip)
 {
     /// <summary>
     /// Renders the raw <c>Order.Type</c> value the backend sends (DineIn/TakeAway/Delivery) in this
@@ -100,7 +101,7 @@ public static class PrintLabelCatalog
         "OnlineOrder", "Type", "Table", "Customer", "Tel", "Notes", "Note", "NoPrefix",
         "ExtraPrefix", "SelectedPrefix", "Subtotal", "Tax", "Discount", "CustomerDiscount",
         "Promo", "DeliveryFee", "Tip", "Total", "Payment", "CardAtRestaurant", "Paid", "Due", "DeliveryTo",
-        "Instructions", "ThankYou", "DineIn", "TakeAway", "Delivery", "NoItems",
+        "Instructions", "ThankYou", "DineIn", "TakeAway", "Delivery", "NoItems", "PaymentTip",
     ];
 
     /// <summary>
@@ -121,37 +122,37 @@ public static class PrintLabelCatalog
     public static readonly PrintLabels English = Parse(
         "ONLINE ORDER|Type|Table|Customer|Tel|NOTES|NOTE|NO|+ EXTRA|+|Subtotal|Tax|Discount" +
         "|Customer discount|Promo|Delivery Fee|Tip|TOTAL|PAYMENT|CARD AT RESTAURANT|PAID|DUE|DELIVERY TO" +
-        "|Instructions|Thank you for your visit!|Dine-in|Takeaway|Delivery|(No items in order)");
+        "|Instructions|Thank you for your visit!|Dine-in|Takeaway|Delivery|(No items in order)|Additional tip");
 
     public static readonly PrintLabels German = Parse(
         "ONLINE-BESTELLUNG|Typ|Tisch|Kunde|Tel|NOTIZEN|NOTIZ|OHNE|+ EXTRA|+|Zwischensumme|MwSt|Rabatt" +
         "|Kundenrabatt|Promo|Liefergebühr|Trinkgeld|TOTAL|ZAHLUNG|KARTENZAHLUNG IM RESTAURANT|BEZAHLT|OFFEN|LIEFERUNG AN" +
-        "|Hinweise|Vielen Dank für Ihren Besuch!|Im Lokal|Mitnehmen|Lieferung|(Keine Artikel in der Bestellung)");
+        "|Hinweise|Vielen Dank für Ihren Besuch!|Im Lokal|Mitnehmen|Lieferung|(Keine Artikel in der Bestellung)|Zusätzliches Trinkgeld");
 
     public static readonly PrintLabels French = Parse(
         "COMMANDE EN LIGNE|Type|Table|Client|Tél|REMARQUES|REMARQUE|SANS|+ SUPPL|+|Sous-total|TVA|Remise" +
         "|Remise client|Promo|Frais de livraison|Pourboire|TOTAL|PAIEMENT|CARTE AU RESTAURANT|PAYÉ|DÛ|LIVRAISON À" +
-        "|Instructions|Merci de votre visite !|Sur place|À emporter|Livraison|(Aucun article dans la commande)");
+        "|Instructions|Merci de votre visite !|Sur place|À emporter|Livraison|(Aucun article dans la commande)|Pourboire supplémentaire");
 
     public static readonly PrintLabels Italian = Parse(
         "ORDINE ONLINE|Tipo|Tavolo|Cliente|Tel|NOTE|NOTA|SENZA|+ EXTRA|+|Subtotale|IVA|Sconto" +
         "|Sconto cliente|Promo|Costo di consegna|Mancia|TOTALE|PAGAMENTO|CARTA AL RISTORANTE|PAGATO|DA PAGARE|CONSEGNA A" +
-        "|Istruzioni|Grazie per la visita!|Al tavolo|Da asporto|Consegna|(Nessun articolo nell'ordine)");
+        "|Istruzioni|Grazie per la visita!|Al tavolo|Da asporto|Consegna|(Nessun articolo nell'ordine)|Mancia aggiuntiva");
 
     public static readonly PrintLabels Spanish = Parse(
         "PEDIDO ONLINE|Tipo|Mesa|Cliente|Tel|NOTAS|NOTA|SIN|+ EXTRA|+|Subtotal|IVA|Descuento" +
         "|Descuento cliente|Promo|Gastos de envío|Propina|TOTAL|PAGO|TARJETA EN EL RESTAURANTE|PAGADO|PENDIENTE|ENTREGAR EN" +
-        "|Indicaciones|¡Gracias por su visita!|En el local|Para llevar|Entrega|(Sin artículos en el pedido)");
+        "|Indicaciones|¡Gracias por su visita!|En el local|Para llevar|Entrega|(Sin artículos en el pedido)|Propina adicional");
 
     public static readonly PrintLabels Dutch = Parse(
         "ONLINE BESTELLING|Type|Tafel|Klant|Tel|OPMERKINGEN|LET OP|ZONDER|+ EXTRA|+|Subtotaal|BTW|Korting" +
         "|Klantkorting|Promo|Bezorgkosten|Fooi|TOTAAL|BETALING|KAARTBETALING IN HET RESTAURANT|BETAALD|OPENSTAAND|BEZORGEN AAN" +
-        "|Instructies|Bedankt voor uw bezoek!|Ter plaatse|Meenemen|Bezorging|(Geen artikelen in de bestelling)");
+        "|Instructies|Bedankt voor uw bezoek!|Ter plaatse|Meenemen|Bezorging|(Geen artikelen in de bestelling)|Extra fooi");
 
     public static readonly PrintLabels Turkish = Parse(
         "ONLINE SİPARİŞ|Tür|Masa|Müşteri|Tel|NOTLAR|NOT|YOK|+ EKSTRA|+|Ara Toplam|KDV|İndirim" +
         "|Müşteri indirimi|Promosyon|Teslimat Ücreti|Bahşiş|TOPLAM|ÖDEME|RESTORANDA KARTLA ÖDEME|ÖDENEN|KALAN|TESLİMAT ADRESİ" +
-        "|Talimatlar|Ziyaretiniz için teşekkürler!|Lokalda|Paket|Teslimat|(Siparişte ürün yok)");
+        "|Talimatlar|Ziyaretiniz için teşekkürler!|Lokalda|Paket|Teslimat|(Siparişte ürün yok)|Ek bahşiş");
 
     /// <summary>Maps one spec onto the record; a short or long spec fails loudly here.</summary>
     private static PrintLabels Parse(string spec)
@@ -192,6 +193,7 @@ public static class PrintLabelCatalog
             DineIn: fields[25],
             TakeAway: fields[26],
             Delivery: fields[27],
-            NoItems: fields[28]);
+            NoItems: fields[28],
+            PaymentTip: fields[29]);
     }
 }

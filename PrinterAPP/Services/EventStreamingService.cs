@@ -930,8 +930,12 @@ public class EventStreamingService : IEventStreamingService
                 if (_deviceIdentity is not null && !string.IsNullOrWhiteSpace(_deviceIdentity.DeviceId))
                     httpClient.DefaultRequestHeaders.Add("X-Device-Id", _deviceIdentity.DeviceId);
 
+                // The server's modifiedSince filter is a strict timestamp boundary. Capture it
+                // immediately before the request so an order accepted while the response is in flight
+                // remains eligible for the next poll. Commit this boundary only after every page drains.
+                var requestStartedAt = DateTime.UtcNow;
                 var page = await FetchFeedPageAsync(
-                    httpClient, baseUrl, pollWindowStart, language, updateCursor, cancellationToken);
+                    httpClient, baseUrl, pollWindowStart, language, updateCursor, null, cancellationToken);
                 if (page is null)
                     continue;
 
@@ -943,60 +947,91 @@ public class EventStreamingService : IEventStreamingService
                 if (!staged)
                     continue;
 
-                foreach (var failure in page.Errors)
+                var currentPage = page;
+                var orderCursor = (string?)null;
+                var seenOrderCursors = new HashSet<string>(StringComparer.Ordinal);
+                while (staged)
                 {
-                    // Update errors make IsSuccess false and return above. The remaining errors are
-                    // legacy per-order diagnostics, which are safe to dedupe and persist as before.
-                    if (!string.IsNullOrEmpty(failure.OrderNumber))
+                    foreach (var failure in currentPage.Errors)
                     {
-                        var errorKey = "error:" + failure.OrderNumber;
-                        if (IsOrderAlreadyProcessed(errorKey))
+                        // Update errors make IsSuccess false and return above. The remaining errors are
+                        // legacy per-order diagnostics, which are safe to dedupe and persist as before.
+                        if (!string.IsNullOrEmpty(failure.OrderNumber))
+                        {
+                            var errorKey = "error:" + failure.OrderNumber;
+                            if (IsOrderAlreadyProcessed(errorKey))
+                                continue;
+                            MarkOrderAsProcessed(errorKey, persistable: true);
+                            dedupChanged = true;
+                        }
+
+                        var who = !string.IsNullOrEmpty(failure.OrderNumber)
+                            ? $"order {failure.OrderNumber}"
+                            : failure.Index >= 0 ? $"order at index {failure.Index}" : "the feed response";
+                        _logger.LogError("⚠️ Skipping un-deserialisable {Who}: {Message}", who, failure.Message);
+                        _requestLogService.LogError(
+                            PollingLogOperation,
+                            $"Skipped an order that could not be read from the feed ({who})",
+                            failure.Message);
+                    }
+
+                    _logger.LogInformation("   Orders found: {Count}", currentPage.Orders.Count);
+                    foreach (var order in currentPage.Orders)
+                    {
+                        _logger.LogInformation(
+                            "   Processing order: {OrderNumber} (Status: {Status})",
+                            order.OrderNumber, order.Status);
+
+                        if (IsOrderAlreadyProcessed(order.OrderNumber))
+                        {
+                            _logger.LogInformation("   ⏭️ Skipping duplicate: {OrderNumber}", order.OrderNumber);
                             continue;
-                        MarkOrderAsProcessed(errorKey, persistable: true);
-                        dedupChanged = true;
+                        }
+
+                        // Orders are confirmed only by the pipeline after printing succeeds.
+                        MarkOrderAsProcessed(order.OrderNumber, unconfirmedPollWindow: pollWindowStart);
+                        OnOrderReceived(new OrderEvent
+                        {
+                            EventType = "order-polled",
+                            Order = order,
+                            Timestamp = DateTime.UtcNow,
+                        });
                     }
 
-                    var who = !string.IsNullOrEmpty(failure.OrderNumber)
-                        ? $"order {failure.OrderNumber}"
-                        : failure.Index >= 0 ? $"order at index {failure.Index}" : "the feed response";
-                    _logger.LogError("⚠️ Skipping un-deserialisable {Who}: {Message}", who, failure.Message);
-                    _requestLogService.LogError(
-                        PollingLogOperation,
-                        $"Skipped an order that could not be read from the feed ({who})",
-                        failure.Message);
-                }
+                    if (!currentPage.HasMoreOrders)
+                        break;
 
-                _logger.LogInformation("   Orders found: {Count}", page.Orders.Count);
-                foreach (var order in page.Orders)
-                {
-                    _logger.LogInformation(
-                        "   Processing order: {OrderNumber} (Status: {Status})",
-                        order.OrderNumber, order.Status);
-
-                    if (IsOrderAlreadyProcessed(order.OrderNumber))
+                    var nextOrderCursor = currentPage.NextOrderCursor;
+                    if (string.IsNullOrWhiteSpace(nextOrderCursor)
+                        || !seenOrderCursors.Add(nextOrderCursor))
                     {
-                        _logger.LogInformation("   ⏭️ Skipping duplicate: {OrderNumber}", order.OrderNumber);
-                        continue;
+                        LogPrinterFeedFailure(
+                            "The order feed returned hasMoreOrders without a progressing cursor.");
+                        staged = false;
+                        break;
                     }
 
-                    // Orders are still confirmed only by the order pipeline after their print path;
-                    // updates are durably staged before their cursor can advance.
-                    MarkOrderAsProcessed(order.OrderNumber, unconfirmedPollWindow: pollWindowStart);
-                    var orderEvent = new OrderEvent
+                    orderCursor = nextOrderCursor;
+                    currentPage = await FetchFeedPageAsync(
+                        httpClient,
+                        baseUrl,
+                        pollWindowStart,
+                        language,
+                        updateCursor,
+                        orderCursor,
+                        cancellationToken);
+                    if (currentPage is null)
                     {
-                        EventType = "order-polled",
-                        Order = order,
-                        Timestamp = DateTime.UtcNow,
-                    };
-                    _logger.LogInformation("🖨️ Sending order to printer: {OrderNumber}", order.OrderNumber);
-                    OnOrderReceived(orderEvent);
+                        staged = false;
+                        break;
+                    }
                 }
 
-                // Drain every update page now. The backend uses a composite cursor so equal-time
-                // notes cannot disappear behind a timestamp-only boundary.
+                // Drain every update page after all order pages. The backend uses a composite cursor
+                // so equal-time notes cannot disappear behind a timestamp-only boundary.
                 var nextUpdateCursor = page.NextUpdateCursor ?? updateCursor;
                 var hasMoreUpdates = page.HasMoreUpdates;
-                if (!TryAdvanceUpdateCursor(nextUpdateCursor))
+                if (staged && !TryAdvanceUpdateCursor(nextUpdateCursor))
                     staged = false;
 
                 var seenCursors = new HashSet<string>(StringComparer.Ordinal);
@@ -1020,6 +1055,7 @@ public class EventStreamingService : IEventStreamingService
                         pollWindowStart,
                         language,
                         nextUpdateCursor,
+                        null,
                         cancellationToken);
                     if (nextPage is null)
                     {
@@ -1067,7 +1103,7 @@ public class EventStreamingService : IEventStreamingService
 
                 PersistCursor(
                     force: dedupChanged || cursorChanged,
-                    proposedLastPollTime: completedAt,
+                    proposedLastPollTime: requestStartedAt,
                     proposedUpdateCursor: nextUpdateCursor,
                     hasProposedUpdateCursor: true);
 
@@ -1103,9 +1139,10 @@ public class EventStreamingService : IEventStreamingService
         DateTime modifiedSince,
         string? language,
         string? updateCursor,
+        string? orderCursor,
         CancellationToken cancellationToken)
     {
-        var pollUrl = BuildFeedUrl(baseUrl, modifiedSince, language, updateCursor);
+        var pollUrl = BuildFeedUrl(baseUrl, modifiedSince, language, updateCursor, orderCursor);
         _logger.LogInformation("Fetching printer feed page {Url}", pollUrl);
         using var response = await httpClient.GetAsync(pollUrl, cancellationToken);
         if (!response.IsSuccessStatusCode)
@@ -1127,7 +1164,7 @@ public class EventStreamingService : IEventStreamingService
         if (!result.IsSuccess || !result.HasDataEnvelope)
         {
             var detail = result.FailureMessage ?? "The backend rejected the printer feed response.";
-            LogUpdateFeedFailure(detail);
+            LogPrinterFeedFailure(detail);
             return null;
         }
 
@@ -1139,13 +1176,16 @@ public class EventStreamingService : IEventStreamingService
         string apiBaseUrl,
         DateTime modifiedSince,
         string? language,
-        string? updateCursor = null)
+        string? updateCursor = null,
+        string? orderCursor = null)
     {
-        var url = $"{apiBaseUrl.TrimEnd('/')}/api/orders/printer-feed?modifiedSince={modifiedSince:o}";
+        var url = $"{apiBaseUrl.TrimEnd('/')}/api/orders/printer-feed?modifiedSince={Uri.EscapeDataString(modifiedSince.ToString("o", System.Globalization.CultureInfo.InvariantCulture))}";
         if (!string.IsNullOrWhiteSpace(language))
             url += $"&language={Uri.EscapeDataString(language)}";
         if (!string.IsNullOrWhiteSpace(updateCursor))
             url += $"&updateCursor={Uri.EscapeDataString(updateCursor)}";
+        if (!string.IsNullOrWhiteSpace(orderCursor))
+            url += $"&orderCursor={Uri.EscapeDataString(orderCursor)}";
         return url;
     }
 
@@ -1203,6 +1243,12 @@ public class EventStreamingService : IEventStreamingService
     {
         _logger.LogError("Update feed failed: {Message}", message);
         _requestLogService.LogError(PollingLogOperation, "Update feed failed", message);
+    }
+
+    private void LogPrinterFeedFailure(string message)
+    {
+        _logger.LogError("Printer feed failed: {Message}", message);
+        _requestLogService.LogError(PollingLogOperation, "Printer feed failed", message);
     }
 
     protected virtual void OnUpdateReceived(PrinterFeedUpdate update)
