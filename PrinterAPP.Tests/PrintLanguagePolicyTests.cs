@@ -57,7 +57,7 @@ public class PrintLanguagePolicyTests
                          labels.CustomerDiscount, labels.Promo, labels.DeliveryFee, labels.Tip,
                          labels.Total, labels.Payment, labels.CardAtRestaurant, labels.Paid, labels.Due, labels.DeliveryTo,
                          labels.Instructions, labels.ThankYou, labels.DineIn, labels.TakeAway,
-                         labels.Delivery, labels.NoItems,
+                         labels.Delivery, labels.NoItems, labels.PaymentTip,
                      })
             {
                 Assert.False(string.IsNullOrWhiteSpace(value), $"{code} has a blank label: '{value}'");

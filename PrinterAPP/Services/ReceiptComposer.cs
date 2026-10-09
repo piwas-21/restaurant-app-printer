@@ -74,7 +74,7 @@ public static class ReceiptComposer
 
         AppendDetailLines(sb, item, indent, tallEmphasis: false, labels);
 
-        foreach (var side in item.SideItems ?? Enumerable.Empty<OrderItem>())
+        foreach (var side in ReceiptItemDisplay.OrderItemsForDisplay(item.SideItems))
         {
             AppendCashierItemLines(sb, side, depth + 1, spacing, labels, parentQuantity: item.Quantity);
         }
@@ -115,7 +115,7 @@ public static class ReceiptComposer
 
         AppendDetailLines(sb, item, indent, tallEmphasis: true, labels, styles);
 
-        foreach (var side in item.SideItems ?? Enumerable.Empty<OrderItem>())
+        foreach (var side in ReceiptItemDisplay.OrderItemsForDisplay(item.SideItems))
         {
             AppendKitchenItemLines(sb, side, depth + 1, labels, parentQuantity: item.Quantity, styles: styles);
         }
@@ -238,10 +238,11 @@ public static class ReceiptComposer
         var ingredientStyle = styles?.KitchenIngredients;
         AppendIngredientLines(sb, item, indent, labels, ingredientStyle, tallEmphasis);
 
-        if (!string.IsNullOrWhiteSpace(item.SpecialInstructions))
+        var specialInstructions = ReceiptItemDisplay.DisplaySpecialInstructions(item);
+        if (specialInstructions is not null)
         {
             // Keep the note with its parent, before the recursive child walk in both callers.
-            AppendStyledLine(sb, $"{indent}   {labels.Note}: {item.SpecialInstructions}", ingredientStyle, tallEmphasis);
+            AppendStyledLine(sb, $"{indent}   {labels.Note}: {specialInstructions}", ingredientStyle, tallEmphasis);
         }
     }
 

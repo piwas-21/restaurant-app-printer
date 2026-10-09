@@ -99,7 +99,7 @@ public sealed class OrderPipelinePrintOutcomeTests : IDisposable
         Assert.True(args.AllPrinted);
 
         var ticket = await _generalDefault.ReadTicketAsync(cts.Token);
-        Assert.Contains("General Kitchen", ticket);
+        Assert.Contains("*** Kitchen ***", ticket);
         Assert.Equal(1, Occurrences(ticket, "Adana Kebab"));
         Assert.Equal(1, Occurrences(ticket, "Ayran"));
         Assert.Equal(1, Occurrences(ticket, "Extra glass"));
