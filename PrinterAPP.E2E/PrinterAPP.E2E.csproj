@@ -88,6 +88,7 @@
     <Compile Include="..\PrinterAPP\Services\UpdateReceiptComposer.cs" Link="Linked\UpdateReceiptComposer.cs" />
     <Compile Include="..\PrinterAPP\Services\PrintLabels.cs" Link="Linked\PrintLabels.cs" />
     <Compile Include="..\PrinterAPP\Services\ReceiptComposer.cs" Link="Linked\ReceiptComposer.cs" />
+    <Compile Include="..\PrinterAPP\Services\ReceiptItemDisplay.cs" Link="Linked\ReceiptItemDisplay.cs" />
     <Compile Include="..\PrinterAPP\Services\UnconfirmedOrderExpiry.cs" Link="Linked\UnconfirmedOrderExpiry.cs" />
     <Compile Include="..\PrinterAPP\Services\EventStreamingService.cs" Link="Linked\EventStreamingService.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderFeedParser.cs" Link="Linked\OrderFeedParser.cs" />
