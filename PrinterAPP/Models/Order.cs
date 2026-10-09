@@ -37,6 +37,8 @@ public class Order
     /// </summary>
     public decimal CustomerDiscountAmount { get; set; }
     public decimal Tip { get; set; }
+    /// <summary>Net captured staff gratuity in currency minor units, separate from order debt.</summary>
+    public long PaymentTipMinor { get; set; }
 
     /// <summary>ISO code the order displays money in (backend OrderDto.Currency). Null = unknown: render bare amounts, never an invented label (POS C18).</summary>
     public ExternalOrder? ExternalOrder { get; set; }
@@ -196,6 +198,8 @@ public class Payment
     public string? OperationId { get; set; }
     public string PaymentMethod { get; set; } = string.Empty; // Cash, Card, etc.
     public decimal Amount { get; set; }
+    public long TipMinor { get; set; }
+    public long RefundedTipMinor { get; set; }
     /// <summary>ISO code of the tender's currency when provided by the feed; null on cash and historical rows.</summary>
     public string? Currency { get; set; }
     public string Status { get; set; } = string.Empty;

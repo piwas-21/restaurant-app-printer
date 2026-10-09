@@ -19,6 +19,7 @@ public class OrderPrintService : IOrderPrintService
     // KitchenType values as the backend emits them (OrderItemDto.KitchenType).
     private const string FRONT_KITCHEN = "FrontKitchen";
     private const string BACK_KITCHEN = "BackKitchen";
+    private const decimal MinorUnitsPerCurrencyUnit = 100m;
 
     public OrderPrintService(
         IMarketplaceReceiptComposer marketplace,
@@ -763,10 +764,17 @@ public class OrderPrintService : IOrderPrintService
         sb.Append(ResetStyle(styles.CashierGrandTotal));
         sb.AppendLine();
 
-        // What has already been paid, and what the till still has to collect.
-        if (order.TotalPaid > 0)
+        // Staff tips are collected outside order debt; guest Order.Tip is already in Total.
+        var paymentTip = order.PaymentTipMinor / MinorUnitsPerCurrencyUnit;
+        if (paymentTip > 0)
         {
-            sb.AppendLine($"{labels.Paid}: {ReceiptComposer.Money(order.TotalPaid, currency)}");
+            sb.AppendLine($"{labels.PaymentTip}: {ReceiptComposer.Money(paymentTip, currency)}");
+        }
+
+        // Collected money includes net staff tips while Due remains food/order debt only.
+        if (order.TotalPaid + paymentTip > 0)
+        {
+            sb.AppendLine($"{labels.Paid}: {ReceiptComposer.Money(order.TotalPaid + paymentTip, currency)}");
         }
 
         if (order.ExternalOrder is null && order.RemainingAmount > 0)
@@ -791,7 +799,9 @@ public class OrderPrintService : IOrderPrintService
                 var method = string.IsNullOrWhiteSpace(payment.CardLastFourDigits)
                     ? paymentLabel
                     : $"{paymentLabel} *{payment.CardLastFourDigits}";
-                sb.AppendLine($"{method}: {ReceiptComposer.Money(payment.Amount, order.ExternalOrder is null ? currency ?? payment.Currency : currency)}");
+                var collected = payment.Amount - (payment.RefundedAmount ?? 0)
+                    + (payment.TipMinor - payment.RefundedTipMinor) / MinorUnitsPerCurrencyUnit;
+                sb.AppendLine($"{method}: {ReceiptComposer.Money(collected, order.ExternalOrder is null ? currency ?? payment.Currency : currency)}");
             }
             sb.Append(EscPosCommands.ExtraDarkOff);
             sb.AppendLine();
