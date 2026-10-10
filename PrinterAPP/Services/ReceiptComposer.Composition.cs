@@ -5,19 +5,26 @@ namespace PrinterAPP.Services;
 
 public static partial class ReceiptComposer
 {
+    private sealed record CashierPrintContext(PrintLabels Labels, int Spacing, string? Currency, int MenuQuantity);
+
+    private sealed record KitchenPrintContext(PrintLabels Labels, PrintStyleSettings? Styles, int MenuQuantity);
+
+    private readonly record struct DetailLinesContext(
+        PrintLabels Labels, int MenuQuantity, string OwnerLabel, SectionStyle? Style, bool TallEmphasis);
+
     public static void AppendCashierItemLines(
         StringBuilder sb, OrderItem item, int depth, int spacing, PrintLabels labels, int parentQuantity = 1,
         string? currency = null)
     {
         if (depth == 0)
             item = ReceiptCompositionProjection.BuildSingle(item);
-        AppendCashierProjected(sb, item, depth, spacing, labels, parentQuantity, currency,
-            item.Quantity, null);
+        var context = new CashierPrintContext(labels, spacing, currency, item.Quantity);
+        AppendCashierProjected(sb, item, depth, context, parentQuantity, null);
     }
 
     private static void AppendCashierProjected(
-        StringBuilder sb, OrderItem item, int depth, int spacing, PrintLabels labels,
-        int parentQuantity, string? currency, int menuQuantity, string? ownerLabel)
+        StringBuilder sb, OrderItem item, int depth, CashierPrintContext context,
+        int parentQuantity, string? ownerLabel)
     {
         var indent = new string(' ', depth * 3);
         var name = string.IsNullOrWhiteSpace(item.VariationName)
@@ -26,29 +33,28 @@ public static partial class ReceiptComposer
         if (depth == 0)
         {
             var itemLine = $"{item.Quantity}x {name}";
-            var price = Money(item.ItemTotal, currency);
+            var price = Money(item.ItemTotal, context.Currency);
             sb.Append(itemLine);
-            sb.Append(new string('.', Math.Max(1, spacing - itemLine.Length - price.Length)));
+            sb.Append(new string('.', Math.Max(1, context.Spacing - itemLine.Length - price.Length)));
             sb.AppendLine(price);
         }
         else
         {
-            sb.AppendLine(CashierComponentLine(item, name, indent, labels, parentQuantity, menuQuantity, ownerLabel));
+            sb.AppendLine(CashierComponentLine(item, name, indent, context.Labels,
+                parentQuantity, context.MenuQuantity, ownerLabel));
         }
 
-        AppendCashierChildren(sb, item, depth, spacing, labels, currency, menuQuantity,
-            ReceiptComponentFormatting.ComponentLabel(item) ?? item.ProductName,
-            requiredChoicesOnly: true);
-        AppendDetailLines(sb, item, indent, labels, menuQuantity,
-            ReceiptComponentFormatting.ComponentLabel(item) ?? item.ProductName);
-        AppendCashierChildren(sb, item, depth, spacing, labels, currency, menuQuantity,
-            ReceiptComponentFormatting.ComponentLabel(item) ?? item.ProductName,
-            requiredChoicesOnly: false);
+        var componentLabel = ReceiptComponentFormatting.ComponentLabel(item) ?? item.ProductName;
+        AppendCashierChildren(sb, item, depth, context,
+            componentLabel, requiredChoicesOnly: true);
+        AppendDetailLines(sb, item, indent,
+            new DetailLinesContext(context.Labels, context.MenuQuantity, componentLabel, null, false));
+        AppendCashierChildren(sb, item, depth, context, componentLabel, requiredChoicesOnly: false);
     }
 
     private static void AppendCashierChildren(
-        StringBuilder sb, OrderItem item, int depth, int spacing, PrintLabels labels,
-        string? currency, int menuQuantity, string ownerLabel, bool requiredChoicesOnly)
+        StringBuilder sb, OrderItem item, int depth, CashierPrintContext context,
+        string ownerLabel, bool requiredChoicesOnly)
     {
         var children = ReceiptItemDisplay.OrderItemsForDisplay(item.SideItems)
             .Where(child => (child.CompositionRole == CompositionRole.RequiredChoice) == requiredChoicesOnly)
@@ -64,21 +70,19 @@ public static partial class ReceiptComposer
                 foreach (var row in group)
                     rendered.Add(row);
                 var choices = string.Join("; ", group.Select(row =>
-                    ReceiptComponentFormatting.LineTotalChoiceLabel(row, labels)));
-                sb.AppendLine($"{new string(' ', (depth + 1) * 3)}{PrintLabelCatalog.TotalForMenusLabel(labels, menuQuantity)}: {choices}");
+                    ReceiptComponentFormatting.LineTotalChoiceLabel(row, context.Labels)));
+                sb.AppendLine($"{new string(' ', (depth + 1) * 3)}{PrintLabelCatalog.TotalForMenusLabel(context.Labels, context.MenuQuantity)}: {choices}");
                 foreach (var row in group)
                 {
-                    AppendCashierChildren(sb, row, depth + 1, spacing, labels, currency, menuQuantity,
-                        ReceiptComponentFormatting.ComponentLabel(row) ?? row.ProductName, requiredChoicesOnly: true);
-                    AppendDetailLines(sb, row, new string(' ', (depth + 2) * 3), labels, menuQuantity,
-                        ReceiptComponentFormatting.ComponentLabel(row) ?? row.ProductName);
-                    AppendCashierChildren(sb, row, depth + 1, spacing, labels, currency, menuQuantity,
-                        ReceiptComponentFormatting.ComponentLabel(row) ?? row.ProductName, requiredChoicesOnly: false);
+                    var rowLabel = ReceiptComponentFormatting.ComponentLabel(row) ?? row.ProductName;
+                    AppendCashierChildren(sb, row, depth + 1, context, rowLabel, requiredChoicesOnly: true);
+                    AppendDetailLines(sb, row, new string(' ', (depth + 2) * 3),
+                        new DetailLinesContext(context.Labels, context.MenuQuantity, rowLabel, null, false));
+                    AppendCashierChildren(sb, row, depth + 1, context, rowLabel, requiredChoicesOnly: false);
                 }
                 continue;
             }
-            AppendCashierProjected(sb, child, depth + 1, spacing, labels, item.Quantity, currency,
-                menuQuantity, ownerLabel);
+            AppendCashierProjected(sb, child, depth + 1, context, item.Quantity, ownerLabel);
         }
     }
 
@@ -88,41 +92,38 @@ public static partial class ReceiptComposer
     {
         if (depth == 0)
             item = ReceiptCompositionProjection.BuildSingle(item);
-        AppendKitchenProjected(sb, item, depth, labels, parentQuantity, styles, item.Quantity, null);
+        var context = new KitchenPrintContext(labels, styles, item.Quantity);
+        AppendKitchenProjected(sb, item, depth, context, parentQuantity, null);
     }
 
     private static void AppendKitchenProjected(
-        StringBuilder sb, OrderItem item, int depth, PrintLabels labels, int parentQuantity,
-        PrintStyleSettings? styles, int menuQuantity, string? ownerLabel)
+        StringBuilder sb, OrderItem item, int depth, KitchenPrintContext context,
+        int parentQuantity, string? ownerLabel)
     {
         var indent = new string(' ', depth * 3);
-        var line = KitchenComponentLine(item, indent, labels, parentQuantity, menuQuantity, ownerLabel);
+        var line = KitchenComponentLine(item, indent, context.Labels, parentQuantity, context.MenuQuantity, ownerLabel);
         if (item.IsContextOnly)
             sb.AppendLine(line);
         else if ((depth == 0 && item.CompositionRole != CompositionRole.Dish)
             || item.QuantityBasis is null)
-            ReceiptKitchenLineFormatter.AppendLegacyNameLine(sb, item, depth, indent, parentQuantity, styles);
+            ReceiptKitchenLineFormatter.AppendLegacyNameLine(sb, item, depth, indent, parentQuantity, context.Styles);
         else
-            ReceiptKitchenLineFormatter.AppendNameLine(sb, line, styles);
+            ReceiptKitchenLineFormatter.AppendNameLine(sb, line, context.Styles);
 
         if (!string.IsNullOrWhiteSpace(item.VariationName))
             sb.AppendLine($"{indent}   - {item.VariationName}");
 
-        AppendKitchenChildren(sb, item, depth, labels, styles, menuQuantity,
-            ReceiptComponentFormatting.ComponentLabel(item) ?? item.ProductName,
-            requiredChoicesOnly: true);
-        AppendDetailLines(sb, item, indent, labels, menuQuantity,
-            ReceiptComponentFormatting.ComponentLabel(item) ?? item.ProductName,
-            styles?.KitchenIngredients, tallEmphasis: true);
-
-        AppendKitchenChildren(sb, item, depth, labels, styles, menuQuantity,
-            ReceiptComponentFormatting.ComponentLabel(item) ?? item.ProductName,
-            requiredChoicesOnly: false);
+        var componentLabel = ReceiptComponentFormatting.ComponentLabel(item) ?? item.ProductName;
+        AppendKitchenChildren(sb, item, depth, context, componentLabel, requiredChoicesOnly: true);
+        AppendDetailLines(sb, item, indent,
+            new DetailLinesContext(context.Labels, context.MenuQuantity, componentLabel,
+                context.Styles?.KitchenIngredients, TallEmphasis: true));
+        AppendKitchenChildren(sb, item, depth, context, componentLabel, requiredChoicesOnly: false);
     }
 
     private static void AppendKitchenChildren(
-        StringBuilder sb, OrderItem item, int depth, PrintLabels labels,
-        PrintStyleSettings? styles, int menuQuantity, string ownerLabel, bool requiredChoicesOnly)
+        StringBuilder sb, OrderItem item, int depth, KitchenPrintContext context,
+        string ownerLabel, bool requiredChoicesOnly)
     {
         var children = ReceiptItemDisplay.OrderItemsForDisplay(item.SideItems)
             .Where(child => (child.CompositionRole == CompositionRole.RequiredChoice) == requiredChoicesOnly)
@@ -138,25 +139,23 @@ public static partial class ReceiptComposer
                 foreach (var row in group)
                     rendered.Add(row);
                 var choices = string.Join("; ", group.Select(row =>
-                    ReceiptComponentFormatting.LineTotalChoiceLabel(row, labels)));
+                    ReceiptComponentFormatting.LineTotalChoiceLabel(row, context.Labels)));
                 ReceiptKitchenLineFormatter.AppendNameLine(sb,
-                    $"{new string(' ', (depth + 1) * 3)}{PrintLabelCatalog.TotalForMenusLabel(labels, menuQuantity)}: {choices}",
-                    styles);
+                    $"{new string(' ', (depth + 1) * 3)}{PrintLabelCatalog.TotalForMenusLabel(context.Labels, context.MenuQuantity)}: {choices}",
+                    context.Styles);
                 foreach (var row in group)
                 {
                     var indent = new string(' ', (depth + 2) * 3);
-                    AppendKitchenChildren(sb, row, depth + 1, labels, styles, menuQuantity,
-                        ReceiptComponentFormatting.ComponentLabel(row) ?? row.ProductName, requiredChoicesOnly: true);
-                    AppendDetailLines(sb, row, indent, labels, menuQuantity,
-                        ReceiptComponentFormatting.ComponentLabel(row) ?? row.ProductName,
-                        styles?.KitchenIngredients, tallEmphasis: true);
-                    AppendKitchenChildren(sb, row, depth + 1, labels, styles, menuQuantity,
-                        ReceiptComponentFormatting.ComponentLabel(row) ?? row.ProductName, requiredChoicesOnly: false);
+                    var rowLabel = ReceiptComponentFormatting.ComponentLabel(row) ?? row.ProductName;
+                    AppendKitchenChildren(sb, row, depth + 1, context, rowLabel, requiredChoicesOnly: true);
+                    AppendDetailLines(sb, row, indent,
+                        new DetailLinesContext(context.Labels, context.MenuQuantity, rowLabel,
+                            context.Styles?.KitchenIngredients, TallEmphasis: true));
+                    AppendKitchenChildren(sb, row, depth + 1, context, rowLabel, requiredChoicesOnly: false);
                 }
                 continue;
             }
-            AppendKitchenProjected(sb, child, depth + 1, labels, item.Quantity, styles,
-                menuQuantity, ownerLabel);
+            AppendKitchenProjected(sb, child, depth + 1, context, item.Quantity, ownerLabel);
         }
     }
 
@@ -222,8 +221,7 @@ public static partial class ReceiptComposer
     }
 
     private static void AppendDetailLines(
-        StringBuilder sb, OrderItem item, string indent, PrintLabels labels,
-        int menuQuantity, string ownerLabel, SectionStyle? style = null, bool tallEmphasis = false)
+        StringBuilder sb, OrderItem item, string indent, DetailLinesContext context)
     {
         foreach (var ingredient in (item.IngredientCustomizations ?? [])
             .Select((value, index) => new { Value = value, Index = index })
@@ -232,12 +230,14 @@ public static partial class ReceiptComposer
             .Select(entry => entry.Value)
             .Where(ShouldPrintIngredient))
         {
-            var line = FormatIngredientLine(ingredient, indent, labels, menuQuantity, ownerLabel);
-            ReceiptKitchenLineFormatter.AppendDetailLine(sb, line, style, tallEmphasis);
+            var line = FormatIngredientLine(ingredient, indent, context.Labels,
+                context.MenuQuantity, context.OwnerLabel);
+            ReceiptKitchenLineFormatter.AppendDetailLine(sb, line, context.Style, context.TallEmphasis);
         }
         var note = ReceiptItemDisplay.DisplaySpecialInstructions(item);
         if (note is not null)
-            ReceiptKitchenLineFormatter.AppendDetailLine(sb, $"{indent}   {labels.Note}: {note}", style, tallEmphasis);
+            ReceiptKitchenLineFormatter.AppendDetailLine(sb,
+                $"{indent}   {context.Labels.Note}: {note}", context.Style, context.TallEmphasis);
     }
 
     private static bool ShouldPrintIngredient(IngredientCustomization ingredient) =>
@@ -247,11 +247,13 @@ public static partial class ReceiptComposer
         IngredientCustomization ingredient, string indent, PrintLabels labels,
         int menuQuantity, string ownerLabel)
     {
-        var line = ingredient.IsRemoved
-            ? $"{indent}   - {labels.NoPrefix} {ingredient.IngredientName}"
-            : ingredient.IsAddOn || ingredient.Quantity > 1
-                ? $"{indent}   {labels.ExtraPrefix} {ingredient.IngredientName} x{ingredient.Quantity}"
-                : $"{indent}   {labels.SelectedPrefix} {ingredient.IngredientName}";
+        string line;
+        if (ingredient.IsRemoved)
+            line = $"{indent}   - {labels.NoPrefix} {ingredient.IngredientName}";
+        else if (ingredient.IsAddOn || ingredient.Quantity > 1)
+            line = $"{indent}   {labels.ExtraPrefix} {ingredient.IngredientName} x{ingredient.Quantity}";
+        else
+            line = $"{indent}   {labels.SelectedPrefix} {ingredient.IngredientName}";
         if (ingredient.QuantityBasis is QuantityBasis.Unknown
             || (ingredient.QuantityBasis == QuantityBasis.PerParentUnit
                 && ingredient.ConfigurationScope != ConfigurationScope.SharedAcrossParentUnits))

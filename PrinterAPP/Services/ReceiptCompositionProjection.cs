@@ -42,17 +42,18 @@ public static class ReceiptCompositionProjection
         ICollection<ItemNode> nodes,
         IDictionary<Guid, ItemNode> byId)
     {
-        var item = source.WithSideItems(source.SideItems is null ? null : []);
+        var children = source.SideItems is null ? null : new List<OrderItem>();
+        var item = source.WithSideItems(children);
         container.Add(item);
         var node = new ItemNode(item, container, parent);
         nodes.Add(node);
         if (Guid.TryParse(item.Id, out var id))
             byId.TryAdd(id, node);
 
-        if (source.SideItems is null)
+        if (source.SideItems is not { } sourceChildren || children is null)
             return;
-        foreach (var child in source.SideItems)
-            Clone(child, item.SideItems!, node, nodes, byId);
+        foreach (var child in sourceChildren)
+            Clone(child, children, node, nodes, byId);
     }
 
     private static bool WouldCreateCycle(ItemNode node, ItemNode proposedParent)
