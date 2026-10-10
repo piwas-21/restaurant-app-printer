@@ -166,8 +166,9 @@ public sealed class ReceiptProjectionGoldenTests
     [Fact]
     public void Feed_request_opts_into_projection_v2_without_changing_existing_cursors()
     {
+        var baseUri = new UriBuilder(Uri.UriSchemeHttps, "printer.example").Uri;
         var uri = new Uri(EventStreamingService.BuildFeedUrl(
-            "https://printer.example", DateTime.UnixEpoch, "fr-CH", "opaque-update", "opaque-order"));
+            baseUri.ToString(), DateTime.UnixEpoch, "fr-CH", "opaque-update", "opaque-order"));
         Assert.Contains("projectionVersion=2", uri.Query, StringComparison.Ordinal);
         Assert.Contains("updateCursor=opaque-update", uri.Query, StringComparison.Ordinal);
         Assert.Contains("orderCursor=opaque-order", uri.Query, StringComparison.Ordinal);
