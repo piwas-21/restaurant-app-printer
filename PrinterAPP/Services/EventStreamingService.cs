@@ -1179,7 +1179,7 @@ public class EventStreamingService : IEventStreamingService
         string? updateCursor = null,
         string? orderCursor = null)
     {
-        var url = $"{apiBaseUrl.TrimEnd('/')}/api/orders/printer-feed?modifiedSince={Uri.EscapeDataString(modifiedSince.ToString("o", System.Globalization.CultureInfo.InvariantCulture))}";
+        var url = $"{apiBaseUrl.TrimEnd('/')}/api/orders/printer-feed?modifiedSince={Uri.EscapeDataString(modifiedSince.ToString("o", System.Globalization.CultureInfo.InvariantCulture))}&projectionVersion=2";
         if (!string.IsNullOrWhiteSpace(language))
             url += $"&language={Uri.EscapeDataString(language)}";
         if (!string.IsNullOrWhiteSpace(updateCursor))

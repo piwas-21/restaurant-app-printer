@@ -47,6 +47,7 @@
     <!-- Order models (MAUI-free; plain System.Text.Json records). Pinned here to guard the
          backend-DTO mirror after a string-vs-object drift on deliveryAddress wedged the prod poll. -->
     <Compile Include="..\PrinterAPP\Models\Order.cs" Link="Linked\Order.cs" />
+    <Compile Include="..\PrinterAPP\Models\OrderPresentationMetadata.cs" Link="Linked\OrderPresentationMetadata.cs" />
     <Compile Include="..\PrinterAPP\Models\OrderAmendmentPrintContext.cs" Link="Linked\OrderAmendmentPrintContext.cs" />
     <Compile Include="..\PrinterAPP\Models\ExternalOrder.cs" Link="Linked\ExternalOrder.cs" />
     <Compile Include="..\PrinterAPP\Services\IMarketplaceReceiptComposer.cs" Link="Linked\IMarketplaceReceiptComposer.cs" />
@@ -58,6 +59,7 @@
     <Compile Include="..\PrinterAPP\Models\DeliveryAddress.cs" Link="Linked\DeliveryAddress.cs" />
     <!-- Resilient per-order feed parser (MAUI-free): one bad order must not wedge the whole poll batch. -->
     <Compile Include="..\PrinterAPP\Services\OrderFeedParser.cs" Link="Linked\OrderFeedParser.cs" />
+    <Compile Include="..\PrinterAPP\Services\OrderFeedParser.Orders.cs" Link="Linked\OrderFeedParser.Orders.cs" />
     <Compile Include="..\PrinterAPP\Services\PrinterFeedUpdateValidation.cs" Link="Linked\PrinterFeedUpdateValidation.cs" />
     <Compile Include="..\PrinterAPP\Services\PrinterUpdateWithdrawalRedactor.cs" Link="Linked\PrinterUpdateWithdrawalRedactor.cs" />
     <Compile Include="..\PrinterAPP\Services\IPrinterUpdateAuthorizationService.cs" Link="Linked\IPrinterUpdateAuthorizationService.cs" />
@@ -149,6 +151,12 @@
     <Compile Include="..\PrinterAPP\Services\PrintLanguagePolicy.cs" Link="Linked\PrintLanguagePolicy.cs" />
     <Compile Include="..\PrinterAPP\Services\ReceiptItemDisplay.cs" Link="Linked\ReceiptItemDisplay.cs" />
     <Compile Include="..\PrinterAPP\Services\ReceiptComposer.cs" Link="Linked\ReceiptComposer.cs" />
+    <Compile Include="..\PrinterAPP\Services\ReceiptComposer.Composition.cs" Link="Linked\ReceiptComposer.Composition.cs" />
+    <Compile Include="..\PrinterAPP\Services\ReceiptComponentFormatting.cs" Link="Linked\ReceiptComponentFormatting.cs" />
+    <Compile Include="..\PrinterAPP\Services\ReceiptCompositionProjection.cs" Link="Linked\ReceiptCompositionProjection.cs" />
+    <Compile Include="..\PrinterAPP\Services\OrderPresentationMetadataNormalizer.cs" Link="Linked\OrderPresentationMetadataNormalizer.cs" />
+    <Compile Include="..\PrinterAPP\Services\ReceiptKitchenLineFormatter.cs" Link="Linked\ReceiptKitchenLineFormatter.cs" />
+    <Compile Include="..\PrinterAPP\Services\CashierPaymentPresentation.cs" Link="Linked\CashierPaymentPresentation.cs" />
     <Compile Include="..\PrinterAPP\Services\PrintStyleSettingsService.cs" Link="Linked\PrintStyleSettingsService.cs" />
     <Compile Include="..\PrinterAPP\Models\PrintStyleSettings.cs" Link="Linked\PrintStyleSettings.cs" />
     <Compile Include="..\PrinterAPP\Services\PrinterType.cs" Link="Linked\PrinterType.cs" />
@@ -183,6 +191,10 @@
          (which no PR job compiles) registers the type by interface. See
          EventStreamingServiceDependencyInjectionTests. -->
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="9.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Fixtures\backend-printer-feed-v2.golden.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

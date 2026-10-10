@@ -113,9 +113,10 @@ public class OrderPrintService : IOrderPrintService
         }
 
         var routedTargets = routeSelection.IsLegacy ? null : routeSelection.EligibleTargets;
-        var cashierSuccess = await PrintCashierAsync(order, isManualPrint, cancellationToken, routedTargets);
+        var receiptOrder = order.WithItems(ReceiptCompositionProjection.Build(order.Items));
+        var cashierSuccess = await PrintCashierAsync(receiptOrder, isManualPrint, cancellationToken, routedTargets);
         var kitchenOutcomes = await PrintKitchenTicketsAsync(
-            order, config, policy, isManualPrint, routedTargets);
+            receiptOrder, config, policy, isManualPrint, routedTargets);
         var frontKitchenSuccess = kitchenOutcomes.Front;
         var backKitchenSuccess = kitchenOutcomes.Back;
         var generalDefaultSuccess = kitchenOutcomes.General;
@@ -555,6 +556,7 @@ public class OrderPrintService : IOrderPrintService
 
     private string FormatKitchenReceipt(Order order, PrinterConfiguration config, int paperWidth, string? kitchenName = null)
     {
+        order = order.WithItems(ReceiptCompositionProjection.Build(order.Items));
         var sb = new StringBuilder();
         var language = PrintLanguagePolicy.Resolve(config.PrintLanguage, order.PreferredLanguage);
         var labels = PrintLabelCatalog.For(language);
@@ -636,6 +638,7 @@ public class OrderPrintService : IOrderPrintService
 
     private string FormatCashierReceipt(Order order, PrinterConfiguration config, int paperWidth)
     {
+        order = order.WithItems(ReceiptCompositionProjection.Build(order.Items));
         var sb = new StringBuilder();
         var language = PrintLanguagePolicy.Resolve(config.PrintLanguage, order.PreferredLanguage);
         var labels = PrintLabelCatalog.For(language);
@@ -764,6 +767,8 @@ public class OrderPrintService : IOrderPrintService
         sb.Append(ResetStyle(styles.CashierGrandTotal));
         sb.AppendLine();
 
+        sb.AppendLine($"{labels.PaymentState}: {CashierPaymentPresentation.State(order, labels)}");
+
         // Staff tips are collected outside order debt; guest Order.Tip is already in Total.
         var paymentTip = order.PaymentTipMinor / MinorUnitsPerCurrencyUnit;
         if (paymentTip > 0)
@@ -784,10 +789,15 @@ public class OrderPrintService : IOrderPrintService
             sb.Append(EscPosCommands.ExtraDarkOff);
         }
 
+        if (order.RemainingAmount < 0)
+        {
+            sb.AppendLine($"{labels.Credit}: {ReceiptComposer.Money(-order.RemainingAmount, currency)}");
+        }
+
         sb.AppendLine();
 
         // Payment information
-        if (order.Payments != null && order.Payments.Any())
+        if (order.Payments is { Count: > 0 })
         {
             sb.Append(EscPosCommands.ExtraDarkOn);
             sb.AppendLine($"{labels.Payment}:");
@@ -799,6 +809,11 @@ public class OrderPrintService : IOrderPrintService
                 var method = string.IsNullOrWhiteSpace(payment.CardLastFourDigits)
                     ? paymentLabel
                     : $"{paymentLabel} *{payment.CardLastFourDigits}";
+                if (!CashierPaymentPresentation.IsCaptured(payment))
+                {
+                    sb.AppendLine($"{method} ({payment.Status})");
+                    continue;
+                }
                 var collected = payment.Amount - (payment.RefundedAmount ?? 0)
                     + (payment.TipMinor - payment.RefundedTipMinor) / MinorUnitsPerCurrencyUnit;
                 sb.AppendLine($"{method}: {ReceiptComposer.Money(collected, order.ExternalOrder is null ? currency ?? payment.Currency : currency)}");
