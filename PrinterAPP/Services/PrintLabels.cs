@@ -39,7 +39,19 @@ public sealed record PrintLabels(
     string TakeAway,
     string Delivery,
     string NoItems,
-    string PaymentTip)
+    string PaymentTip,
+    string ForEach,
+    string TotalForMenus,
+    string RecordedScopeUnknown,
+    string ConfigurationScopeUnknown,
+    string PaymentState,
+    string Unpaid,
+    string PartiallyPaid,
+    string IndependentConfiguration,
+    string RecordedQuantity,
+    string Refunded,
+    string Overpaid,
+    string Credit)
 {
     /// <summary>
     /// Renders the raw <c>Order.Type</c> value the backend sends (DineIn/TakeAway/Delivery) in this
@@ -102,6 +114,9 @@ public static class PrintLabelCatalog
         "ExtraPrefix", "SelectedPrefix", "Subtotal", "Tax", "Discount", "CustomerDiscount",
         "Promo", "DeliveryFee", "Tip", "Total", "Payment", "CardAtRestaurant", "Paid", "Due", "DeliveryTo",
         "Instructions", "ThankYou", "DineIn", "TakeAway", "Delivery", "NoItems", "PaymentTip",
+        "ForEach", "TotalForMenus", "RecordedScopeUnknown", "ConfigurationScopeUnknown",
+        "PaymentState", "Unpaid", "PartiallyPaid", "IndependentConfiguration", "RecordedQuantity",
+        "Refunded", "Overpaid", "Credit",
     ];
 
     /// <summary>
@@ -122,37 +137,58 @@ public static class PrintLabelCatalog
     public static readonly PrintLabels English = Parse(
         "ONLINE ORDER|Type|Table|Customer|Tel|NOTES|NOTE|NO|+ EXTRA|+|Subtotal|Tax|Discount" +
         "|Customer discount|Promo|Delivery Fee|Tip|TOTAL|PAYMENT|CARD AT RESTAURANT|PAID|DUE|DELIVERY TO" +
-        "|Instructions|Thank you for your visit!|Dine-in|Takeaway|Delivery|(No items in order)|Additional tip");
+        "|Instructions|Thank you for your visit!|Dine-in|Takeaway|Delivery|(No items in order)|Additional tip" +
+        "|For each {0}:|Total for {0} menus|Recorded; scope unknown|configuration scope unknown" +
+        "|PAYMENT STATUS|UNPAID|PARTIALLY PAID|independent configurations" +
+        "|recorded quantity {0}|REFUNDED|OVERPAID|CREDIT");
 
     public static readonly PrintLabels German = Parse(
         "ONLINE-BESTELLUNG|Typ|Tisch|Kunde|Tel|NOTIZEN|NOTIZ|OHNE|+ EXTRA|+|Zwischensumme|MwSt|Rabatt" +
         "|Kundenrabatt|Promo|Liefergebühr|Trinkgeld|TOTAL|ZAHLUNG|KARTENZAHLUNG IM RESTAURANT|BEZAHLT|OFFEN|LIEFERUNG AN" +
-        "|Hinweise|Vielen Dank für Ihren Besuch!|Im Lokal|Mitnehmen|Lieferung|(Keine Artikel in der Bestellung)|Zusätzliches Trinkgeld");
+        "|Hinweise|Vielen Dank für Ihren Besuch!|Im Lokal|Mitnehmen|Lieferung|(Keine Artikel in der Bestellung)|Zusätzliches Trinkgeld" +
+        "|Für jedes {0}:|Gesamt für {0} Menüs|Erfasst; Umfang unbekannt|Konfigurationsumfang unbekannt" +
+        "|ZAHLUNGSSTATUS|UNBEZAHLT|TEILWEISE BEZAHLT|unabhängige Konfigurationen" +
+        "|erfasste Menge {0}|ERSTATTET|ÜBERZAHLT|GUTHABEN");
 
     public static readonly PrintLabels French = Parse(
         "COMMANDE EN LIGNE|Type|Table|Client|Tél|REMARQUES|REMARQUE|SANS|+ SUPPL|+|Sous-total|TVA|Remise" +
         "|Remise client|Promo|Frais de livraison|Pourboire|TOTAL|PAIEMENT|CARTE AU RESTAURANT|PAYÉ|DÛ|LIVRAISON À" +
-        "|Instructions|Merci de votre visite !|Sur place|À emporter|Livraison|(Aucun article dans la commande)|Pourboire supplémentaire");
+        "|Instructions|Merci de votre visite !|Sur place|À emporter|Livraison|(Aucun article dans la commande)|Pourboire supplémentaire" +
+        "|Pour chaque {0} :|Total pour {0} menus|Quantité notée; portée inconnue|Portée de configuration inconnue" +
+        "|ÉTAT DU PAIEMENT|NON PAYÉ|PARTIELLEMENT PAYÉ|configurations indépendantes" +
+        "|quantité enregistrée {0}|REMBOURSÉ|TROP-PAYÉ|AVOIR");
 
     public static readonly PrintLabels Italian = Parse(
         "ORDINE ONLINE|Tipo|Tavolo|Cliente|Tel|NOTE|NOTA|SENZA|+ EXTRA|+|Subtotale|IVA|Sconto" +
         "|Sconto cliente|Promo|Costo di consegna|Mancia|TOTALE|PAGAMENTO|CARTA AL RISTORANTE|PAGATO|DA PAGARE|CONSEGNA A" +
-        "|Istruzioni|Grazie per la visita!|Al tavolo|Da asporto|Consegna|(Nessun articolo nell'ordine)|Mancia aggiuntiva");
+        "|Istruzioni|Grazie per la visita!|Al tavolo|Da asporto|Consegna|(Nessun articolo nell'ordine)|Mancia aggiuntiva" +
+        "|Per ogni {0}:|Totale per {0} menu|Quantità registrata; ambito sconosciuto|Ambito configurazione sconosciuto" +
+        "|STATO DEL PAGAMENTO|NON PAGATO|PAGATO PARZIALMENTE|configurazioni indipendenti" +
+        "|quantità registrata {0}|RIMBORSATO|PAGATO IN ECCESSO|CREDITO");
 
     public static readonly PrintLabels Spanish = Parse(
         "PEDIDO ONLINE|Tipo|Mesa|Cliente|Tel|NOTAS|NOTA|SIN|+ EXTRA|+|Subtotal|IVA|Descuento" +
         "|Descuento cliente|Promo|Gastos de envío|Propina|TOTAL|PAGO|TARJETA EN EL RESTAURANTE|PAGADO|PENDIENTE|ENTREGAR EN" +
-        "|Indicaciones|¡Gracias por su visita!|En el local|Para llevar|Entrega|(Sin artículos en el pedido)|Propina adicional");
+        "|Indicaciones|¡Gracias por su visita!|En el local|Para llevar|Entrega|(Sin artículos en el pedido)|Propina adicional" +
+        "|Por cada {0}:|Total para {0} menús|Cantidad registrada; alcance desconocido|Alcance de configuración desconocido" +
+        "|ESTADO DEL PAGO|SIN PAGAR|PAGADO PARCIALMENTE|configuraciones independientes" +
+        "|cantidad registrada {0}|REEMBOLSADO|PAGADO DE MÁS|CRÉDITO");
 
     public static readonly PrintLabels Dutch = Parse(
         "ONLINE BESTELLING|Type|Tafel|Klant|Tel|OPMERKINGEN|LET OP|ZONDER|+ EXTRA|+|Subtotaal|BTW|Korting" +
         "|Klantkorting|Promo|Bezorgkosten|Fooi|TOTAAL|BETALING|KAARTBETALING IN HET RESTAURANT|BETAALD|OPENSTAAND|BEZORGEN AAN" +
-        "|Instructies|Bedankt voor uw bezoek!|Ter plaatse|Meenemen|Bezorging|(Geen artikelen in de bestelling)|Extra fooi");
+        "|Instructies|Bedankt voor uw bezoek!|Ter plaatse|Meenemen|Bezorging|(Geen artikelen in de bestelling)|Extra fooi" +
+        "|Voor elke {0}:|Totaal voor {0} menu's|Geregistreerde hoeveelheid; scope onbekend|Configuratiescope onbekend" +
+        "|BETAALSTATUS|ONBETAALD|GEDEELTELIJK BETAALD|onafhankelijke configuraties" +
+        "|geregistreerde hoeveelheid {0}|TERUGBETAALD|TEVEEL BETAALD|TEGOED");
 
     public static readonly PrintLabels Turkish = Parse(
         "ONLINE SİPARİŞ|Tür|Masa|Müşteri|Tel|NOTLAR|NOT|YOK|+ EKSTRA|+|Ara Toplam|KDV|İndirim" +
         "|Müşteri indirimi|Promosyon|Teslimat Ücreti|Bahşiş|TOPLAM|ÖDEME|RESTORANDA KARTLA ÖDEME|ÖDENEN|KALAN|TESLİMAT ADRESİ" +
-        "|Talimatlar|Ziyaretiniz için teşekkürler!|Lokalda|Paket|Teslimat|(Siparişte ürün yok)|Ek bahşiş");
+        "|Talimatlar|Ziyaretiniz için teşekkürler!|Lokalda|Paket|Teslimat|(Siparişte ürün yok)|Ek bahşiş" +
+        "|Her {0} için:|{0} menü için toplam|Kayıtlı miktar; kapsam bilinmiyor|Yapılandırma kapsamı bilinmiyor" +
+        "|ÖDEME DURUMU|ÖDENMEDİ|KISMEN ÖDENDİ|bağımsız yapılandırmalar" +
+        "|kayıtlı miktar {0}|İADE EDİLDİ|FAZLA ÖDENDİ|ALACAK");
 
     /// <summary>Maps one spec onto the record; a short or long spec fails loudly here.</summary>
     private static PrintLabels Parse(string spec)
@@ -194,6 +230,27 @@ public static class PrintLabelCatalog
             TakeAway: fields[26],
             Delivery: fields[27],
             NoItems: fields[28],
-            PaymentTip: fields[29]);
+            PaymentTip: fields[29],
+            ForEach: fields[30],
+            TotalForMenus: fields[31],
+            RecordedScopeUnknown: fields[32],
+            ConfigurationScopeUnknown: fields[33],
+            PaymentState: fields[34],
+            Unpaid: fields[35],
+            PartiallyPaid: fields[36],
+            IndependentConfiguration: fields[37],
+            RecordedQuantity: fields[38],
+            Refunded: fields[39],
+            Overpaid: fields[40],
+            Credit: fields[41]);
     }
+
+    public static string ForEachLabel(PrintLabels labels, string owner) =>
+        string.Format(CultureInfo.InvariantCulture, labels.ForEach, owner);
+
+    public static string TotalForMenusLabel(PrintLabels labels, int menuCount) =>
+        string.Format(CultureInfo.InvariantCulture, labels.TotalForMenus, menuCount);
+
+    public static string RecordedQuantityLabel(PrintLabels labels, int quantity) =>
+        string.Format(CultureInfo.InvariantCulture, labels.RecordedQuantity, quantity);
 }
