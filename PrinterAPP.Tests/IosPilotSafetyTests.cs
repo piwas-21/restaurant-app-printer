@@ -20,7 +20,7 @@ public class IosPilotSafetyTests
             await service.DownloadAndInstallUpdateAsync(new UpdateInfo
             {
                 UpdateAvailable = true,
-                DownloadUrl = "https://example.invalid/PrinterApp-Setup-x64.exe"
+                DownloadUrl = "untrusted-installer.exe"
             }));
         Assert.Null(UpdateAssetSelector.Select(new[]
         {
