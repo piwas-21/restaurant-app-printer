@@ -34,7 +34,7 @@ public sealed class PrinterCorrectionCopyService : IPrinterCorrectionCopyService
     {
         var record = _jobStore.GetHistory().FirstOrDefault(item => item.Key == key);
         if (record is null)
-            return new(false, record?.State, null);
+            return new(false, null, null);
         if (record.Update.IsWithdrawn)
             return new(false, record.State, null, WasWithdrawn: true);
         if (!IsCopySafeState(record.State))
