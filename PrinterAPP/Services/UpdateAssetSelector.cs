@@ -6,7 +6,8 @@ namespace PrinterAPP.Services;
 public enum UpdatePlatform
 {
     Android,
-    Windows
+    Windows,
+    Ios
 }
 
 /// <summary>
@@ -44,6 +45,10 @@ public static class UpdateAssetSelector
             // has nothing it can install.
             return candidates.FirstOrDefault(a => HasExtension(a, ".apk"));
         }
+
+        // Apple installs are signed/provisioned separately; never offer a GitHub installer.
+        if (platform != UpdatePlatform.Windows)
+            return null;
 
         var arch = is64Bit ? "x64" : "x86";
         return candidates.FirstOrDefault(a => HasExtension(a, ".exe") && Contains(a, arch))

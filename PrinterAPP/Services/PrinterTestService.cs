@@ -85,7 +85,7 @@ public class PrinterTestService : IPrinterTestService
     }
 
     /// <summary>A minimal ESC/POS test receipt (PC857) incl. Turkish characters, ending with a cut.</summary>
-    private static byte[] BuildTestReceipt(string label)
+    internal static byte[] BuildTestReceipt(string label)
     {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         var text =

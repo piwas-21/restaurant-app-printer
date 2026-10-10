@@ -8,8 +8,8 @@
 
 ## §1 — Identity
 
-- **Stack**: .NET MAUI 10 (multi-target: `net10.0-android;net10.0-windows10.0.19041.0` — the Windows TFM is OS-conditioned so non-Windows hosts build Android only), C# 13, ESC/POS thermal-printer driver. See [ADR-005](docs/adr/ADR-005-multi-target-maui-android.md) (Phase 1 of the cross-platform plan).
-- **Runtime**: Windows 10+ (existing rollout) **and** Android 7+ / API 24, `targetSdkVersion` 36 (new, primary rollout). iOS/macOS/Tizen scaffolding is present but unbuilt (iOS deferred to v2). Android prints over network TCP via `IPrinterTransport` ([ADR-006](docs/adr/ADR-006-printer-transport-abstraction.md)) and keeps running off-screen via a foreground service ([ADR-007](docs/adr/ADR-007-android-foreground-service.md)); the Windows spooler path is unchanged.
+- **Stack**: .NET MAUI 10 (multi-target: `net10.0-android;net10.0-windows10.0.19041.0` — the Windows TFM is OS-conditioned so non-Windows hosts build Android only; `build-ios.sh` explicitly selects `net10.0-ios` for the foreground pilot), C# 13, ESC/POS thermal-printer driver. See [ADR-005](docs/adr/ADR-005-multi-target-maui-android.md) (Phase 1 of the cross-platform plan).
+- **Runtime**: Windows 10+ (existing rollout) **and** Android 7+ / API 24, `targetSdkVersion` 36 (new, primary rollout). An iOS 15+ foreground network-printer pilot can be built explicitly; tenant signing/installation remains pending. See [ADR-009](docs/adr/ADR-009-ios-foreground-pilot.md) and [installation](docs/IOS-PILOT.md). macOS/Tizen scaffolding remains unbuilt. Android prints over network TCP via `IPrinterTransport` ([ADR-006](docs/adr/ADR-006-printer-transport-abstraction.md)) and keeps running off-screen via a foreground service ([ADR-007](docs/adr/ADR-007-android-foreground-service.md)); the Windows spooler path is unchanged.
 - **Build caveat**: `*-windows` TFMs build only on Windows. On macOS/Linux/CI-Linux, `dotnet build` produces the Android artifact only — the Windows MSI + any MAUI-10 regression must be verified on a Windows host before release.
 - **Architecture**: Service-oriented MVVM with code-behind (standard MAUI pattern), DI registration in `MauiProgram.cs`
 - **Hosted on**: GitHub — https://github.com/piwas-21/restaurant-app-printer
@@ -148,7 +148,7 @@ Grep for the type/method/key you're adding or modifying. List every callsite. Co
 ## §7 — Quality gates (source of truth `.github/workflows/ci.yml` + `.pre-commit-config.yaml`)
 
 - **Pre-commit** (blocking): trailing-ws / EOF / YAML-JSON-XML checks / large-files / secret-scan (detect-secrets) / no-commit-to-protected; file-length (§4). No build gate in pre-commit — `dotnet build PrinterAPP.sln` is a manual pre-merge step on Windows.
-- **CI** (`ci.yml`), seven jobs: `dotnet_test` runs the plain .NET tests and compiles the source-linked E2E project;
+- **CI** (`ci.yml`), seven jobs; `ios-pilot.yml` additionally compiles an ad-hoc signed Release iOS simulator app on the Xcode 27 preview runner (device signing and tenant installation remain separate): `dotnet_test` runs the plain .NET tests and compiles the source-linked E2E project;
   `maui_compile` builds the Android app head on Ubuntu; `maui_windows_compile` builds the Windows app head on
   Windows (isolating its TFM as the release workflow does); `file_length`, `gitleaks`, `trufflehog` and
   `trivy_fs` publish the four scan names required by the branch rules. Each scan runs independently.

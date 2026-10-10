@@ -6,8 +6,8 @@
       Multi-target: Android (cross-platform, primary rollout) + Windows (existing).
       The Windows TFM is only included when building ON Windows, so non-Windows dev
       machines / CI can build the Android target without choking on the Windows TFM.
-      A Windows host (or CI runner) still builds BOTH. iOS deferred to v2.
-      Phase 1 of docs/plans/PRINTER-APP-CROSSPLATFORM-PLAN.md. See ADR-004.
+      The iOS pilot is built explicitly with -p:TargetFrameworks=net10.0-ios so
+      existing Android/Windows builds do not need Apple workloads. See ADR-009.
     -->
     <TargetFrameworks>net10.0-android</TargetFrameworks>
     <TargetFrameworks Condition="$([MSBuild]::IsOSPlatform('windows'))">$(TargetFrameworks);net10.0-windows10.0.19041.0</TargetFrameworks>
@@ -17,6 +17,7 @@
          calling a string method on it can error in some MSBuild/IDE/restore paths. -->
     <OutputType Condition="'$(TargetFramework)' != '' and $(TargetFramework.Contains('-windows'))">WinExe</OutputType>
     <OutputType Condition="'$(TargetFramework)' != '' and $(TargetFramework.Contains('-android'))">Exe</OutputType>
+    <OutputType Condition="'$(TargetFramework)' != '' and $(TargetFramework.Contains('-ios'))">Exe</OutputType>
 
     <RootNamespace>PrinterAPP</RootNamespace>
     <UseMaui>true</UseMaui>
@@ -37,6 +38,7 @@
 
     <SupportedOSPlatformVersion Condition="'$(TargetFramework)' != '' and $(TargetFramework.Contains('-windows'))">10.0.17763.0</SupportedOSPlatformVersion>
     <SupportedOSPlatformVersion Condition="'$(TargetFramework)' != '' and $(TargetFramework.Contains('-android'))">24.0</SupportedOSPlatformVersion>
+    <SupportedOSPlatformVersion Condition="'$(TargetFramework)' != '' and $(TargetFramework.Contains('-ios'))">15.0</SupportedOSPlatformVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -48,7 +50,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.70" />
+    <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.70" Condition="'$(TargetFramework)' == '' or !$(TargetFramework.Contains('-ios'))" />
+    <PackageReference Include="Microsoft.Maui.Controls" Version="10.0.110" Condition="'$(TargetFramework)' != '' and $(TargetFramework.Contains('-ios'))" />
     <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="10.0.0" />
     <PackageReference Include="System.Text.Encoding.CodePages" Version="10.0.0" />
     <PackageReference Include="Sentry.Maui" Version="6.6.0" />
@@ -68,6 +71,11 @@
   <!-- Windows-only dependencies (WMI printer enumeration). Not referenced on Android. -->
   <ItemGroup Condition="'$(TargetFramework)' != '' and $(TargetFramework.Contains('-windows'))">
     <PackageReference Include="System.Management" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup Condition="'$(TargetFramework)' != '' and $(TargetFramework.Contains('-ios'))">
+    <Compile Remove="Services/WindowsPrinterService.cs" />
+    <Compile Remove="Services/UpdateService.cs" />
   </ItemGroup>
 
 </Project>

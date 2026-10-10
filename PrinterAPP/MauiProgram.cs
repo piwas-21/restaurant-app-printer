@@ -65,7 +65,11 @@ namespace PrinterAPP
             // re-prints the last 30 minutes of orders (cross-platform plan, Phase 9d).
             builder.Services.AddSingleton<IFeedCursorStore, FeedCursorStore>();
             builder.Services.AddSingleton<IPrintUpdateJobStore, PrintUpdateJobStore>();
+#if IOS
+            builder.Services.AddSingleton<IPrinterService, NetworkPrinterService>();
+#else
             builder.Services.AddSingleton<IPrinterService, WindowsPrinterService>();
+#endif
             builder.Services.AddSingleton<IRequestLogService, RequestLogService>();
             builder.Services.AddSingleton<IEventStreamingService, EventStreamingService>();
             builder.Services.AddSingleton<IPrinterUpdateAuthorizationService>(sp =>
@@ -78,7 +82,11 @@ namespace PrinterAPP
             builder.Services.AddSingleton<IPrinterCorrectionCopyService, PrinterCorrectionCopyService>();
             builder.Services.AddSingleton<IOrderPrintService, OrderPrintService>();
             builder.Services.AddSingleton<IOrderHistoryService, OrderHistoryService>();
+#if IOS
+            builder.Services.AddSingleton<IUpdateService, AppleUpdateService>();
+#else
             builder.Services.AddSingleton<IUpdateService, UpdateService>();
+#endif
             builder.Services.AddSingleton<IPrinterTestService, PrinterTestService>();
 
             // Fleet telemetry: a single long-lived HttpClient (owned here — the app doesn't reference
@@ -99,8 +107,7 @@ namespace PrinterAPP
 #if ANDROID
             builder.Services.AddSingleton<IBackgroundRunner, AndroidBackgroundRunner>();
 #else
-            // Windows (and any future head): a minimised desktop process is not frozen or reclaimed,
-            // so the pipeline runs in-process with no host service.
+            // Windows runs in-process; the iOS pilot uses the same runner while foreground.
             builder.Services.AddSingleton<IBackgroundRunner, DirectBackgroundRunner>();
 #endif
 
