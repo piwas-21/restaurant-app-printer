@@ -127,7 +127,7 @@ public partial class OrderPipeline : IOrderPipeline
 
     public async Task StopAsync()
     {
-        await _gate.WaitAsync();
+        await _gate.WaitAsync(CancellationToken.None);
         try
         {
             _stoppedOnPurpose = true;

@@ -53,15 +53,14 @@ public class PrintLanguagePolicyTests
             foreach (var value in new[]
                      {
                          labels.OnlineOrder, labels.Type, labels.Table, labels.Customer, labels.Tel,
-                         labels.Notes, labels.Note, labels.NoPrefix, labels.ExtraPrefix,
+                         labels.Notes, labels.Note, labels.NoPrefix,
                          labels.SelectedPrefix, labels.Subtotal, labels.Tax, labels.Discount,
                          labels.CustomerDiscount, labels.Promo, labels.DeliveryFee, labels.Tip,
                          labels.Total, labels.Payment, labels.CardAtRestaurant, labels.Paid, labels.Due, labels.DeliveryTo,
                          labels.Instructions, labels.ThankYou, labels.DineIn, labels.TakeAway,
                          labels.Delivery, labels.NoItems, labels.PaymentTip,
-                         labels.ForEach, labels.TotalForMenus, labels.RecordedScopeUnknown,
-                         labels.ConfigurationScopeUnknown, labels.PaymentState, labels.Unpaid,
-                         labels.PartiallyPaid, labels.IndependentConfiguration, labels.RecordedQuantity,
+                         labels.Each, labels.PaymentState, labels.Unpaid,
+                         labels.PartiallyPaid,
                          labels.Refunded, labels.Overpaid, labels.Credit,
                      })
             {
@@ -79,18 +78,18 @@ public class PrintLanguagePolicyTests
     }
 
     [Theory]
-    [InlineData("en", "recorded quantity 0")]
-    [InlineData("de", "erfasste Menge 0")]
-    [InlineData("fr", "quantité enregistrée 0")]
-    [InlineData("it", "quantità registrata 0")]
-    [InlineData("es", "cantidad registrada 0")]
-    [InlineData("nl", "geregistreerde hoeveelheid 0")]
-    [InlineData("tr", "kayıtlı miktar 0")]
-    public void Recorded_quantity_is_localized_and_encodable_on_printer(string code, string expected)
+    [InlineData("en", "each")]
+    [InlineData("de", "jeweils")]
+    [InlineData("fr", "chacun")]
+    [InlineData("it", "ciascuno")]
+    [InlineData("es", "cada uno")]
+    [InlineData("nl", "elk")]
+    [InlineData("tr", "her biri")]
+    public void Per_unit_scope_is_localized_and_encodable_on_printer(string code, string expected)
     {
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         var pc857 = Encoding.GetEncoding(857, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
-        var label = PrintLabelCatalog.RecordedQuantityLabel(PrintLabelCatalog.For(code), 0);
+        var label = PrintLabelCatalog.For(code).Each;
 
         Assert.Equal(expected, label);
         Assert.Equal(label, pc857.GetString(pc857.GetBytes(label)));

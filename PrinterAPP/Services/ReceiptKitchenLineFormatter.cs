@@ -36,11 +36,15 @@ internal static class ReceiptKitchenLineFormatter
     }
 
     public static void AppendLegacyNameLine(
-        StringBuilder sb, OrderItem item, int depth, string indent, int parentQuantity,
+        StringBuilder sb, OrderItem item, int depth, string indent, PrintLabels labels,
         PrintStyleSettings? styles)
     {
-        var quantity = depth == 0 ? item.Quantity : ReceiptComponentFormatting.DisplayQuantity(item, parentQuantity);
-        var body = depth == 0 ? $"{quantity}x {item.ProductName}" : $"{indent}+ {quantity}x {item.ProductName}";
+        var quantity = item.Quantity;
+        var actionPrefix = item.CompositionRole == CompositionRole.Extra
+            ? $"{labels.SelectedPrefix} " : string.Empty;
+        var body = depth == 0
+            ? $"{quantity}x {item.ProductName}"
+            : $"{indent}{actionPrefix}{quantity}x {item.ProductName}";
         var nameStyle = styles?.KitchenItemName;
         var quantityStyle = styles?.KitchenItemQuantity;
         if (nameStyle is null)
@@ -57,11 +61,13 @@ internal static class ReceiptKitchenLineFormatter
         }
         else
         {
+            if (depth > 0)
+                sb.Append($"{indent}{actionPrefix}");
             sb.Append(Apply(quantityStyle));
             sb.Append($"{quantity}x ");
             sb.Append(Reset(quantityStyle));
             sb.Append(Apply(nameStyle));
-            sb.AppendLine(depth == 0 ? item.ProductName : $"{indent}+ {item.ProductName}");
+            sb.AppendLine(item.ProductName);
             sb.Append(Reset(nameStyle));
         }
     }

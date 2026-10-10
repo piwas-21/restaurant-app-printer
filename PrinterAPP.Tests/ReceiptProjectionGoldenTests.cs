@@ -34,7 +34,7 @@ public sealed class ReceiptProjectionGoldenTests
         """;
 
     [Fact]
-    public void V2_serialized_feed_preserves_scopes_grouping_roles_and_parent_only_prices_at_both_widths()
+    public void V2_serialized_feed_preserves_ownership_roles_and_parent_only_prices_at_both_widths()
     {
         var parsed = OrderFeedParser.Parse(GoldenOrderFeed);
         Assert.True(parsed.IsSuccess, parsed.FailureMessage);
@@ -59,20 +59,18 @@ public sealed class ReceiptProjectionGoldenTests
             Assert.Contains("2x Lunch Menu", cashier);
             Assert.Contains("1x Lunch Menu", cashier);
             Assert.Contains("3x Lunch Menu", cashier);
-            Assert.Contains("Taco: Recorded; scope unknown ×1 (independent configurations)", cashier);
-            Assert.Contains("Recorded; scope unknown: Mango sauce ×1 (independent configurations)", cashier);
-            Assert.Contains("(independent configurations)", cashier);
-            Assert.Contains("For each Lunch Menu: Still Water ×1", cashier);
-            Assert.Contains("Total for 2 menus:", cashier);
-            Assert.Contains("Total for 2 menus: Kebab ×4; Steak (Medium) ×2 (configuration scope unknown)", cashier);
-            Assert.Contains("+ EXTRA Total for 2 menus: Extra Lamb ×3", cashier);
-            Assert.Contains("Kebab ×4", cashier);
-            Assert.Contains("Steak (Medium) ×2", cashier);
-            Assert.DoesNotContain("Kebab ×8", cashier);
-            Assert.Contains("Recorded; scope unknown: Legacy Dip ×3", cashier);
+            Assert.Contains("1x Taco (each)", cashier);
+            Assert.Contains("1x Mango sauce", cashier);
+            Assert.DoesNotContain("independent configurations", cashier);
+            Assert.Contains("1x Still Water (each)", cashier);
+            Assert.Contains("4x Kebab", cashier);
+            Assert.Contains("2x Steak (Medium)", cashier);
+            Assert.Contains("+ 3x Extra Lamb", cashier);
+            Assert.DoesNotContain("8x Kebab", cashier);
+            Assert.Contains("3x Legacy Dip", cashier);
             Assert.Equal(2, Count(cashier, "Cheddar"));
-            Assert.True(cashier.IndexOf("Cheddar x1", StringComparison.Ordinal)
-                < cashier.IndexOf("Cheddar x2", StringComparison.Ordinal));
+            Assert.True(cashier.IndexOf("+ Cheddar", StringComparison.Ordinal)
+                < cashier.IndexOf("+ 2x Cheddar", StringComparison.Ordinal));
             Assert.Contains("NO Onion", cashier);
             Assert.DoesNotContain("Taco selection", cashier);
             Assert.DoesNotContain("+ 1x Taco", cashier);
@@ -83,7 +81,7 @@ public sealed class ReceiptProjectionGoldenTests
                 < cashier.IndexOf("Cola", StringComparison.Ordinal));
             Assert.True(cashier.IndexOf("Cheddar", StringComparison.Ordinal)
                 < cashier.IndexOf("Harissa", StringComparison.Ordinal));
-            Assert.True(cashier.IndexOf("Total for 2 menus: Kebab", StringComparison.Ordinal)
+            Assert.True(cashier.IndexOf("4x Kebab", StringComparison.Ordinal)
                 < cashier.IndexOf("Cheddar", StringComparison.Ordinal));
             Assert.True(cashier.IndexOf("Legacy Dip", StringComparison.Ordinal)
                 < cashier.IndexOf("Fries", StringComparison.Ordinal));
@@ -95,7 +93,7 @@ public sealed class ReceiptProjectionGoldenTests
         Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
         var pc857 = Encoding.GetEncoding(857, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
         var encodedTicket = pc857.GetString(pc857.GetBytes(ComposeCashier(roots, 80)));
-        Assert.Contains("Kebab ×4", encodedTicket);
+        Assert.Contains("4x Kebab", encodedTicket);
     }
 
     [Fact]
@@ -110,16 +108,16 @@ public sealed class ReceiptProjectionGoldenTests
 
         Assert.Contains("Taco", ComposeKitchen(front.Items));
         Assert.DoesNotContain("Kebab", ComposeKitchen(front.Items));
-        Assert.Contains("Kebab ×4", ComposeKitchen(back.Items));
-        Assert.Contains("Steak (Medium) ×2", ComposeKitchen(back.Items));
-        Assert.Contains("Total for 2 menus: Kebab ×4; Steak (Medium) ×2 (configuration scope unknown)", ComposeKitchen(back.Items));
-        Assert.Contains("+ EXTRA Total for 2 menus: Extra Lamb ×3", ComposeKitchen(back.Items));
+        Assert.Contains("4x Kebab", ComposeKitchen(back.Items));
+        Assert.Contains("2x Steak", ComposeKitchen(back.Items));
+        Assert.Contains("- Medium", ComposeKitchen(back.Items));
+        Assert.Contains("+ 3x Extra Lamb", ComposeKitchen(back.Items));
         Assert.DoesNotContain("Extra Lamb", ComposeKitchen(front.Items));
         Assert.DoesNotContain("Cola", ComposeKitchen(back.Items));
     }
 
     [Fact]
-    public void Legacy_v1_feed_keeps_existing_side_item_scaling()
+    public void Legacy_v1_feed_keeps_side_item_count_exact_when_scope_is_missing()
     {
         const string legacyFeed = """
             {"data":{"items":[{"orderNumber":"V1","items":[{"productName":"Menu","quantity":3,"ingredientCustomizations":[{"ingredientName":"Cheddar","quantity":1}],"sideItems":[{"productName":"Fries","quantity":2,"kind":"SideItem"}]}]}]}}
@@ -129,13 +127,14 @@ public sealed class ReceiptProjectionGoldenTests
         var receipt = ComposeCashier(ReceiptCompositionProjection.Build(order.Items), 58);
 
         Assert.Null(parsed.ProjectionVersion);
-        Assert.Contains("+ 6x Fries", receipt);
+        Assert.Contains("2x Fries", receipt);
+        Assert.DoesNotContain("6x Fries", receipt);
         Assert.Contains("+ Cheddar", receipt);
         Assert.DoesNotContain("Recorded; scope unknown", receipt);
     }
 
     [Fact]
-    public void V2_null_metadata_is_normalized_to_recorded_unknown_without_legacy_scaling()
+    public void V2_null_metadata_keeps_exact_quantities_without_scope_explanations()
     {
         const string feed = """
             {"data":{"projectionVersion":2,"items":[{"orderNumber":"V2-UNKNOWN","items":[
@@ -157,10 +156,12 @@ public sealed class ReceiptProjectionGoldenTests
         });
 
         var receipt = ComposeCashier([root], 58);
-        Assert.Contains("Recorded; scope unknown: Dip ×2 (configuration scope unknown)", receipt);
-        Assert.DoesNotContain("Dip ×6", receipt);
-        Assert.Contains("Recorded; scope unknown: - NO Onion [recorded quantity 0] (configuration scope unknown)", receipt);
-        Assert.Contains("Recorded; scope unknown: + Cheddar [recorded quantity 1] (configuration scope unknown)", receipt);
+        Assert.Contains("2x Dip", receipt);
+        Assert.DoesNotContain("6x Dip", receipt);
+        Assert.Contains("NO Onion", receipt);
+        Assert.Contains("+ Cheddar", receipt);
+        Assert.DoesNotContain("Recorded", receipt);
+        Assert.DoesNotContain("scope unknown", receipt);
     }
 
     [Fact]
@@ -292,9 +293,8 @@ public sealed class ReceiptProjectionGoldenTests
 
         var receipt = UpdateReceiptComposer.Compose(Assert.Single(parsed.Updates));
         Assert.Contains("Taco", receipt);
-        Assert.Contains("Total for 2 menus:", receipt);
-        Assert.Contains("Kebab ×4", receipt);
-        Assert.DoesNotContain("Kebab ×8", receipt);
+        Assert.Contains("4x Kebab", receipt);
+        Assert.DoesNotContain("8x Kebab", receipt);
     }
 
     private static string ComposeCashier(IEnumerable<OrderItem> items, int paperWidthMillimeters)

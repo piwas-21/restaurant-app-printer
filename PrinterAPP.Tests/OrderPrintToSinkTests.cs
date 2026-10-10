@@ -176,7 +176,7 @@ public partial class OrderPrintToSinkTests
     /// <summary>
     /// The reported failure: a FrontKitchen "Menu Deal" containing BackKitchen fries. Before the
     /// fix the top-level-only scan saw no BackKitchen item, so the back kitchen got NO ticket and
-    /// the fries printed on the front kitchen's ticket as a nested "+ 2x Fries" line.
+    /// the fries printed on the front kitchen's ticket as a nested quantity-first line.
     /// </summary>
     [Fact]
     public async Task PrintOrderToAllPrinters_MixedKitchenBundle_PrintsEachComponentOnItsOwnKitchenTicket()
@@ -258,10 +258,10 @@ public partial class OrderPrintToSinkTests
                      "Meat Choice 3A", "Meat Choice 3B", "Meat Choice 3C",
                  })
         {
-            Assert.Equal(1, Occurrences(frontTicket, $"+ 1x {selectedMeat}"));
+            Assert.Equal(1, Occurrences(frontTicket, $"1x {selectedMeat}"));
         }
 
-        Assert.Equal(6, Occurrences(frontTicket, "+ 1x Meat Choice"));
+        Assert.Equal(6, Occurrences(frontTicket, "1x Meat Choice"));
         Assert.False(back.ReceivedAnything, "back kitchen was sent a ticket it has nothing to make");
     }
 
@@ -303,9 +303,9 @@ public partial class OrderPrintToSinkTests
         var (ok, ticket) = await PrintToSinkAsync(order, sink, cts.Token);
 
         Assert.True(ok, "PrintOrderAsync reported failure");
-        Assert.Contains("- NO Onion", ticket);
+        Assert.Contains("NO Onion", ticket);
         Assert.Contains("+ Hot Sauce", ticket); // selected at quantity one — used to be filtered off
-        Assert.Contains("+ 1x Ayran", ticket);  // side item — used to be cashier-invisible
+        Assert.Contains("1x Ayran", ticket);  // side item — used to be cashier-invisible
         Assert.Contains("Adana Kebab", ticket);
     }
 
@@ -395,10 +395,10 @@ public partial class OrderPrintToSinkTests
 
         Assert.Contains("EUR 12.00", ticket);
         Assert.Contains("1x Menu Tacos 1 Viande (Menu)", ticket);
-        Assert.Contains("+ EXTRA Cheddar x1", ticket);
-        Assert.Contains("- NO Oignons", ticket);
-        Assert.Contains("+ 1x Frites", ticket);
-        Assert.Contains("+ 1x Boisson", ticket);
+        Assert.Contains("+ Cheddar", ticket);
+        Assert.Contains("NO Oignons", ticket);
+        Assert.Contains("1x Frites", ticket);
+        Assert.Contains("1x Boisson", ticket);
     }
 
     /// <summary>
@@ -433,12 +433,12 @@ public partial class OrderPrintToSinkTests
 
         Assert.Contains("EUR 14.00", cashierTicket);
         Assert.Contains("Menu Tacos 2 Viande", cashierTicket);
-        Assert.Contains("+ 1x Poulet", kitchenTicket);
-        Assert.Contains("+ 1x Kebab", kitchenTicket);
+        Assert.Contains("1x Poulet", kitchenTicket);
+        Assert.Contains("1x Kebab", kitchenTicket);
         Assert.Contains("+ Sauce Algérienne", kitchenTicket);
-        Assert.Contains("+ EXTRA Cheddar x1", kitchenTicket);
-        Assert.Contains("+ 1x Frites", kitchenTicket);
-        Assert.Contains("+ 1x Cola", kitchenTicket);
+        Assert.Contains("+ Cheddar", kitchenTicket);
+        Assert.Contains("1x Frites", kitchenTicket);
+        Assert.Contains("1x Cola", kitchenTicket);
     }
 
     /// <summary>A fixed venue language choice must localize the receipt labels on the wire.</summary>

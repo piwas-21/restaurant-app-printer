@@ -91,11 +91,11 @@ public sealed class OfferFamilyPrintContractTests
         Assert.Equal("22222222-2222-2222-2222-222222222222", item.MenuID);
         Assert.Equal("Menu Sandwich Kebab", item.ProductName);
         Assert.Contains("1x Menu Sandwich Kebab", cashier);
-        Assert.Contains("+ 1x Fries", cashier);
-        Assert.Contains("+ 1x Cola", cashier);
+        Assert.Contains("1x Fries", cashier);
+        Assert.Contains("1x Cola", cashier);
         Assert.Contains("1x Menu Sandwich Kebab", kitchen);
-        Assert.Contains("+ 1x Fries", kitchen);
-        Assert.Contains("+ 1x Cola", kitchen);
+        Assert.Contains("1x Fries", kitchen);
+        Assert.Contains("1x Cola", kitchen);
     }
 
     [Fact]
@@ -163,8 +163,8 @@ public sealed class OfferFamilyPrintContractTests
         Assert.Contains("EUR 12.00", cashier);
         Assert.Contains("1x Tacos 1 Viande", cashier);
         Assert.Contains("1x Menu Tacos 1 Viande", cashier);
-        Assert.Contains("+ 1x Frites", cashier);
-        Assert.Contains("+ 1x Boisson", cashier);
+        Assert.Contains("1x Frites", cashier);
+        Assert.Contains("1x Boisson", cashier);
         Assert.Contains("1x Tacos 1 Viande", kitchen);
         Assert.Contains("1x Menu Tacos 1 Viande", kitchen);
     }
@@ -216,10 +216,10 @@ public sealed class OfferFamilyPrintContractTests
         Assert.Equal(variationId, nuggets.ProductVariationId);
         Assert.Equal("12 pièces", nuggets.VariationName);
         Assert.Contains("EUR 13.00", cashier);
-        Assert.Contains("+ 1x Nuggets (12 pièces)", cashier);
-        Assert.Contains("+ 1x Nuggets", kitchen);
+        Assert.Contains("1x Nuggets (12 pièces)", cashier);
+        Assert.Contains("1x Nuggets", kitchen);
         Assert.Contains("- 12 pièces", kitchen);
-        Assert.Contains("+ 1x Cola", cashier);
+        Assert.Contains("1x Cola", cashier);
         Assert.DoesNotContain("+ 2x Nuggets", cashier);
     }
 

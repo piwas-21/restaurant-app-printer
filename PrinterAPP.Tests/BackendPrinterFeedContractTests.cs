@@ -84,23 +84,30 @@ public sealed class BackendPrinterFeedContractTests
             foreach (var quantity in new[] { 1, 2, 3 })
             {
                 Assert.Contains($"{quantity}x Menu Deal", cashier);
-                Assert.Contains($"Total for {quantity} menus: Beef ×{quantity * 2}; Steak ×{quantity}", cashier);
-                Assert.Contains($"For each Taco: Side One ×1", cashier);
-                Assert.Contains($"For each Taco: Side Two ×2", cashier);
-                Assert.Contains($"For each Taco: Side Three ×3", cashier);
+                Assert.Contains($"{quantity * 2}x Beef", cashier);
+                Assert.Contains($"{quantity}x Steak", cashier);
+                Assert.Contains("1x Side One", cashier);
+                Assert.Contains("2x Side Two", cashier);
+                Assert.Contains("3x Side Three", cashier);
+                if (quantity > 1)
+                {
+                    Assert.Contains("Side One (each)", cashier);
+                    Assert.Contains("Side Two (each)", cashier);
+                    Assert.Contains("Side Three (each)", cashier);
+                }
             }
 
             Assert.Equal(3, Count(cashier, "Menu Deal"));
             Assert.Equal(3, Count(kitchen, "Menu Deal"));
-            Assert.Contains("- NO Cheese", cashier);
-            Assert.Contains("Chili x2", cashier);
+            Assert.Contains("NO Cheese", cashier);
+            Assert.Contains("+ 2x Chili", cashier);
             Assert.DoesNotContain("Taco selection", cashier);
-            Assert.DoesNotContain("Beef ×12", cashier);
-            Assert.DoesNotContain("Side Two ×4", cashier);
-            Assert.DoesNotContain("Side Three ×9", cashier);
+            Assert.DoesNotContain("12x Beef", cashier);
+            Assert.DoesNotContain("4x Side Two", cashier);
+            Assert.DoesNotContain("9x Side Three", cashier);
             Assert.DoesNotContain("EUR 0.00", cashier);
 
-            Assert.True(kitchen.IndexOf("Total for 2 menus: Beef ×4; Steak ×2", StringComparison.Ordinal)
+            Assert.True(kitchen.IndexOf("4x Beef", StringComparison.Ordinal)
                 < kitchen.IndexOf("Chili", StringComparison.Ordinal));
             Assert.True(kitchen.IndexOf("Chili", StringComparison.Ordinal)
                 < kitchen.IndexOf("Side One", StringComparison.Ordinal));
