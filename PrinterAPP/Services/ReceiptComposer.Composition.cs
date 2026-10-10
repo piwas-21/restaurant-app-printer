@@ -101,31 +101,34 @@ public static partial class ReceiptComposer
     private static string CashierComponentLine(
         OrderItem item, string name, string indent, PrintLabels labels, int parentQuantity)
     {
-        var line = item.CompositionRole == CompositionRole.Dish
-            && !string.IsNullOrWhiteSpace(item.PresentationLabel)
-                ? ReceiptComponentFormatting.DishHeading(item, labels, parentQuantity)
-                : string.Concat(
-                    item.CompositionRole == CompositionRole.Extra ? $"{labels.SelectedPrefix} " : string.Empty,
-                    item.Quantity,
-                    "x ",
-                    name,
-                    ReceiptComponentFormatting.QuantityScopeSuffix(item, parentQuantity, labels));
+        var line = ComponentNameLine(item, name, labels, parentQuantity);
         return item.IsContextOnly ? $"{indent}({line})" : $"{indent}{line}";
     }
 
     private static string KitchenComponentLine(
         OrderItem item, string indent, PrintLabels labels, int parentQuantity)
     {
-        var line = item.CompositionRole == CompositionRole.Dish
-            && !string.IsNullOrWhiteSpace(item.PresentationLabel)
-                ? ReceiptComponentFormatting.DishHeading(item, labels, parentQuantity)
-                : string.Concat(
-                    item.CompositionRole == CompositionRole.Extra ? $"{labels.SelectedPrefix} " : string.Empty,
-                    item.Quantity,
-                    "x ",
-                    item.ProductName,
-                    ReceiptComponentFormatting.QuantityScopeSuffix(item, parentQuantity, labels));
+        var line = ComponentNameLine(item, item.ProductName, labels, parentQuantity);
         return item.IsContextOnly ? $"{indent}({line})" : $"{indent}{line}";
+    }
+
+    private static string ComponentNameLine(
+        OrderItem item, string name, PrintLabels labels, int parentQuantity)
+    {
+        if (item.CompositionRole == CompositionRole.Dish
+            && !string.IsNullOrWhiteSpace(item.PresentationLabel))
+            return ReceiptComponentFormatting.DishHeading(item, labels, parentQuantity);
+
+        var prefix = string.Empty;
+        if (item.CompositionRole == CompositionRole.Extra)
+            prefix = $"{labels.SelectedPrefix} ";
+
+        return string.Concat(
+            prefix,
+            item.Quantity,
+            "x ",
+            name,
+            ReceiptComponentFormatting.QuantityScopeSuffix(item, parentQuantity, labels));
     }
 
     private static void AppendDetailLines(
