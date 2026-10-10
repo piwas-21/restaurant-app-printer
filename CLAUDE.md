@@ -189,18 +189,16 @@ develop                 ← DEFAULT + integration branch; all feature work targe
 main                    ← production RELEASES ONLY; updated solely via a develop→main release PR
 ```
 
-- **Never push directly to `main` or `develop`.** Enforcement here is **local only**, unlike the other
-  app repos: this repo is **private on a free org plan**, where GitHub offers neither rulesets nor
-  branch protection (`GET /repos/.../rulesets` → *403 "Upgrade to GitHub Pro or make this repository
-  public"*; `GET /repos/.../branches/{main,develop}` → `"protected": false`, verified 2026-08-16). The
-  earlier claim that a no-bypass `main-develop` Ruleset blocked pushes server-side was **wrong for this
-  repo**. What actually stands between a mistake and `develop` is the pre-commit `no-commit-to-branch`
-  hook, the push-time review gate, and the merge gate — all of them local, all of them bypassable by
-  anyone who chooses to. Treat that as a reason for MORE care, not less.
+- **Never push directly to `main` or `develop`.** GitHub enforces the active `main-develop` ruleset
+  (ID `18786151`), which targets both branches and has no bypass actors (verified 2026-10-10). It
+  requires pull requests, review-thread resolution, and up-to-date branches; it blocks branch deletion
+  and non-fast-forward updates. Its six required status checks are `SonarCloud Code Analysis`,
+  `Trivy filesystem (misconfig + secrets)`, `TruffleHog (secret scan, complementary to gitleaks)`,
+  `dotnet test (PrinterAPP.Tests)`, `file-length (CLAUDE.md §4)`, and `gitleaks (secret scan)`.
 - **Branch off `develop`; open every `feature/`·`fix/`·`chore/`·`docs/`·`test/` PR to `develop`.**
   Merge only via `scripts/pr-merge-gate.sh piwas-21/restaurant-app-printer <pr> --merge`, which
-  requires **every** CI check green (by state, not by name), zero unresolved review threads and zero
-  open Sonar issues. Since nothing is required server-side, that script is the gate.
+  additionally requires **every** CI check green (by state, not by name), zero unresolved review
+  threads and zero open Sonar issues.
 - **Releases:** open a PR **`develop` → `main`**, then tag `v*` on `main` → `build-release.yml` publishes the Windows exe + Android APK to the public releases repo.
 - One issue = one branch. Delete branch after merge (`gh pr merge --delete-branch`).
 - Branch naming: `feature/`, `fix/`, `chore/`, `docs/`, `test/`.

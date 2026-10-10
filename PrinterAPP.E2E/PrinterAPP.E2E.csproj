@@ -28,6 +28,7 @@
     <!-- Models (MAUI-free; also linked by PrinterAPP.Tests). Order/DeliveryAddress are needed because
          TelemetryPayloads.PrintAcks(Order, ...) references them. -->
     <Compile Include="..\PrinterAPP\Models\Order.cs" Link="Linked\Order.cs" />
+    <Compile Include="..\PrinterAPP\Models\OrderPresentationMetadata.cs" Link="Linked\OrderPresentationMetadata.cs" />
     <Compile Include="..\PrinterAPP\Models\OrderAmendmentPrintContext.cs" Link="Linked\OrderAmendmentPrintContext.cs" />
     <Compile Include="..\PrinterAPP\Models\ExternalOrder.cs" Link="Linked\ExternalOrder.cs" />
     <Compile Include="..\PrinterAPP\Models\TableDisplay.cs" Link="Linked\TableDisplay.cs" />
@@ -88,10 +89,17 @@
     <Compile Include="..\PrinterAPP\Services\UpdateReceiptComposer.cs" Link="Linked\UpdateReceiptComposer.cs" />
     <Compile Include="..\PrinterAPP\Services\PrintLabels.cs" Link="Linked\PrintLabels.cs" />
     <Compile Include="..\PrinterAPP\Services\ReceiptComposer.cs" Link="Linked\ReceiptComposer.cs" />
+    <Compile Include="..\PrinterAPP\Services\ReceiptComposer.Composition.cs" Link="Linked\ReceiptComposer.Composition.cs" />
+    <Compile Include="..\PrinterAPP\Services\ReceiptComponentFormatting.cs" Link="Linked\ReceiptComponentFormatting.cs" />
+    <Compile Include="..\PrinterAPP\Services\ReceiptKitchenLineFormatter.cs" Link="Linked\ReceiptKitchenLineFormatter.cs" />
+    <Compile Include="..\PrinterAPP\Services\ReceiptCompositionProjection.cs" Link="Linked\ReceiptCompositionProjection.cs" />
+    <Compile Include="..\PrinterAPP\Services\CashierPaymentPresentation.cs" Link="Linked\CashierPaymentPresentation.cs" />
     <Compile Include="..\PrinterAPP\Services\ReceiptItemDisplay.cs" Link="Linked\ReceiptItemDisplay.cs" />
     <Compile Include="..\PrinterAPP\Services\UnconfirmedOrderExpiry.cs" Link="Linked\UnconfirmedOrderExpiry.cs" />
     <Compile Include="..\PrinterAPP\Services\EventStreamingService.cs" Link="Linked\EventStreamingService.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderFeedParser.cs" Link="Linked\OrderFeedParser.cs" />
+    <Compile Include="..\PrinterAPP\Services\OrderFeedParser.Orders.cs" Link="Linked\OrderFeedParser.Orders.cs" />
+    <Compile Include="..\PrinterAPP\Services\OrderPresentationMetadataNormalizer.cs" Link="Linked\OrderPresentationMetadataNormalizer.cs" />
     <Compile Include="..\PrinterAPP\Services\PrinterFeedUpdateValidation.cs" Link="Linked\PrinterFeedUpdateValidation.cs" />
     <Compile Include="..\PrinterAPP\Services\OrderRoutingStateValidation.cs" Link="Linked\OrderRoutingStateValidation.cs" />
     <Compile Include="..\PrinterAPP\Services\PrinterJsonSerialization.cs" Link="Linked\PrinterJsonSerialization.cs" />
