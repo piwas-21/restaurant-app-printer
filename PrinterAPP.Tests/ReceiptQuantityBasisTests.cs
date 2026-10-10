@@ -60,11 +60,11 @@ public sealed class ReceiptQuantityBasisTests
             builder, menu, 0, 32, PrintLabelCatalog.English, currency: "EUR");
         var receipt = builder.ToString();
 
-        Assert.Contains("Total for 2 menus: Taco ×4", receipt);
-        Assert.Contains("Total for 2 menus: Kebab ×4", receipt);
-        Assert.Contains("Total for 2 menus: Fries ×8", receipt);
-        Assert.DoesNotContain("Kebab ×8", receipt);
-        Assert.DoesNotContain("Fries ×16", receipt);
+        Assert.Contains("4x Taco", receipt);
+        Assert.Contains("4x Kebab", receipt);
+        Assert.Contains("8x Fries", receipt);
+        Assert.DoesNotContain("8x Kebab", receipt);
+        Assert.DoesNotContain("16x Fries", receipt);
         Assert.DoesNotContain("For each Taco", receipt);
     }
 
@@ -124,11 +124,44 @@ public sealed class ReceiptQuantityBasisTests
         ReceiptComposer.AppendKitchenItemLines(kitchenBuilder, menu, 0, PrintLabelCatalog.English);
         var kitchen = kitchenBuilder.ToString();
 
-        Assert.Contains("For each Kebab: Fries ×2", cashier);
-        Assert.Contains("For each Kebab: Fries ×2", kitchen);
-        Assert.DoesNotContain("For each Taco: Fries", cashier);
-        Assert.DoesNotContain("For each Taco: Fries", kitchen);
-        Assert.DoesNotContain("Fries ×4", cashier);
-        Assert.DoesNotContain("Fries ×4", kitchen);
+        Assert.Contains("2x Fries (each)", cashier);
+        Assert.Contains("2x Fries (each)", kitchen);
+        Assert.DoesNotContain("For each Taco", cashier);
+        Assert.DoesNotContain("For each Taco", kitchen);
+        Assert.DoesNotContain("4x Fries", cashier);
+        Assert.DoesNotContain("4x Fries", kitchen);
+    }
+
+    [Fact]
+    public void Per_parent_scope_marker_is_shown_only_when_the_immediate_owner_repeats()
+    {
+        var owner = new OrderItem
+        {
+            ProductName = "Dish",
+            Quantity = 1,
+            QuantityBasis = QuantityBasis.LineTotal,
+            CompositionRole = CompositionRole.Dish,
+            SideItems =
+            [
+                new OrderItem
+                {
+                    ProductName = "Fries",
+                    Quantity = 2,
+                    QuantityBasis = QuantityBasis.PerParentUnit,
+                    ConfigurationScope = ConfigurationScope.SharedAcrossParentUnits,
+                    CompositionRole = CompositionRole.Side,
+                },
+            ],
+        };
+
+        var singleBuilder = new StringBuilder();
+        ReceiptComposer.AppendCashierItemLines(singleBuilder, owner, 0, 32, PrintLabelCatalog.English);
+        Assert.Contains("2x Fries", singleBuilder.ToString());
+        Assert.DoesNotContain("(each)", singleBuilder.ToString());
+
+        owner.Quantity = 2;
+        var repeatedBuilder = new StringBuilder();
+        ReceiptComposer.AppendCashierItemLines(repeatedBuilder, owner, 0, 32, PrintLabelCatalog.English);
+        Assert.Contains("2x Fries (each)", repeatedBuilder.ToString());
     }
 }

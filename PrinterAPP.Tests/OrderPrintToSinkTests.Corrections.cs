@@ -121,8 +121,8 @@ public partial class OrderPrintToSinkTests
         var correction = await destination.ReadTicketAsync(cancellation.Token);
         Assert.Contains("Taco", correction, StringComparison.Ordinal);
         Assert.DoesNotContain("Taco selection", correction, StringComparison.Ordinal);
-        Assert.Contains("Total for 2 menus: Kebab ×4", correction, StringComparison.Ordinal);
-        Assert.DoesNotContain("Kebab ×8", correction, StringComparison.Ordinal);
+        Assert.Contains("4x Kebab", correction, StringComparison.Ordinal);
+        Assert.DoesNotContain("8x Kebab", correction, StringComparison.Ordinal);
         Assert.False(unrelated.ReceivedAnything, "The correction left its configured Front Kitchen destination.");
     }
 
@@ -157,10 +157,10 @@ public partial class OrderPrintToSinkTests
         var ticket = await destination.ReadTicketAsync(cancellation.Token);
         Assert.Contains("*** KITCHEN CHANGE ***", ticket, StringComparison.Ordinal);
         Assert.Contains("*** CHANGE ***", ticket, StringComparison.Ordinal);
-        Assert.Equal(2, Occurrences(ticket, "Total for 2 menus: Side Two ×4"));
-        Assert.Equal(2, Occurrences(ticket, "Total for 2 menus: Side Three ×6"));
-        Assert.DoesNotContain("Side Two ×8", ticket, StringComparison.Ordinal);
-        Assert.DoesNotContain("Side Three ×12", ticket, StringComparison.Ordinal);
+        Assert.Equal(2, Occurrences(ticket, "4x Side Two"));
+        Assert.Equal(2, Occurrences(ticket, "6x Side Three"));
+        Assert.DoesNotContain("8x Side Two", ticket, StringComparison.Ordinal);
+        Assert.DoesNotContain("12x Side Three", ticket, StringComparison.Ordinal);
         Assert.False(unrelated.ReceivedAnything, "The backend correction used a different station or cashier sink.");
     }
 

@@ -660,7 +660,7 @@ public sealed class PrinterUpdateJobStoreTests
         Assert.Contains("Dressing on side", currentSection);
         Assert.Contains("NO Cheese", currentSection);
         Assert.Contains("1x New Topping", currentSection);
-        Assert.Contains("EXTRA Fresh Parsley x2", currentSection);
+        Assert.Contains("+ 2x Fresh Parsley", currentSection);
         Assert.DoesNotContain("No dressing", currentSection);
         Assert.DoesNotContain("NO Old Croutons", currentSection);
         Assert.Contains("Change note:", receipt);

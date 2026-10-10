@@ -50,8 +50,8 @@ public class ReceiptComposerTests
         var ticket = ComposeCashier(CustomizedKebab());
 
         Assert.Contains("+ Bread", ticket);          // selected at quantity one — the complaint
-        Assert.Contains("- NO Onion", ticket);       // removed
-        Assert.Contains("+ EXTRA Hot Sauce x3", ticket); // quantity above one
+        Assert.Contains("NO Onion", ticket);       // removed
+        Assert.Contains("+ 3x Hot Sauce", ticket); // quantity above one
         Assert.Contains("+ Garlic", ticket);
     }
 
@@ -61,8 +61,8 @@ public class ReceiptComposerTests
         var ticket = ComposeKitchen(CustomizedKebab());
 
         Assert.Contains("+ Bread", ticket);
-        Assert.Contains("- NO Onion", ticket);
-        Assert.Contains("+ EXTRA Hot Sauce x3", ticket);
+        Assert.Contains("NO Onion", ticket);
+        Assert.Contains("+ 3x Hot Sauce", ticket);
         Assert.Contains("+ Garlic", ticket);
     }
 
@@ -84,8 +84,8 @@ public class ReceiptComposerTests
             ],
         };
 
-        Assert.Contains("+ EXTRA Cheddar x1", ComposeCashier(item));
-        Assert.Contains("+ EXTRA Cheddar x1", ComposeKitchen(item));
+        Assert.Contains("+ Cheddar", ComposeCashier(item));
+        Assert.Contains("+ Cheddar", ComposeKitchen(item));
     }
 
     [Fact]
@@ -137,8 +137,8 @@ public class ReceiptComposerTests
         var cashier = ComposeCashier(item);
         var kitchen = ComposeKitchen(item);
 
-        Assert.Contains("- NO Onion", cashier);
-        Assert.Contains("- NO Onion", kitchen);
+        Assert.Contains("NO Onion", cashier);
+        Assert.Contains("NO Onion", kitchen);
         Assert.DoesNotContain("EXTRA Onion", cashier);
         Assert.DoesNotContain("EXTRA Onion", kitchen);
     }
@@ -171,7 +171,7 @@ public class ReceiptComposerTests
     }
 
     [Fact]
-    public void Section_choices_are_grouped_stably_on_both_receipt_surfaces()
+    public void Section_choices_remain_individual_and_stable_on_both_receipt_surfaces()
     {
         var item = new OrderItem
         {
@@ -195,7 +195,7 @@ public class ReceiptComposerTests
             var fries = ticket.IndexOf("Fries", StringComparison.Ordinal);
             var cola = ticket.IndexOf("Cola", StringComparison.Ordinal);
             Assert.True(steak >= 0 && kebab > steak && carrier > kebab && fries > carrier && cola > fries, ticket);
-            Assert.Contains("+ 2x Kebab", ticket);
+            Assert.Contains("2x Kebab", ticket);
         }
     }
 
@@ -241,8 +241,8 @@ public class ReceiptComposerTests
         var ticket = ComposeCashier(item);
 
         Assert.Contains("2x Menu Deal", ticket);
-        Assert.Contains("+ 2x Fries", ticket);
-        Assert.Contains("+ 1x Ayran", ticket);
+        Assert.Contains("2x Fries", ticket);
+        Assert.Contains("1x Ayran", ticket);
     }
 
     [Fact]
@@ -286,18 +286,16 @@ public class ReceiptComposerTests
 
         var ticket = ComposeCashier(item);
 
-        Assert.Contains("+ 1x Pizza", ticket);
+        Assert.Contains("1x Pizza", ticket);
         Assert.Contains("+ Mushrooms", ticket);
     }
 
     /// <summary>
-    /// #318 semantics, printer side: a true SideItem is stored PER UNIT of its parent and must
-    /// scale; a bundle child is already line-absolute and must not; an unclassifiable row (Kind
-    /// null) prints exactly as stored. The backend measured a stored 6 rendering as 18 when this
-    /// distinction was lost.
+    /// Frozen component quantities print as supplied, even when historical scope metadata is
+    /// absent. The ticket must not multiply a child count from its parent's quantity.
     /// </summary>
     [Fact]
-    public void Child_quantities_follow_the_kind_semantics()
+    public void Child_quantities_remain_exactly_as_supplied_without_scope_metadata()
     {
         var item = new OrderItem
         {
@@ -313,14 +311,14 @@ public class ReceiptComposerTests
 
         var ticket = ComposeCashier(item);
 
-        Assert.Contains("+ 6x Cola", ticket);     // SideItem: 2 per unit x 3 units
-        Assert.Contains("+ 2x Fries", ticket);    // BundleChild: already line-absolute
-        Assert.Contains("+ 2x Mystery", ticket);  // unknown: never invent a multiplier
-        Assert.DoesNotContain("+ 4x Fries", ticket);
+        Assert.Contains("2x Cola", ticket);
+        Assert.Contains("2x Fries", ticket);
+        Assert.Contains("2x Mystery", ticket);
+        Assert.DoesNotContain("6x Cola", ticket);
     }
 
     [Fact]
-    public void Kitchen_scales_side_items_the_same_way()
+    public void Kitchen_keeps_legacy_side_item_quantity_as_supplied()
     {
         var item = new OrderItem
         {
@@ -330,10 +328,10 @@ public class ReceiptComposerTests
         };
 
         var kitchen = ComposeKitchen(item);
-        Assert.Contains("+ 2x Ayran", kitchen);
+        Assert.Contains("1x Ayran", kitchen);
 
         var cashier = ComposeCashier(item);
-        Assert.Contains("+ 2x Ayran", cashier);
+        Assert.Contains("1x Ayran", cashier);
     }
 
     [Fact]
@@ -365,9 +363,9 @@ public class ReceiptComposerTests
 
         foreach (var ticket in new[] { ComposeKitchen(item), ComposeCashier(item) })
         {
-            Assert.Contains("+ 2x Tacos 1 viande", ticket);
-            Assert.Contains("+ 2x Extra viande", ticket);
-            Assert.DoesNotContain("+ 4x Extra viande", ticket);
+            Assert.Contains("2x Tacos 1 viande", ticket);
+            Assert.Contains("2x Extra viande", ticket);
+            Assert.DoesNotContain("4x Extra viande", ticket);
         }
     }
 
@@ -399,7 +397,7 @@ public class ReceiptComposerTests
         var ticket = ComposeKitchen(item);
 
         Assert.Contains("(1x Menu Deal)", ticket);
-        Assert.Contains("+ 2x Fries", ticket);
+        Assert.Contains("2x Fries", ticket);
     }
 
     [Fact]
@@ -415,11 +413,11 @@ public class ReceiptComposerTests
 
         var ticket = ComposeKitchen(item, De);
 
-        Assert.Contains("- OHNE Zwiebeln", ticket);
+        Assert.Contains("OHNE Zwiebeln", ticket);
         Assert.Contains("NOTIZ: scharf", ticket);
 
         var cashier = ComposeCashier(item, De);
-        Assert.Contains("- OHNE Zwiebeln", cashier);
+        Assert.Contains("OHNE Zwiebeln", cashier);
         Assert.Contains("NOTIZ: scharf", cashier);
     }
 
