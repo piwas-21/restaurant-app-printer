@@ -9,8 +9,10 @@ The optional saved `FeedProbeTimeoutSeconds` setting controls the API Test timeo
 
 No paid Apple Developer account or signing identity is available for the requested tenant onboarding.
 The printer model/connection is also unconfirmed. Source and simulator builds do not
-constitute a tenant-installable release. Keep an Android/Windows print station for onboarding until
-the signed iPad build and printer compatibility have been verified.
+constitute a tenant-installable release. The tenant has no Windows PC or Android print station.
+Manual browser printing may cover onboarding if its printer supports AirPrint; the model and iPad
+print flow must be verified first. Remote installation of a properly signed build does not require
+a tenant Mac.
 
 ## Build prerequisites
 
