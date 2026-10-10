@@ -9,6 +9,7 @@ public class PrinterConfiguration
     // A new install must be explicitly pointed at its tenant before any feed or fleet traffic starts.
     public string ApiBaseUrl { get; set; } = string.Empty;
     public string ApiKey { get; set; } = "";  // X-Api-Key header value for printer-feed authentication
+    public int FeedProbeTimeoutSeconds { get; set; } = 10;
 
     // Front Kitchen Printer Settings (for drinks, desserts, etc.)
     public string FrontKitchenPrinterName { get; set; } = "";

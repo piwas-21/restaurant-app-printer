@@ -177,6 +177,11 @@ public partial class MainPage : ContentPage
 
     private async Task LoadPrintersAsync()
     {
+#if IOS
+        // Network IPs are entered directly; iOS has no Windows printer enumeration.
+        await Task.CompletedTask;
+        return;
+#else
         try
         {
             var printers = await _printerService.GetAvailablePrintersAsync();
@@ -198,6 +203,7 @@ public partial class MainPage : ContentPage
         {
             await DisplayAlert("Error", $"Failed to load printers: {ex.Message}", "OK");
         }
+#endif
     }
 
     private void UpdateServiceStatus()

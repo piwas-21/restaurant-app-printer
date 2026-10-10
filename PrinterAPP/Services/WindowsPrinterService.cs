@@ -654,22 +654,8 @@ public class WindowsPrinterService : IPrinterService
 
     public async Task<System.Net.HttpStatusCode?> TestPrinterFeedAsync(string apiUrl, string? apiKey)
     {
-        try
-        {
-            using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(10) };
-            var url = $"{apiUrl.TrimEnd('/')}/api/orders/printer-feed?modifiedSince={DateTime.UtcNow:o}";
-            using var request = new HttpRequestMessage(HttpMethod.Get, url);
-            if (!string.IsNullOrWhiteSpace(apiKey))
-            {
-                request.Headers.Add("X-Api-Key", apiKey);
-            }
-            using var response = await client.SendAsync(request);
-            return response.StatusCode;
-        }
-        catch
-        {
-            return null; // host unreachable (DNS failure, timeout, connection refused)
-        }
+        var config = await _configStore.LoadAsync();
+        return await PrinterFeedProbe.TestAsync(apiUrl, apiKey, TimeSpan.FromSeconds(config.FeedProbeTimeoutSeconds));
     }
 
     // Config persistence (file location, legacy-location migration, API-key secret handling)

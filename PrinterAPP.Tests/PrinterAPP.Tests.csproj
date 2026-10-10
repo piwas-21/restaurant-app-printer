@@ -31,6 +31,12 @@
          WindowsSpoolerTransport compiles here without the WINDOWS symbol, i.e. as its
          cross-platform stub surface — the P/Invoke body only compiles in the Windows TFM. -->
     <Compile Include="..\PrinterAPP\Services\EscPosCommands.cs" Link="Linked\EscPosCommands.cs" />
+    <Compile Include="..\PrinterAPP\Services\NetworkPrinterService.cs" Link="Linked\NetworkPrinterService.cs" />
+    <Compile Include="..\PrinterAPP\Services\PrinterFeedProbe.cs" Link="Linked\PrinterFeedProbe.cs" />
+    <Compile Include="..\PrinterAPP\Services\AppleUpdateService.cs" Link="Linked\AppleUpdateService.cs" />
+    <Compile Include="..\PrinterAPP\Services\IUpdateService.cs" Link="Linked\IUpdateService.cs" />
+    <Compile Include="..\PrinterAPP\Services\UpdateInstallOutcome.cs" Link="Linked\UpdateInstallOutcome.cs" />
+    <Compile Include="..\PrinterAPP\Models\UpdateInfo.cs" Link="Linked\UpdateInfo.cs" />
     <Compile Include="..\PrinterAPP\Services\IPrinterService.cs" Link="Linked\IPrinterService.cs" />
     <Compile Include="..\PrinterAPP\Services\IPrinterTestService.cs" Link="Linked\IPrinterTestService.cs" />
     <Compile Include="..\PrinterAPP\Services\PrinterTestService.cs" Link="Linked\PrinterTestService.cs" />

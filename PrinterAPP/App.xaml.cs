@@ -14,7 +14,16 @@
 
         protected override Window CreateWindow(IActivationState? activationState)
         {
-            return new Window(new AppShell());
+            var window = new Window(new AppShell());
+#if IOS
+            window.Activated += OnIosWindowActivated;
+#endif
+            return window;
         }
+
+#if IOS
+        private static void OnIosWindowActivated(object? sender, EventArgs args) =>
+            DeviceDisplay.Current.KeepScreenOn = true;
+#endif
     }
 }
