@@ -41,15 +41,14 @@ public sealed class NetworkPrinterService : IPrinterService
 
     public Task SaveConfigurationAsync(PrinterConfiguration config)
     {
-        foreach (var target in new[]
+        var targets = new[]
         {
             config.KitchenPrinterName, config.DefaultKitchenPrinterName,
             config.FrontKitchenPrinterName, config.BackKitchenPrinterName, config.CashierPrinterName
-        })
-        {
-            if (!string.IsNullOrWhiteSpace(target) && !PrinterTargetEntry.IsNetworkFieldTarget(target))
-                throw new ArgumentException("iOS printers must use a network IP address or a file capture target.");
-        }
+        };
+        if (targets.Any(static target =>
+            !string.IsNullOrWhiteSpace(target) && !PrinterTargetEntry.IsNetworkFieldTarget(target)))
+            throw new ArgumentException("iOS printers must use a network IP address or a file capture target.");
 
         return _configStore.SaveAsync(config);
     }
