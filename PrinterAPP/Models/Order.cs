@@ -124,18 +124,37 @@ public class OrderItem
     public string? KitchenType { get; set; } // e.g., "FrontKitchen", "BackKitchen", etc.
 
     /// <summary>
-    /// Backend OrderItemDto.Kind, on the wire as the enum NAME
-    /// ("SideItem"/"BundleChild"/"CustomizationOption"), null on
-    /// top-level and historic rows. Decides what a child's Quantity means: a true side item is
-    /// stored PER UNIT of its parent, everything else is already line-absolute (backend
-    /// OrderChildRendering.LineQuantity, #318/#305). The printer scales only on this explicit
-    /// signal — it has no Product navigation to re-derive the kind from, so an unclassifiable row
-    /// prints as stored rather than inventing a multiplier.
+    /// Backend OrderItemDto.Kind, on the wire as the enum NAME. Retained for V1 receipt
+    /// compatibility; V2 quantity rendering uses the explicit <see cref="QuantityBasis"/>.
     /// </summary>
     public string? Kind { get; set; }
 
     /// <summary>Frozen menu-section identity used to keep selected components together on receipts.</summary>
     public string? SectionId { get; set; }
+
+    /// <summary>How the backend-frozen child quantity is scoped; null means a legacy projection.</summary>
+    public QuantityBasis? QuantityBasis { get; set; }
+
+    /// <summary>Whether the selected configuration is shared across parent units.</summary>
+    public ConfigurationScope? ConfigurationScope { get; set; }
+
+    /// <summary>The backend-frozen role; unknown legacy rows remain unclassified.</summary>
+    public CompositionRole? CompositionRole { get; set; }
+
+    /// <summary>Explicit frozen role label, for example the dish heading "Taco".</summary>
+    public string? PresentationLabel { get; set; }
+
+    /// <summary>Stable order within the frozen menu composition.</summary>
+    public int? PresentationOrder { get; set; }
+
+    /// <summary>Stable selected menu-section option row identity.</summary>
+    public Guid? MenuSectionItemId { get; set; }
+
+    /// <summary>Stable suggested-side association row identity, distinct from the menu-section row.</summary>
+    public Guid? SuggestedSideItemId { get; set; }
+
+    /// <summary>Historical order row that owns a sibling component, when explicitly linked.</summary>
+    public Guid? ParentComponentOrderItemId { get; set; }
 
     // Ingredient customizations (added/removed ingredients)
     [JsonPropertyName("ingredientCustomizations")]
@@ -180,6 +199,18 @@ public class IngredientCustomization
     public bool IsRemoved { get; set; } // true if customer removed this ingredient
     /// <summary>True when this frozen row is a paid optional extra selected by the guest.</summary>
     public bool IsAddOn { get; set; }
+
+    /// <summary>Quantity scope mirrored from the backend's frozen ingredient row.</summary>
+    public QuantityBasis? QuantityBasis { get; set; }
+
+    /// <summary>Configuration scope mirrored from the backend's frozen ingredient row.</summary>
+    public ConfigurationScope? ConfigurationScope { get; set; }
+
+    /// <summary>Frozen semantic role; legacy ingredient rows remain unknown.</summary>
+    public CompositionRole? CompositionRole { get; set; }
+
+    /// <summary>Stable order within the owning item's frozen ingredient list.</summary>
+    public int? PresentationOrder { get; set; }
 }
 
 /// <summary>One explainable action from the backend's permitted order-action projection.</summary>

@@ -4,7 +4,7 @@ using PrinterAPP.Models;
 namespace PrinterAPP.Services;
 
 /// <summary>Resilient parser for orders and additive update jobs in one printer-feed response.</summary>
-public static class OrderFeedParser
+public static partial class OrderFeedParser
 {
     /// <summary>Parses a feed body without throwing for malformed JSON or individual entries.</summary>
     public static OrderFeedParseResult Parse(string json)
@@ -45,6 +45,7 @@ public static class OrderFeedParser
     private static ParsedData ParseData(JsonElement data)
     {
         var parsed = new ParsedData();
+        ReadProjectionVersion(data, parsed);
         ParseOrdersIfPresent(data, parsed);
         ReadNextOrderCursor(data, parsed);
         ReadHasMoreOrders(data, parsed);
@@ -55,10 +56,17 @@ public static class OrderFeedParser
         ValidateUpdatePage(parsed);
         return parsed;
     }
-    private static void ParseOrdersIfPresent(JsonElement data, ParsedData parsed)
+    private static void ReadProjectionVersion(JsonElement data, ParsedData parsed)
     {
-        if (TryGetPropertyIgnoreCase(data, "items", out var items) && items.ValueKind == JsonValueKind.Array)
-            ParseOrders(items, parsed);
+        if (!TryGetPropertyIgnoreCase(data, "projectionVersion", out var version)
+            || version.ValueKind == JsonValueKind.Null)
+            return;
+        if (version.ValueKind == JsonValueKind.Number && version.TryGetInt32(out var value) && value > 0)
+        {
+            parsed.ProjectionVersion = value;
+            return;
+        }
+        parsed.Fail("The projection version was not a positive integer or null.");
     }
     private static void ReadNextOrderCursor(JsonElement data, ParsedData parsed)
     {
@@ -123,7 +131,7 @@ public static class OrderFeedParser
             return;
         if (updateArray.ValueKind == JsonValueKind.Array)
         {
-            ParseUpdates(updateArray, parsed.Updates, parsed.UpdateErrors);
+            ParseUpdates(updateArray, parsed.Updates, parsed.UpdateErrors, parsed.ProjectionVersion >= 2);
             return;
         }
         parsed.Fail("The update page was not an array.");
@@ -152,6 +160,7 @@ public static class OrderFeedParser
         Updates = parsed.Updates,
         UpdateErrors = parsed.UpdateErrors,
         NextOrderCursor = parsed.NextOrderCursor,
+        ProjectionVersion = parsed.ProjectionVersion,
         HasMoreOrders = parsed.HasMoreOrders,
         NextUpdateCursor = parsed.NextUpdateCursor,
         HasMoreUpdates = parsed.HasMoreUpdates,
@@ -172,41 +181,8 @@ public static class OrderFeedParser
         HasDataEnvelope = false,
         FailureMessage = failureMessage,
     };
-    private static void ParseOrders(JsonElement items, ParsedData parsed)
-    {
-        var index = 0;
-        foreach (var element in items.EnumerateArray())
-        {
-            try
-            {
-                var order = element.Deserialize<Order>(PrinterJsonSerialization.Options);
-                if (order is null)
-                    parsed.Errors.Add(new OrderFeedParseError(index, TryReadOrderNumber(element), "Order element deserialised to null."));
-                else if (!OrderRoutingStateValidation.TryValidate(order, out var routeError))
-                {
-                    parsed.Errors.Add(new OrderFeedParseError(index, order.OrderNumber,
-                        routeError ?? "Invalid printer routing state."));
-                    parsed.Fail($"Malformed printer routing state for order {order.OrderNumber}: {routeError}");
-                }
-                else
-                    parsed.Orders.Add(order);
-            }
-            catch (Exception ex)
-            {
-                parsed.Errors.Add(new OrderFeedParseError(index, TryReadOrderNumber(element), ex.Message));
-                if (HasNonEmptyRoutingStates(element))
-                    parsed.Fail($"Malformed printer routing state: {ex.Message}");
-            }
-            index++;
-        }
-    }
-
-    private static bool HasNonEmptyRoutingStates(JsonElement element) =>
-        TryGetPropertyIgnoreCase(element, "routingStates", out var routes)
-        && routes.ValueKind == JsonValueKind.Array
-        && routes.GetArrayLength() > 0;
     private static void ParseUpdates(JsonElement updateArray, ICollection<PrinterFeedUpdate> updates,
-        ICollection<OrderFeedParseError> errors)
+        ICollection<OrderFeedParseError> errors, bool isProjectionV2)
     {
         var index = 0;
         foreach (var element in updateArray.EnumerateArray())
@@ -218,6 +194,8 @@ public static class OrderFeedParser
                     errors.Add(new OrderFeedParseError(index, TryReadUpdateOrderNumber(element), "Update element deserialised to null."));
                 else
                 {
+                    if (isProjectionV2)
+                        OrderPresentationMetadataNormalizer.Normalize(update);
                     var validationError = PrinterFeedUpdateValidation.Validate(element, update);
                     if (validationError is not null)
                         errors.Add(new OrderFeedParseError(index, TryReadUpdateOrderNumber(element), validationError));
@@ -269,6 +247,7 @@ public static class OrderFeedParser
         public List<OrderFeedParseError> Errors { get; } = [];
         public List<OrderFeedParseError> UpdateErrors { get; } = [];
         public string? NextOrderCursor { get; set; }
+        public int? ProjectionVersion { get; set; }
         public bool HasMoreOrders { get; set; }
         public string? NextUpdateCursor { get; set; }
         public bool HasMoreUpdates { get; set; }
@@ -283,6 +262,8 @@ public sealed record OrderFeedParseResult(IReadOnlyList<Order> Orders, IReadOnly
     public IReadOnlyList<PrinterFeedUpdate> Updates { get; init; } = Array.Empty<PrinterFeedUpdate>();
     public IReadOnlyList<OrderFeedParseError> UpdateErrors { get; init; } = Array.Empty<OrderFeedParseError>();
     public string? NextOrderCursor { get; init; }
+    /// <summary>Null for V1/legacy feeds that do not identify a presentation projection.</summary>
+    public int? ProjectionVersion { get; init; }
     public bool HasMoreOrders { get; init; }
     public string? NextUpdateCursor { get; init; }
     public bool HasMoreUpdates { get; init; }

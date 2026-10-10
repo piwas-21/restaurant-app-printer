@@ -74,6 +74,97 @@ public partial class OrderPrintToSinkTests
     }
 
     [Fact]
+    public async Task V2_add_correction_uses_frozen_dish_parent_and_line_total_quantity_at_the_sink()
+    {
+        using var destination = new Sink();
+        using var unrelated = new Sink();
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var paths = new TempPathProvider();
+        var config = new PrinterConfiguration
+        {
+            FrontKitchenPrinterName = destination.PrinterName,
+            BackKitchenPrinterName = unrelated.PrinterName,
+            DefaultKitchenPrinterName = unrelated.PrinterName,
+            KitchenPrinterName = unrelated.PrinterName,
+            FrontKitchenAutoPrint = true,
+            BackKitchenAutoPrint = true,
+            KitchenAutoPrint = true,
+        };
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
+            new StubPrinterService(config), new CapturingRequestLogService(),
+            NullLogger<OrderPrintService>.Instance, paths);
+        const string feed = """
+            {"success":true,"data":{"projectionVersion":2,"items":[],"updates":[{
+              "jobId":"11111111-1111-4111-8111-111111111111","revision":1,"jobType":"Update","target":"FrontKitchen",
+              "orderId":"22222222-2222-4222-8222-222222222222","orderNumber":"V2-CHANGE","audience":"Kitchen",
+              "createdAt":"2026-10-10T10:00:00Z","changes":[{"kind":"Add","current":{
+                "id":"77777777-7777-4777-8777-777777777777","productName":"Lunch Menu","quantity":2,
+                "quantityBasis":"LineTotal","configurationScope":"SharedAcrossParentUnits","compositionRole":"Menu",
+                "presentationOrder":0,"kitchenType":"FrontKitchen","sideItems":[
+                  {"id":"88888888-8888-4888-8888-888888888888","productName":"Taco selection","quantity":1,
+                   "quantityBasis":"PerParentUnit","configurationScope":"SharedAcrossParentUnits","compositionRole":"Dish",
+                   "presentationLabel":"Taco","presentationOrder":1,"kitchenType":"FrontKitchen","sideItems":[]},
+                  {"id":"99999999-9999-4999-8999-999999999999","productName":"Kebab","quantity":4,
+                   "quantityBasis":"LineTotal","configurationScope":"SharedAcrossParentUnits","compositionRole":"RequiredChoice",
+                   "sectionId":"meat","presentationOrder":2,"menuSectionItemId":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                   "parentComponentOrderItemId":"88888888-8888-4888-8888-888888888888","kitchenType":"BackKitchen","sideItems":[]}
+                ]}}]}],"nextUpdateCursor":"correction-v2-cursor"}}
+            """;
+
+        var parsed = OrderFeedParser.Parse(feed);
+        Assert.True(parsed.IsSuccess, parsed.FailureMessage);
+        Assert.Equal(2, parsed.ProjectionVersion);
+        var update = Assert.Single(parsed.Updates);
+        var outcome = await service.PrintUpdateAsync(update, AlwaysAuthorize, cancellation.Token);
+        Assert.Equal(KitchenPrintStatus.Sent, outcome.Status);
+
+        var correction = await destination.ReadTicketAsync(cancellation.Token);
+        Assert.Contains("Taco", correction, StringComparison.Ordinal);
+        Assert.DoesNotContain("Taco selection", correction, StringComparison.Ordinal);
+        Assert.Contains("Total for 2 menus: Kebab ×4", correction, StringComparison.Ordinal);
+        Assert.DoesNotContain("Kebab ×8", correction, StringComparison.Ordinal);
+        Assert.False(unrelated.ReceivedAnything, "The correction left its configured Front Kitchen destination.");
+    }
+
+    [Fact]
+    public async Task Backend_checkout_correction_fixture_reaches_general_kitchen_sink_with_frozen_quantities()
+    {
+        using var destination = new Sink();
+        using var unrelated = new Sink();
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        using var paths = new TempPathProvider();
+        var service = new OrderPrintService(new MarketplaceReceiptComposer(),
+            new StubPrinterService(new PrinterConfiguration
+            {
+                DefaultKitchenPrinterName = destination.PrinterName,
+                KitchenPrinterName = unrelated.PrinterName,
+                FrontKitchenPrinterName = unrelated.PrinterName,
+                BackKitchenPrinterName = unrelated.PrinterName,
+                CashierPrinterName = unrelated.PrinterName,
+                KitchenAutoPrint = true,
+            }), new CapturingRequestLogService(), NullLogger<OrderPrintService>.Instance, paths);
+
+        var fixturePath = Path.Combine(AppContext.BaseDirectory, "Fixtures", "backend-printer-feed-v2.golden.json");
+        var parsed = OrderFeedParser.Parse(File.ReadAllText(fixturePath));
+        Assert.True(parsed.IsSuccess, parsed.FailureMessage);
+        Assert.Equal(2, parsed.ProjectionVersion);
+        var update = Assert.Single(parsed.Updates);
+        Assert.Equal(DevicePrintTarget.General, update.Target);
+
+        var outcome = await service.PrintUpdateAsync(update, AlwaysAuthorize, cancellation.Token);
+        Assert.Equal(KitchenPrintStatus.Sent, outcome.Status);
+
+        var ticket = await destination.ReadTicketAsync(cancellation.Token);
+        Assert.Contains("*** KITCHEN CHANGE ***", ticket, StringComparison.Ordinal);
+        Assert.Contains("*** CHANGE ***", ticket, StringComparison.Ordinal);
+        Assert.Equal(2, Occurrences(ticket, "Total for 2 menus: Side Two ×4"));
+        Assert.Equal(2, Occurrences(ticket, "Total for 2 menus: Side Three ×6"));
+        Assert.DoesNotContain("Side Two ×8", ticket, StringComparison.Ordinal);
+        Assert.DoesNotContain("Side Three ×12", ticket, StringComparison.Ordinal);
+        Assert.False(unrelated.ReceivedAnything, "The backend correction used a different station or cashier sink.");
+    }
+
+    [Fact]
     public async Task InvalidTypedCorrectionIsHeldWithoutContactingTheSink()
     {
         using var destination = new Sink();

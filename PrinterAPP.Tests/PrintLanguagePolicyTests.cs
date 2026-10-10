@@ -1,3 +1,4 @@
+using System.Text;
 using PrinterAPP.Models;
 using PrinterAPP.Services;
 using Xunit;
@@ -58,6 +59,10 @@ public class PrintLanguagePolicyTests
                          labels.Total, labels.Payment, labels.CardAtRestaurant, labels.Paid, labels.Due, labels.DeliveryTo,
                          labels.Instructions, labels.ThankYou, labels.DineIn, labels.TakeAway,
                          labels.Delivery, labels.NoItems, labels.PaymentTip,
+                         labels.ForEach, labels.TotalForMenus, labels.RecordedScopeUnknown,
+                         labels.ConfigurationScopeUnknown, labels.PaymentState, labels.Unpaid,
+                         labels.PartiallyPaid, labels.IndependentConfiguration, labels.RecordedQuantity,
+                         labels.Refunded, labels.Overpaid, labels.Credit,
                      })
             {
                 Assert.False(string.IsNullOrWhiteSpace(value), $"{code} has a blank label: '{value}'");
@@ -71,6 +76,24 @@ public class PrintLanguagePolicyTests
         Assert.Same(PrintLabelCatalog.English, PrintLabelCatalog.For("zh"));
         Assert.Same(PrintLabelCatalog.English, PrintLabelCatalog.For(null));
         Assert.Same(PrintLabelCatalog.English, PrintLabelCatalog.For("auto")); // auto is a policy value, not a catalog language
+    }
+
+    [Theory]
+    [InlineData("en", "recorded quantity 0")]
+    [InlineData("de", "erfasste Menge 0")]
+    [InlineData("fr", "quantité enregistrée 0")]
+    [InlineData("it", "quantità registrata 0")]
+    [InlineData("es", "cantidad registrada 0")]
+    [InlineData("nl", "geregistreerde hoeveelheid 0")]
+    [InlineData("tr", "kayıtlı miktar 0")]
+    public void Recorded_quantity_is_localized_and_encodable_on_printer(string code, string expected)
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        var pc857 = Encoding.GetEncoding(857, EncoderFallback.ExceptionFallback, DecoderFallback.ExceptionFallback);
+        var label = PrintLabelCatalog.RecordedQuantityLabel(PrintLabelCatalog.For(code), 0);
+
+        Assert.Equal(expected, label);
+        Assert.Equal(label, pc857.GetString(pc857.GetBytes(label)));
     }
 
     [Theory]

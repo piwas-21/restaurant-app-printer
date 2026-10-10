@@ -10,7 +10,13 @@ public static class ReceiptItemDisplay
     {
         var groups = new List<List<OrderItem>>();
         var sections = new Dictionary<string, List<OrderItem>>(StringComparer.Ordinal);
-        foreach (var item in items ?? Enumerable.Empty<OrderItem>())
+        var orderedItems = (items ?? Enumerable.Empty<OrderItem>())
+            .Select((item, index) => new { Item = item, Index = index })
+            .OrderBy(entry => RoleOrder(entry.Item.CompositionRole))
+            .ThenBy(entry => entry.Item.PresentationOrder ?? int.MaxValue)
+            .ThenBy(entry => entry.Index)
+            .Select(entry => entry.Item);
+        foreach (var item in orderedItems)
         {
             var sectionId = item.SectionId?.Trim();
             if (string.IsNullOrEmpty(sectionId))
@@ -32,6 +38,20 @@ public static class ReceiptItemDisplay
 
         return groups.SelectMany(group => group).ToList();
     }
+
+    private static int RoleOrder(CompositionRole? role) => role switch
+    {
+        CompositionRole.Menu => 0,
+        CompositionRole.Dish => 1,
+        CompositionRole.RequiredChoice => 2,
+        CompositionRole.Extra => 3,
+        CompositionRole.Ingredient => 4,
+        CompositionRole.Sauce => 5,
+        CompositionRole.Unknown => 6,
+        CompositionRole.Side => 7,
+        CompositionRole.Drink => 8,
+        _ => 9,
+    };
 
     /// <summary>Suppresses a legacy note only when it repeats the chosen variation.</summary>
     public static string? DisplaySpecialInstructions(OrderItem item)

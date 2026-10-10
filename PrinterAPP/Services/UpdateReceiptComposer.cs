@@ -169,6 +169,15 @@ public static class UpdateReceiptComposer
         SpecialInstructions = item.SpecialInstructions is null ? null : SanitizeNote(item.SpecialInstructions),
         KitchenType = SanitizeOptionalField(item.KitchenType),
         Kind = item.Kind,
+        SectionId = item.SectionId,
+        QuantityBasis = item.QuantityBasis,
+        ConfigurationScope = item.ConfigurationScope,
+        CompositionRole = item.CompositionRole,
+        PresentationLabel = SanitizeOptionalField(item.PresentationLabel),
+        PresentationOrder = item.PresentationOrder,
+        MenuSectionItemId = item.MenuSectionItemId,
+        SuggestedSideItemId = item.SuggestedSideItemId,
+        ParentComponentOrderItemId = item.ParentComponentOrderItemId,
         IngredientCustomizations = item.IngredientCustomizations?.Select(ingredient => new IngredientCustomization
         {
             IngredientId = ingredient.IngredientId,
@@ -176,6 +185,10 @@ public static class UpdateReceiptComposer
             Quantity = ingredient.Quantity,
             IsRemoved = ingredient.IsRemoved,
             IsAddOn = ingredient.IsAddOn,
+            QuantityBasis = ingredient.QuantityBasis,
+            ConfigurationScope = ingredient.ConfigurationScope,
+            CompositionRole = ingredient.CompositionRole,
+            PresentationOrder = ingredient.PresentationOrder,
         }).ToList(),
         SideItems = item.SideItems?.Select(SanitizeItem).ToList(),
     };
