@@ -258,6 +258,7 @@ public class WindowsPrinterService : IPrinterService
                     await Task.Delay(500); // Small delay between attempts
                 }
 
+#if WINDOWS
                 // If all RAW attempts failed, try writing directly to printer port
                 System.Diagnostics.Debug.WriteLine("All RAW attempts failed, trying port-based printing...");
                 if (await TryPrintToPort(cleanPrinterName, receiptText))
@@ -265,6 +266,7 @@ public class WindowsPrinterService : IPrinterService
                     System.Diagnostics.Debug.WriteLine("✓ Port-based printing succeeded");
                     return true;
                 }
+#endif
             }
             else
             {
@@ -487,8 +489,6 @@ public class WindowsPrinterService : IPrinterService
             return false;
         }
     }
-#else
-    private Task<bool> TryPrintToPort(string printerName, string text) => Task.FromResult(false);
 #endif
 
     private async Task<bool> PrintToNetworkPrinter(string ipAddress, string text)
