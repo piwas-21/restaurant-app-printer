@@ -52,7 +52,7 @@ public sealed class BackendPrinterFeedContractTests
             Assert.Equal(dish.Id, steak.ParentComponentOrderItemId?.ToString());
 
             var sides = dish.SideItems!.Where(item => item.CompositionRole == CompositionRole.Side).ToList();
-            Assert.Equal(3, sides.Count);
+            Assert.Equal(2, sides.Count);
             Assert.All(sides, side =>
             {
                 Assert.Equal(QuantityBasis.PerParentUnit, side.QuantityBasis);
@@ -60,7 +60,11 @@ public sealed class BackendPrinterFeedContractTests
             });
             Assert.Equal(1, Assert.Single(sides, side => side.ProductName == "Side One").Quantity);
             Assert.Equal(2, Assert.Single(sides, side => side.ProductName == "Side Two").Quantity);
-            Assert.Equal(3, Assert.Single(sides, side => side.ProductName == "Side Three").Quantity);
+            var drink = Assert.Single(dish.SideItems!, item => item.ProductName == "Side Three");
+            Assert.Equal(CompositionRole.Drink, drink.CompositionRole);
+            Assert.Equal(3, drink.Quantity);
+            Assert.Equal(QuantityBasis.PerParentUnit, drink.QuantityBasis);
+            Assert.Equal(ConfigurationScope.SharedAcrossParentUnits, drink.ConfigurationScope);
 
             var removed = Assert.Single(dish.IngredientCustomizations!, row => row.IngredientName == "Cheese");
             Assert.True(removed.IsRemoved);
@@ -70,6 +74,7 @@ public sealed class BackendPrinterFeedContractTests
             Assert.True(extra.IsAddOn);
             Assert.Equal(2, extra.Quantity);
             Assert.Equal(QuantityBasis.PerParentUnit, extra.QuantityBasis);
+            Assert.Equal(CompositionRole.Extra, extra.CompositionRole);
         }
 
         foreach (var widthMillimeters in new[] { 58, 80 })
@@ -99,6 +104,10 @@ public sealed class BackendPrinterFeedContractTests
                 < kitchen.IndexOf("Chili", StringComparison.Ordinal));
             Assert.True(kitchen.IndexOf("Chili", StringComparison.Ordinal)
                 < kitchen.IndexOf("Side One", StringComparison.Ordinal));
+            Assert.True(kitchen.IndexOf("Side Two", StringComparison.Ordinal)
+                < kitchen.IndexOf("Side Three", StringComparison.Ordinal));
+            Assert.True(cashier.IndexOf("Side Two", StringComparison.Ordinal)
+                < cashier.IndexOf("Side Three", StringComparison.Ordinal));
         }
     }
 
