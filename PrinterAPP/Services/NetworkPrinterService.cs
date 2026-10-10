@@ -31,8 +31,11 @@ public sealed class NetworkPrinterService : IPrinterService
         }
     }
 
-    public Task<HttpStatusCode?> TestPrinterFeedAsync(string apiUrl, string? apiKey) =>
-        PrinterFeedProbe.TestAsync(apiUrl, apiKey);
+    public async Task<HttpStatusCode?> TestPrinterFeedAsync(string apiUrl, string? apiKey)
+    {
+        var config = await _configStore.LoadAsync();
+        return await PrinterFeedProbe.TestAsync(apiUrl, apiKey, TimeSpan.FromSeconds(config.FeedProbeTimeoutSeconds));
+    }
 
     public Task<PrinterConfiguration> LoadConfigurationAsync() => _configStore.LoadAsync();
 

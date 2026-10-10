@@ -3,6 +3,7 @@
 The pilot supports a dedicated iPad/iPhone running the app in the foreground, with reachable LAN
 printers that accept raw ESC/POS over TCP. Enter each printer's IP address and optional port in
 settings; the normal raw-print port is 9100. No USB/Bluetooth compatibility is claimed.
+The optional saved `FeedProbeTimeoutSeconds` setting controls the API Test timeout (default 10 seconds).
 
 ## Current installation gate
 

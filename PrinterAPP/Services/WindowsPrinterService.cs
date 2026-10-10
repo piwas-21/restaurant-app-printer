@@ -652,8 +652,11 @@ public class WindowsPrinterService : IPrinterService
         return thermalKeywords.Any(keyword => printerName.Contains(keyword, StringComparison.OrdinalIgnoreCase));
     }
 
-    public Task<System.Net.HttpStatusCode?> TestPrinterFeedAsync(string apiUrl, string? apiKey) =>
-        PrinterFeedProbe.TestAsync(apiUrl, apiKey);
+    public async Task<System.Net.HttpStatusCode?> TestPrinterFeedAsync(string apiUrl, string? apiKey)
+    {
+        var config = await _configStore.LoadAsync();
+        return await PrinterFeedProbe.TestAsync(apiUrl, apiKey, TimeSpan.FromSeconds(config.FeedProbeTimeoutSeconds));
+    }
 
     // Config persistence (file location, legacy-location migration, API-key secret handling)
     // lives in PrinterConfigurationStore so it stays unit-testable without MAUI.

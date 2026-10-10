@@ -5,16 +5,14 @@ namespace PrinterAPP.Services;
 /// <summary>The shared connection test uses the same feed URL and API-key header as order polling.</summary>
 public static class PrinterFeedProbe
 {
-    private const int DefaultRequestTimeoutSeconds = 10;
-
     public static async Task<HttpStatusCode?> TestAsync(
-        string apiUrl, string? apiKey, TimeSpan? requestTimeout = null)
+        string apiUrl, string? apiKey, TimeSpan requestTimeout)
     {
         try
         {
             using var client = new HttpClient
             {
-                Timeout = requestTimeout ?? TimeSpan.FromSeconds(DefaultRequestTimeoutSeconds)
+                Timeout = requestTimeout
             };
             var url = $"{apiUrl.TrimEnd('/')}/api/orders/printer-feed?modifiedSince={DateTime.UtcNow:o}";
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
