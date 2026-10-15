@@ -575,6 +575,8 @@ public class OrderPrintService : IOrderPrintService
             sb.AppendLine();
         }
 
+        ReceiptComposer.AppendDailyOrderNumber(sb, order);
+
         // Order number + Date/Time (Kitchen Order Info section)
         sb.Append(ApplyStyle(styles.KitchenOrderInfo));
         var localTime = order.OrderDate.Kind == DateTimeKind.Utc
@@ -610,10 +612,15 @@ public class OrderPrintService : IOrderPrintService
 
         if (order.Items != null && order.Items.Any())
         {
-            foreach (var item in order.Items)
+            for (var index = 0; index < order.Items.Count; index++)
             {
-                ReceiptComposer.AppendKitchenItemLines(sb, item, depth: 0, labels, styles: styles);
-                sb.AppendLine();
+                ReceiptComposer.AppendKitchenItemLines(sb, order.Items[index], depth: 0, labels, styles: styles);
+                if (index < order.Items.Count - 1)
+                {
+                    sb.AppendLine();
+                    ReceiptComposer.AppendProductGroupSeparator(sb, paperWidth);
+                    sb.AppendLine();
+                }
             }
         }
         else
@@ -658,6 +665,8 @@ public class OrderPrintService : IOrderPrintService
         sb.Append(ResetStyle(styles.CashierHeader));
         sb.AppendLine();
 
+        ReceiptComposer.AppendDailyOrderNumber(sb, order);
+
         // Convert to local time if needed
         var localTime = order.OrderDate.Kind == DateTimeKind.Utc
             ? order.OrderDate.ToLocalTime()
@@ -682,18 +691,8 @@ public class OrderPrintService : IOrderPrintService
             sb.Append(ResetStyle(styles.CashierOrderInfo));
         }
 
-        if (order.Type == "Delivery")
-        {
-            var phone = order.DeliveryAddress?.Phone;
-            if (string.IsNullOrWhiteSpace(phone))
-            {
-                phone = order.CustomerPhone;
-            }
-            if (!string.IsNullOrWhiteSpace(phone))
-            {
-                sb.AppendLine($"{labels.Tel}: {phone}");
-            }
-        }
+        ReceiptComposer.AppendCashierContactLines(sb, order, config, labels);
+        ReceiptComposer.AppendCashierPreparationLines(sb, order, config, labels);
 
         // Order-level notes (e.g. "ring the doorbell") — printed before the items so they are not
         // lost below a long list.
@@ -709,11 +708,13 @@ public class OrderPrintService : IOrderPrintService
         if (order.Items != null && order.Items.Any())
         {
             var spacing = paperWidth == 80 ? 48 : 32;
-            foreach (var item in order.Items)
+            for (var index = 0; index < order.Items.Count; index++)
             {
                 sb.Append(ApplyStyle(styles.CashierItemLine));
-                ReceiptComposer.AppendCashierItemLines(sb, item, depth: 0, spacing, labels, currency: currency);
+                ReceiptComposer.AppendCashierItemLines(sb, order.Items[index], depth: 0, spacing, labels, currency: currency);
                 sb.Append(ResetStyle(styles.CashierItemLine));
+                if (index < order.Items.Count - 1)
+                    ReceiptComposer.AppendProductGroupSeparator(sb, paperWidth);
             }
         }
         else

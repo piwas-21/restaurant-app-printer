@@ -1,9 +1,155 @@
 using Xunit;
 
+using PrinterAPP.Models;
+using PrinterAPP.Services;
+
 namespace PrinterAPP.Tests;
 
 public partial class OrderPrintToSinkTests
 {
+    private static readonly string CustomerEmailFixture = File.ReadAllText(
+        Path.Combine(AppContext.BaseDirectory, "Fixtures", "receipt-customer-email.txt")).Trim();
+
+    [Fact]
+    public async Task Cashier_receipt_sends_daily_number_and_enabled_contact_and_preparation_details_to_sink()
+    {
+        using var sink = new Sink();
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var order = MinimalOrder();
+        order.OrderNumber = "2026101500007";
+        order.DailyOrderNumber = 7;
+        order.BusinessDate = new DateOnly(2026, 10, 15);
+        order.BusinessTimeZoneId = "Europe/Zurich";
+        order.CustomerPhone = "+41 79 555 01 02";
+        order.CustomerEmail = CustomerEmailFixture;
+        order.EffectivePreparationMinutes = 25;
+        order.ExpectedReadyAt = new DateTime(2026, 10, 15, 12, 45, 0, DateTimeKind.Utc);
+
+        var (ok, receipt) = await PrintToSinkAsync(order, sink, cancellation.Token,
+            config => config.CashierPaperWidth = 58);
+
+        Assert.True(ok);
+        Assert.Contains("#7", receipt);
+        Assert.Contains("2026101500007", receipt);
+        Assert.Contains("Tel: +41 79 555 01 02", receipt);
+        Assert.Contains($"Email: {CustomerEmailFixture}", receipt);
+        Assert.Contains("Prep: 25 min", receipt);
+        Assert.Contains("Ready at: 15/10 14:45", receipt);
+
+        var numberIndex = receipt.IndexOf("#7", StringComparison.Ordinal);
+        Assert.True(numberIndex > 0);
+        Assert.True(receipt.LastIndexOf(EscPosCommands.SizeDouble, numberIndex, StringComparison.Ordinal) >= 0);
+        Assert.True(receipt.LastIndexOf(EscPosCommands.BoldOn, numberIndex, StringComparison.Ordinal) >= 0);
+    }
+
+    [Theory]
+    [InlineData(58, 32)]
+    [InlineData(80, 48)]
+    public async Task Kitchen_ticket_prints_daily_number_and_separates_root_product_groups_at_each_paper_width(
+        int paperWidth, int separatorWidth)
+    {
+        using var sink = new Sink();
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var order = MinimalOrder();
+        order.OrderNumber = "2026101500007";
+        order.DailyOrderNumber = 7;
+        order.Items =
+        [
+            new OrderItem
+            {
+                Id = "menu-root",
+                ProductName = "Menu Deal",
+                Quantity = 1,
+                CompositionRole = CompositionRole.Menu,
+                SideItems =
+                [
+                    new OrderItem
+                    {
+                        Id = "dish",
+                        ProductName = "Taco",
+                        Quantity = 1,
+                        CompositionRole = CompositionRole.Dish,
+                        PresentationLabel = "Taco",
+                        SideItems =
+                        [
+                            new OrderItem
+                            {
+                                Id = "choice",
+                                ProductName = "Beef",
+                                Quantity = 1,
+                                CompositionRole = CompositionRole.RequiredChoice,
+                                Kind = "BundleChild",
+                            },
+                        ],
+                    },
+                ],
+            },
+            new OrderItem
+            {
+                ProductName = "Cola",
+                Quantity = 1,
+                CompositionRole = CompositionRole.Drink,
+            },
+        ];
+
+        var (ok, receipt) = await PrintToSinkAsync(order, sink, cancellation.Token,
+            config => config.KitchenPaperWidth = paperWidth,
+            printerType: PrinterType.Kitchen);
+
+        Assert.True(ok);
+        Assert.Contains("#7", receipt);
+        Assert.Contains("2026101500007", receipt);
+        Assert.Contains(EscPosCommands.SizeDouble, receipt);
+        Assert.Contains(EscPosCommands.BoldOn, receipt);
+        Assert.Contains(new string('-', separatorWidth), receipt);
+        var componentIndex = receipt.IndexOf("Beef", StringComparison.Ordinal);
+        var secondProductIndex = receipt.IndexOf("Cola", StringComparison.Ordinal);
+        var separatorIndex = receipt.IndexOf(new string('-', separatorWidth), componentIndex, StringComparison.Ordinal);
+        Assert.True(componentIndex >= 0 && separatorIndex > componentIndex && separatorIndex < secondProductIndex, receipt);
+    }
+
+    [Fact]
+    public async Task Cashier_receipt_preferences_can_opt_out_of_each_optional_field()
+    {
+        using var sink = new Sink();
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var order = MinimalOrder();
+        order.CustomerPhone = "+41 79 555 01 02";
+        order.CustomerEmail = CustomerEmailFixture;
+        order.EffectivePreparationMinutes = 25;
+        order.ExpectedReadyAt = new DateTime(2026, 10, 15, 12, 45, 0, DateTimeKind.Utc);
+        order.BusinessTimeZoneId = "Europe/Zurich";
+
+        var (ok, receipt) = await PrintToSinkAsync(order, sink, cancellation.Token, config =>
+        {
+            config.PrintCustomerPhoneOnCashierReceipt = false;
+            config.PrintCustomerEmailOnCashierReceipt = false;
+            config.PrintPreparationMinutesOnCashierReceipt = false;
+            config.PrintExpectedReadyAtOnCashierReceipt = false;
+        });
+
+        Assert.True(ok);
+        Assert.DoesNotContain("Tel:", receipt);
+        Assert.DoesNotContain("Email:", receipt);
+        Assert.DoesNotContain("Prep:", receipt);
+        Assert.DoesNotContain("Ready at:", receipt);
+    }
+
+    [Fact]
+    public async Task Cashier_receipt_omits_missing_optional_details_cleanly()
+    {
+        using var sink = new Sink();
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+
+        var (ok, receipt) = await PrintToSinkAsync(MinimalOrder(), sink, cancellation.Token);
+
+        Assert.True(ok);
+        Assert.DoesNotContain("Tel:", receipt);
+        Assert.DoesNotContain("Email:", receipt);
+        Assert.DoesNotContain("Prep:", receipt);
+        Assert.DoesNotContain("Ready at:", receipt);
+    }
+
     [Fact]
     public async Task Cashier_receipt_reports_unpaid_order_and_due_without_counting_pending_tender()
     {

@@ -57,11 +57,11 @@ Edit `PrinterAPP/PrinterAPP.csproj` and increment all three version values:
 
 ```xml
 <!-- `<Version>` becomes the assembly version that UpdateService compares with the release tag. -->
-<Version>1.0.31</Version>
+<Version>1.0.35</Version>
 <!-- Android's user-visible version label. -->
-<ApplicationDisplayVersion>1.0.31</ApplicationDisplayVersion>
+<ApplicationDisplayVersion>1.0.35</ApplicationDisplayVersion>
 <!-- Android's integer versionCode; it must be greater than the previous APK's code. -->
-<ApplicationVersion>30</ApplicationVersion>
+<ApplicationVersion>34</ApplicationVersion>
 ```
 
 `ApplicationDisplayVersion` alone does not fix an updater that is built with an older assembly
@@ -84,7 +84,7 @@ after every build succeeds and the complete asset set passes validation:
 
 1. Branch from `origin/develop`, commit with explicit paths and push through the local review hook:
    ```bash
-   git commit -m "chore: prepare printer v1.0.31" -- PrinterAPP/PrinterAPP.csproj RELEASE_WORKFLOW.md
+   git commit -m "chore: prepare printer v1.0.35" -- PrinterAPP/PrinterAPP.csproj RELEASE_WORKFLOW.md
    git push -u origin HEAD
    ```
    Open the source PR to `develop`. Complete manual review, CI, unresolved-thread and authenticated
@@ -98,8 +98,8 @@ after every build succeeds and the complete asset set passes validation:
    ```bash
    git fetch origin main
    git show origin/main:PrinterAPP/PrinterAPP.csproj
-   git tag v1.0.31 origin/main
-   git push origin v1.0.31
+   git tag v1.0.35 origin/main
+   git push origin v1.0.35
    ```
    A tag must identify reviewed, released source. Do not tag an unmerged feature branch or push source
    directly to `main` or `develop`.

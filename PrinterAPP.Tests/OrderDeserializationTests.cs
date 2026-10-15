@@ -150,7 +150,7 @@ public class OrderDeserializationTests
           "status": "InProgress",
           "paymentStatus": "PartiallyPaid",
           "permittedActions": [
-            { "action": "ReleaseKitchen", "allowed": true, "reasonCode": null, "requiresReason": false }
+            { "action": "StartPreparing", "allowed": true, "reasonCode": null, "requiresReason": false, "targetStatus": "Preparing" }
           ],
           "isFocusOrder": true,
           "priority": 2,
@@ -161,6 +161,11 @@ public class OrderDeserializationTests
           "orderTypeOverrideItems": "no onion",
           "orderDate": "2026-09-17T11:55:00Z",
           "estimatedDeliveryTime": null,
+          "dailyOrderNumber": 4,
+          "businessDate": "2026-09-17",
+          "effectivePreparationMinutes": 25,
+          "expectedReadyAt": "2026-09-17T12:30:00Z",
+          "businessTimeZoneId": "Europe/Zurich",
           "actualDeliveryTime": null,
           "createdAt": null,
           "updatedAt": "2026-09-17T12:02:00Z",
@@ -241,9 +246,15 @@ public class OrderDeserializationTests
         Assert.Equal(4, order.Version);
         Assert.True(order.IsFocusOrder);
         Assert.Equal(2, order.Priority);
-        Assert.Equal("ReleaseKitchen", Assert.Single(order.PermittedActions!).Action);
+        Assert.Equal("StartPreparing", Assert.Single(order.PermittedActions!).Action);
+        Assert.Equal("Preparing", Assert.Single(order.PermittedActions!).TargetStatus);
         Assert.Equal("manager-1", order.OrderTypeOverrideBy);
         Assert.Null(order.CreatedAt);
+        Assert.Equal(4L, order.DailyOrderNumber);
+        Assert.Equal(new DateOnly(2026, 9, 17), order.BusinessDate);
+        Assert.Equal(25, order.EffectivePreparationMinutes);
+        Assert.Equal(DateTimeKind.Utc, order.ExpectedReadyAt!.Value.Kind);
+        Assert.Equal("Europe/Zurich", order.BusinessTimeZoneId);
         Assert.True(order.HasUserLimitDiscount);
         Assert.Equal(5.00m, order.UserLimitAmount);
 

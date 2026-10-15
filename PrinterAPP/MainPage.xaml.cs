@@ -96,6 +96,10 @@ public partial class MainPage : ContentPage
             CashierAutoPrintSwitch.IsToggled = _config.CashierAutoPrint;
             CashierPrintCopiesEntry.Text = _config.CashierPrintCopies.ToString();
             CashierPaperWidthPicker.SelectedIndex = _config.CashierPaperWidth == 80 ? 0 : 1;
+            CashierPrintCustomerPhoneSwitch.IsToggled = _config.PrintCustomerPhoneOnCashierReceipt;
+            CashierPrintCustomerEmailSwitch.IsToggled = _config.PrintCustomerEmailOnCashierReceipt;
+            CashierPrintPreparationMinutesSwitch.IsToggled = _config.PrintPreparationMinutesOnCashierReceipt;
+            CashierPrintExpectedReadyAtSwitch.IsToggled = _config.PrintExpectedReadyAtOnCashierReceipt;
 
             // Time restriction settings
             EnableTimeRestrictionSwitch.IsToggled = _config.EnableTimeRestriction;
@@ -177,6 +181,11 @@ public partial class MainPage : ContentPage
 
     private async Task LoadPrintersAsync()
     {
+#if IOS
+        // Network IPs are entered directly; iOS has no Windows printer enumeration.
+        await Task.CompletedTask;
+        return;
+#else
         try
         {
             var printers = await _printerService.GetAvailablePrintersAsync();
@@ -198,6 +207,7 @@ public partial class MainPage : ContentPage
         {
             await DisplayAlert("Error", $"Failed to load printers: {ex.Message}", "OK");
         }
+#endif
     }
 
     private void UpdateServiceStatus()
@@ -550,6 +560,10 @@ public partial class MainPage : ContentPage
             // Cashier printer settings
             _config.CashierAutoPrint = CashierAutoPrintSwitch.IsToggled;
             _config.CashierPaperWidth = CashierPaperWidthPicker.SelectedIndex == 0 ? 80 : 58;
+            _config.PrintCustomerPhoneOnCashierReceipt = CashierPrintCustomerPhoneSwitch.IsToggled;
+            _config.PrintCustomerEmailOnCashierReceipt = CashierPrintCustomerEmailSwitch.IsToggled;
+            _config.PrintPreparationMinutesOnCashierReceipt = CashierPrintPreparationMinutesSwitch.IsToggled;
+            _config.PrintExpectedReadyAtOnCashierReceipt = CashierPrintExpectedReadyAtSwitch.IsToggled;
             if (int.TryParse(CashierPrintCopiesEntry.Text, out int cashierCopies))
             {
                 _config.CashierPrintCopies = Math.Max(1, Math.Min(cashierCopies, 5)); // Limit 1-5
@@ -699,6 +713,10 @@ public partial class MainPage : ContentPage
                 CashierAutoPrintSwitch.IsToggled = _config.CashierAutoPrint;
                 CashierPrintCopiesEntry.Text = _config.CashierPrintCopies.ToString();
                 CashierPaperWidthPicker.SelectedIndex = _config.CashierPaperWidth == 80 ? 0 : 1;
+                CashierPrintCustomerPhoneSwitch.IsToggled = _config.PrintCustomerPhoneOnCashierReceipt;
+                CashierPrintCustomerEmailSwitch.IsToggled = _config.PrintCustomerEmailOnCashierReceipt;
+                CashierPrintPreparationMinutesSwitch.IsToggled = _config.PrintPreparationMinutesOnCashierReceipt;
+                CashierPrintExpectedReadyAtSwitch.IsToggled = _config.PrintExpectedReadyAtOnCashierReceipt;
 
                 // Time restriction settings
                 EnableTimeRestrictionSwitch.IsToggled = _config.EnableTimeRestriction;

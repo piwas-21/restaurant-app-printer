@@ -27,6 +27,8 @@ public class UpdateService : IUpdateService
     private static UpdatePlatform CurrentPlatform =>
 #if ANDROID
         UpdatePlatform.Android;
+#elif IOS
+        UpdatePlatform.Ios;
 #else
         UpdatePlatform.Windows;
 #endif

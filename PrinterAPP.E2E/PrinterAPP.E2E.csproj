@@ -28,6 +28,7 @@
     <!-- Models (MAUI-free; also linked by PrinterAPP.Tests). Order/DeliveryAddress are needed because
          TelemetryPayloads.PrintAcks(Order, ...) references them. -->
     <Compile Include="..\PrinterAPP\Models\Order.cs" Link="Linked\Order.cs" />
+    <Compile Include="..\PrinterAPP\Models\Order.ReceiptMetadata.cs" Link="Linked\Order.ReceiptMetadata.cs" />
     <Compile Include="..\PrinterAPP\Models\OrderPresentationMetadata.cs" Link="Linked\OrderPresentationMetadata.cs" />
     <Compile Include="..\PrinterAPP\Models\OrderAmendmentPrintContext.cs" Link="Linked\OrderAmendmentPrintContext.cs" />
     <Compile Include="..\PrinterAPP\Models\ExternalOrder.cs" Link="Linked\ExternalOrder.cs" />
@@ -35,6 +36,7 @@
     <Compile Include="..\PrinterAPP\Models\DeliveryAddress.cs" Link="Linked\DeliveryAddress.cs" />
     <Compile Include="..\PrinterAPP\Models\OrderRoutingState.cs" Link="Linked\OrderRoutingState.cs" />
     <Compile Include="..\PrinterAPP\Models\PrinterConfiguration.cs" Link="Linked\PrinterConfiguration.cs" />
+    <Compile Include="..\PrinterAPP\Models\PrinterConfiguration.ReceiptOptions.cs" Link="Linked\PrinterConfiguration.ReceiptOptions.cs" />
     <!-- PrinterConfiguration.PrintLanguage references PrintLanguagePolicy.English; the policy is
          MAUI-free, so the link keeps this compile-only guard green. -->
     <Compile Include="..\PrinterAPP\Services\PrintLanguagePolicy.cs" Link="Linked\PrintLanguagePolicy.cs" />
