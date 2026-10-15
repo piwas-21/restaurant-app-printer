@@ -203,6 +203,7 @@
 
   <ItemGroup>
     <Content Include="Fixtures\backend-printer-feed-v2.golden.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Fixtures\receipt-customer-email.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

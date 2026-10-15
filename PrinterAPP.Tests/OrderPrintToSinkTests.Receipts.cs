@@ -7,6 +7,9 @@ namespace PrinterAPP.Tests;
 
 public partial class OrderPrintToSinkTests
 {
+    private static readonly string CustomerEmailFixture = File.ReadAllText(
+        Path.Combine(AppContext.BaseDirectory, "Fixtures", "receipt-customer-email.txt")).Trim();
+
     [Fact]
     public async Task Cashier_receipt_sends_daily_number_and_enabled_contact_and_preparation_details_to_sink()
     {
@@ -18,7 +21,7 @@ public partial class OrderPrintToSinkTests
         order.BusinessDate = new DateOnly(2026, 10, 15);
         order.BusinessTimeZoneId = "Europe/Zurich";
         order.CustomerPhone = "+41 79 555 01 02";
-        order.CustomerEmail = "guest@example.test";
+        order.CustomerEmail = CustomerEmailFixture;
         order.EffectivePreparationMinutes = 25;
         order.ExpectedReadyAt = new DateTime(2026, 10, 15, 12, 45, 0, DateTimeKind.Utc);
 
@@ -29,7 +32,7 @@ public partial class OrderPrintToSinkTests
         Assert.Contains("#7", receipt);
         Assert.Contains("2026101500007", receipt);
         Assert.Contains("Tel: +41 79 555 01 02", receipt);
-        Assert.Contains("Email: guest@example.test", receipt);
+        Assert.Contains($"Email: {CustomerEmailFixture}", receipt);
         Assert.Contains("Prep: 25 min", receipt);
         Assert.Contains("Ready at: 15/10 14:45", receipt);
 
@@ -112,7 +115,7 @@ public partial class OrderPrintToSinkTests
         using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         var order = MinimalOrder();
         order.CustomerPhone = "+41 79 555 01 02";
-        order.CustomerEmail = "guest@example.test";
+        order.CustomerEmail = CustomerEmailFixture;
         order.EffectivePreparationMinutes = 25;
         order.ExpectedReadyAt = new DateTime(2026, 10, 15, 12, 45, 0, DateTimeKind.Utc);
         order.BusinessTimeZoneId = "Europe/Zurich";
