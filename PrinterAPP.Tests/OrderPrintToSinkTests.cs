@@ -724,7 +724,8 @@ public partial class OrderPrintToSinkTests
 
     private static async Task<(bool Ok, string Ticket)> PrintToSinkAsync(
         Order order, Sink sink, CancellationToken ct,
-        Action<PrinterConfiguration>? configure = null)
+        Action<PrinterConfiguration>? configure = null,
+        PrinterType printerType = PrinterType.Cashier)
     {
         using var paths = new TempPathProvider();
         var config = new PrinterConfiguration
@@ -732,6 +733,9 @@ public partial class OrderPrintToSinkTests
             CashierPrinterName = sink.PrinterName,
             CashierAutoPrint = true,
             CashierPrintCopies = 1,
+            KitchenPrinterName = sink.PrinterName,
+            KitchenAutoPrint = true,
+            KitchenPrintCopies = 1,
         };
         configure?.Invoke(config);
 
@@ -741,7 +745,7 @@ public partial class OrderPrintToSinkTests
             NullLogger<OrderPrintService>.Instance,
             paths);
 
-        var ok = await service.PrintOrderAsync(order, PrinterType.Cashier, isManualPrint: true, ct);
+        var ok = await service.PrintOrderAsync(order, printerType, isManualPrint: true, ct);
         var ticket = ok ? await sink.ReadTicketAsync(ct) : string.Empty;
         return (ok, ticket);
     }

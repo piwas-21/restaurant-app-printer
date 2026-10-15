@@ -70,11 +70,8 @@ We use automated GitHub Actions for releases.
 👉 **See [RELEASE_WORKFLOW.md](RELEASE_WORKFLOW.md) for detailed release instructions.**
 
 ### Quick Summary
-1. Update `<ApplicationDisplayVersion>` and `<Version>` in `PrinterAPP.csproj`.
-2. Commit changes.
-3. Tag the commit (e.g., `v1.0.8`).
-4. Push tag to GitHub.
-5. GitHub Actions will auto-build and publish the release.
+1. Update `<Version>`, `<ApplicationDisplayVersion>`, and `<ApplicationVersion>` in `PrinterAPP.csproj`.
+2. Follow [RELEASE_WORKFLOW.md](RELEASE_WORKFLOW.md) for the develop PR, platform builds, production release, and tag sequence.
 
 ## 📄 License
 

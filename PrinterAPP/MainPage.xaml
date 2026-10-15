@@ -183,6 +183,50 @@
                                VerticalOptions="Center"
                                Margin="10,0,0,0"/>
                     </Grid>
+
+                    <Label Text="Cashier receipt details"
+                           FontSize="14"
+                           FontAttributes="Bold"
+                           Margin="0,8,0,0"/>
+                    <Label Text="These choices are saved on this printer installation."
+                           FontSize="12"
+                           TextColor="{AppThemeBinding Light={StaticResource TextMuted}, Dark={StaticResource TextMutedDark}}"/>
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Switch x:Name="CashierPrintCustomerPhoneSwitch"
+                                IsToggled="True"
+                                VerticalOptions="Center"/>
+                        <Label Text="Print customer phone"
+                               Grid.Column="1"
+                               VerticalOptions="Center"
+                               Margin="10,0,0,0"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Switch x:Name="CashierPrintCustomerEmailSwitch"
+                                IsToggled="True"
+                                VerticalOptions="Center"/>
+                        <Label Text="Print customer email"
+                               Grid.Column="1"
+                               VerticalOptions="Center"
+                               Margin="10,0,0,0"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Switch x:Name="CashierPrintPreparationMinutesSwitch"
+                                IsToggled="True"
+                                VerticalOptions="Center"/>
+                        <Label Text="Print preparation minutes"
+                               Grid.Column="1"
+                               VerticalOptions="Center"
+                               Margin="10,0,0,0"/>
+                    </Grid>
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Switch x:Name="CashierPrintExpectedReadyAtSwitch"
+                                IsToggled="True"
+                                VerticalOptions="Center"/>
+                        <Label Text="Print expected ready time"
+                               Grid.Column="1"
+                               VerticalOptions="Center"
+                               Margin="10,0,0,0"/>
+                    </Grid>
                 </VerticalStackLayout>
             </Frame>
 

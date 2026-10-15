@@ -260,6 +260,40 @@ public sealed class PrinterConfigurationStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task Save_then_load_round_trips_cashier_receipt_preferences()
+    {
+        var store = CreateStore();
+        var saved = new PrinterConfiguration
+        {
+            PrintCustomerPhoneOnCashierReceipt = false,
+            PrintCustomerEmailOnCashierReceipt = true,
+            PrintPreparationMinutesOnCashierReceipt = false,
+            PrintExpectedReadyAtOnCashierReceipt = true,
+        };
+
+        await store.SaveAsync(saved);
+        var loaded = await store.LoadAsync();
+
+        Assert.False(loaded.PrintCustomerPhoneOnCashierReceipt);
+        Assert.True(loaded.PrintCustomerEmailOnCashierReceipt);
+        Assert.False(loaded.PrintPreparationMinutesOnCashierReceipt);
+        Assert.True(loaded.PrintExpectedReadyAtOnCashierReceipt);
+    }
+
+    [Fact]
+    public async Task Older_config_defaults_new_cashier_receipt_preferences_on()
+    {
+        File.WriteAllText(NewConfigPath, """{"restaurantName":"Existing install"}""");
+
+        var config = await CreateStore().LoadAsync();
+
+        Assert.True(config.PrintCustomerPhoneOnCashierReceipt);
+        Assert.True(config.PrintCustomerEmailOnCashierReceipt);
+        Assert.True(config.PrintPreparationMinutesOnCashierReceipt);
+        Assert.True(config.PrintExpectedReadyAtOnCashierReceipt);
+    }
+
+    [Fact]
     public async Task Save_then_load_round_trips_kitchen_routing_fields()
     {
         var store = CreateStore();

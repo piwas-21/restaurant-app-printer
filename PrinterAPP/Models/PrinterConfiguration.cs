@@ -1,7 +1,7 @@
 
 namespace PrinterAPP.Models;
 
-public class PrinterConfiguration
+public partial class PrinterConfiguration
 {
     public const int DefaultUpdateRetryIntervalSeconds = 5;
     public const int MinimumUpdateRetryIntervalSeconds = 1;
