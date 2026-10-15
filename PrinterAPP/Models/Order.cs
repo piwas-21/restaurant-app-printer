@@ -220,6 +220,7 @@ public class OrderPermittedAction
     public bool Allowed { get; set; }
     public string? ReasonCode { get; set; }
     public bool RequiresReason { get; set; }
+    public string? TargetStatus { get; set; }
 }
 
 public class Payment
