@@ -288,7 +288,7 @@ Defines section styles for kitchen and cashier receipts:
 - Selects correct architecture (x64/x86) from release assets
 - Downloads to temp file, validates size (>1KB)
 - Creates batch script that: waits 3s -> kills process -> copies new exe -> restarts
-- Version managed in `PrinterAPP.csproj`: `<Version>1.0.13</Version>`
+- Version metadata lives in `PrinterAPP/PrinterAPP.csproj`; follow [`RELEASE_WORKFLOW.md`](../RELEASE_WORKFLOW.md) for the current Windows and Android values and release sequence.
 - **Security note:** No signature verification currently (see SECURITY-AUDIT.md)
 
 ---

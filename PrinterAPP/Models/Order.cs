@@ -1,7 +1,7 @@
 using System.Text.Json.Serialization;
 namespace PrinterAPP.Models;
 
-public class Order
+public partial class Order
 {
     public string Id { get; set; } = string.Empty;
     public string OrderNumber { get; set; } = string.Empty;
@@ -220,6 +220,7 @@ public class OrderPermittedAction
     public bool Allowed { get; set; }
     public string? ReasonCode { get; set; }
     public bool RequiresReason { get; set; }
+    public string? TargetStatus { get; set; }
 }
 
 public class Payment

@@ -45,7 +45,10 @@ public sealed record PrintLabels(
     string PartiallyPaid,
     string Refunded,
     string Overpaid,
-    string Credit)
+    string Credit,
+    string Email,
+    string Preparation,
+    string ReadyAt)
 {
     /// <summary>
     /// Renders the raw <c>Order.Type</c> value the backend sends (DineIn/TakeAway/Delivery) in this
@@ -109,11 +112,12 @@ public static class PrintLabelCatalog
         "Promo", "DeliveryFee", "Tip", "Total", "Payment", "CardAtRestaurant", "Paid", "Due", "DeliveryTo",
         "Instructions", "ThankYou", "DineIn", "TakeAway", "Delivery", "NoItems", "PaymentTip",
         "Each", "PaymentState", "Unpaid", "PartiallyPaid", "Refunded", "Overpaid", "Credit",
+        "Email", "Preparation", "ReadyAt",
     ];
 
     /// <summary>
     /// The label set for <paramref name="languageCode"/>; anything unknown — including null — falls
-    /// back to English, which is also what every existing install prints until it opts in.
+    /// back to English for any newly introduced optional receipt fields.
     /// </summary>
     public static PrintLabels For(string? languageCode) => languageCode?.Trim().ToLowerInvariant() switch
     {
@@ -130,43 +134,43 @@ public static class PrintLabelCatalog
         "ONLINE ORDER|Type|Table|Customer|Tel|NOTES|NOTE|NO|+|Subtotal|Tax|Discount" +
         "|Customer discount|Promo|Delivery Fee|Tip|TOTAL|PAYMENT|CARD AT RESTAURANT|PAID|DUE|DELIVERY TO" +
         "|Instructions|Thank you for your visit!|Dine-in|Takeaway|Delivery|(No items in order)|Additional tip" +
-        "|each|PAYMENT STATUS|UNPAID|PARTIALLY PAID|REFUNDED|OVERPAID|CREDIT");
+        "|each|PAYMENT STATUS|UNPAID|PARTIALLY PAID|REFUNDED|OVERPAID|CREDIT|Email|Prep|Ready at");
 
     public static readonly PrintLabels German = Parse(
         "ONLINE-BESTELLUNG|Typ|Tisch|Kunde|Tel|NOTIZEN|NOTIZ|OHNE|+|Zwischensumme|MwSt|Rabatt" +
         "|Kundenrabatt|Promo|Liefergebühr|Trinkgeld|TOTAL|ZAHLUNG|KARTENZAHLUNG IM RESTAURANT|BEZAHLT|OFFEN|LIEFERUNG AN" +
         "|Hinweise|Vielen Dank für Ihren Besuch!|Im Lokal|Mitnehmen|Lieferung|(Keine Artikel in der Bestellung)|Zusätzliches Trinkgeld" +
-        "|jeweils|ZAHLUNGSSTATUS|UNBEZAHLT|TEILWEISE BEZAHLT|ERSTATTET|ÜBERZAHLT|GUTHABEN");
+        "|jeweils|ZAHLUNGSSTATUS|UNBEZAHLT|TEILWEISE BEZAHLT|ERSTATTET|ÜBERZAHLT|GUTHABEN|E-Mail|Prep.|Fertig um");
 
     public static readonly PrintLabels French = Parse(
         "COMMANDE EN LIGNE|Type|Table|Client|Tél|REMARQUES|REMARQUE|SANS|+|Sous-total|TVA|Remise" +
         "|Remise client|Promo|Frais de livraison|Pourboire|TOTAL|PAIEMENT|CARTE AU RESTAURANT|PAYÉ|DÛ|LIVRAISON À" +
         "|Instructions|Merci de votre visite !|Sur place|À emporter|Livraison|(Aucun article dans la commande)|Pourboire supplémentaire" +
-        "|chacun|ÉTAT DU PAIEMENT|NON PAYÉ|PARTIELLEMENT PAYÉ|REMBOURSÉ|TROP-PAYÉ|AVOIR");
+        "|chacun|ÉTAT DU PAIEMENT|NON PAYÉ|PARTIELLEMENT PAYÉ|REMBOURSÉ|TROP-PAYÉ|AVOIR|E-mail|Prépa.|Prêt à");
 
     public static readonly PrintLabels Italian = Parse(
         "ORDINE ONLINE|Tipo|Tavolo|Cliente|Tel|NOTE|NOTA|SENZA|+|Subtotale|IVA|Sconto" +
         "|Sconto cliente|Promo|Costo di consegna|Mancia|TOTALE|PAGAMENTO|CARTA AL RISTORANTE|PAGATO|DA PAGARE|CONSEGNA A" +
         "|Istruzioni|Grazie per la visita!|Al tavolo|Da asporto|Consegna|(Nessun articolo nell'ordine)|Mancia aggiuntiva" +
-        "|ciascuno|STATO DEL PAGAMENTO|NON PAGATO|PAGATO PARZIALMENTE|RIMBORSATO|PAGATO IN ECCESSO|CREDITO");
+        "|ciascuno|STATO DEL PAGAMENTO|NON PAGATO|PAGATO PARZIALMENTE|RIMBORSATO|PAGATO IN ECCESSO|CREDITO|E-mail|Prep.|Pronto alle");
 
     public static readonly PrintLabels Spanish = Parse(
         "PEDIDO ONLINE|Tipo|Mesa|Cliente|Tel|NOTAS|NOTA|SIN|+|Subtotal|IVA|Descuento" +
         "|Descuento cliente|Promo|Gastos de envío|Propina|TOTAL|PAGO|TARJETA EN EL RESTAURANTE|PAGADO|PENDIENTE|ENTREGAR EN" +
         "|Indicaciones|¡Gracias por su visita!|En el local|Para llevar|Entrega|(Sin artículos en el pedido)|Propina adicional" +
-        "|cada uno|ESTADO DEL PAGO|SIN PAGAR|PAGADO PARCIALMENTE|REEMBOLSADO|PAGADO DE MÁS|CRÉDITO");
+        "|cada uno|ESTADO DEL PAGO|SIN PAGAR|PAGADO PARCIALMENTE|REEMBOLSADO|PAGADO DE MÁS|CRÉDITO|Correo|Prep.|Listo a las");
 
     public static readonly PrintLabels Dutch = Parse(
         "ONLINE BESTELLING|Type|Tafel|Klant|Tel|OPMERKINGEN|LET OP|ZONDER|+|Subtotaal|BTW|Korting" +
         "|Klantkorting|Promo|Bezorgkosten|Fooi|TOTAAL|BETALING|KAARTBETALING IN HET RESTAURANT|BETAALD|OPENSTAAND|BEZORGEN AAN" +
         "|Instructies|Bedankt voor uw bezoek!|Ter plaatse|Meenemen|Bezorging|(Geen artikelen in de bestelling)|Extra fooi" +
-        "|elk|BETAALSTATUS|ONBETAALD|GEDEELTELIJK BETAALD|TERUGBETAALD|TEVEEL BETAALD|TEGOED");
+        "|elk|BETAALSTATUS|ONBETAALD|GEDEELTELIJK BETAALD|TERUGBETAALD|TEVEEL BETAALD|TEGOED|E-mail|Bereiding|Gereed om");
 
     public static readonly PrintLabels Turkish = Parse(
         "ONLINE SİPARİŞ|Tür|Masa|Müşteri|Tel|NOTLAR|NOT|YOK|+|Ara Toplam|KDV|İndirim" +
         "|Müşteri indirimi|Promosyon|Teslimat Ücreti|Bahşiş|TOPLAM|ÖDEME|RESTORANDA KARTLA ÖDEME|ÖDENEN|KALAN|TESLİMAT ADRESİ" +
         "|Talimatlar|Ziyaretiniz için teşekkürler!|Lokalda|Paket|Teslimat|(Siparişte ürün yok)|Ek bahşiş" +
-        "|her biri|ÖDEME DURUMU|ÖDENMEDİ|KISMEN ÖDENDİ|İADE EDİLDİ|FAZLA ÖDENDİ|ALACAK");
+        "|her biri|ÖDEME DURUMU|ÖDENMEDİ|KISMEN ÖDENDİ|İADE EDİLDİ|FAZLA ÖDENDİ|ALACAK|E-posta|Hazırlık|Hazır");
 
     /// <summary>Maps one spec onto the record; a short or long spec fails loudly here.</summary>
     private static PrintLabels Parse(string spec)
@@ -214,6 +218,9 @@ public static class PrintLabelCatalog
             PartiallyPaid: fields[32],
             Refunded: fields[33],
             Overpaid: fields[34],
-            Credit: fields[35]);
+            Credit: fields[35],
+            Email: fields[36],
+            Preparation: fields[37],
+            ReadyAt: fields[38]);
     }
 }

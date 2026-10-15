@@ -53,6 +53,7 @@
     <!-- Order models (MAUI-free; plain System.Text.Json records). Pinned here to guard the
          backend-DTO mirror after a string-vs-object drift on deliveryAddress wedged the prod poll. -->
     <Compile Include="..\PrinterAPP\Models\Order.cs" Link="Linked\Order.cs" />
+    <Compile Include="..\PrinterAPP\Models\Order.ReceiptMetadata.cs" Link="Linked\Order.ReceiptMetadata.cs" />
     <Compile Include="..\PrinterAPP\Models\OrderPresentationMetadata.cs" Link="Linked\OrderPresentationMetadata.cs" />
     <Compile Include="..\PrinterAPP\Models\OrderAmendmentPrintContext.cs" Link="Linked\OrderAmendmentPrintContext.cs" />
     <Compile Include="..\PrinterAPP\Models\ExternalOrder.cs" Link="Linked\ExternalOrder.cs" />
@@ -75,6 +76,7 @@
     <Compile Include="..\PrinterAPP\Services\OrderRoutingStateValidation.cs" Link="Linked\OrderRoutingStateValidation.cs" />
     <!-- Config storage + migration (MAUI-free by design; see PrinterConfigurationStore.cs). -->
     <Compile Include="..\PrinterAPP\Models\PrinterConfiguration.cs" Link="Linked\PrinterConfiguration.cs" />
+    <Compile Include="..\PrinterAPP\Models\PrinterConfiguration.ReceiptOptions.cs" Link="Linked\PrinterConfiguration.ReceiptOptions.cs" />
     <Compile Include="..\PrinterAPP\Services\IAppDataPathProvider.cs" Link="Linked\IAppDataPathProvider.cs" />
     <Compile Include="..\PrinterAPP\Services\ISecretStore.cs" Link="Linked\ISecretStore.cs" />
     <Compile Include="..\PrinterAPP\Services\IPrinterConfigurationStore.cs" Link="Linked\IPrinterConfigurationStore.cs" />
@@ -201,6 +203,7 @@
 
   <ItemGroup>
     <Content Include="Fixtures\backend-printer-feed-v2.golden.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Fixtures\receipt-customer-email.txt" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

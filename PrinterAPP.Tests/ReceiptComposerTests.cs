@@ -171,6 +171,37 @@ public class ReceiptComposerTests
     }
 
     [Fact]
+    public void Expected_ready_time_uses_tenant_timezone_instead_of_device_timezone()
+    {
+        var order = new Order
+        {
+            ExpectedReadyAt = new DateTime(2026, 10, 15, 12, 45, 0, DateTimeKind.Utc),
+            BusinessTimeZoneId = "Europe/Zurich",
+        };
+
+        Assert.Equal("15/10 14:45", ReceiptComposer.FormatExpectedReadyAt(order));
+    }
+
+    [Theory]
+    [InlineData("2026101500007", 0L, "#7")]
+    [InlineData("legacy-42", 42L, "#42")]
+    [InlineData("external-order", 0L, null)]
+    public void Daily_order_number_is_short_when_available_and_does_not_replace_the_full_id(
+        string orderNumber, long dailyOrderNumber, string? expected)
+    {
+        var order = new Order { OrderNumber = orderNumber, DailyOrderNumber = dailyOrderNumber };
+        var builder = new StringBuilder();
+
+        ReceiptComposer.AppendDailyOrderNumber(builder, order);
+
+        if (expected is null)
+            Assert.Empty(builder.ToString());
+        else
+            Assert.Contains(expected, builder.ToString());
+        Assert.Equal(orderNumber, order.OrderNumber);
+    }
+
+    [Fact]
     public void Section_choices_remain_individual_and_stable_on_both_receipt_surfaces()
     {
         var item = new OrderItem
