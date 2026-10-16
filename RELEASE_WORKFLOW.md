@@ -57,11 +57,11 @@ Edit `PrinterAPP/PrinterAPP.csproj` and increment all three version values:
 
 ```xml
 <!-- `<Version>` becomes the assembly version that UpdateService compares with the release tag. -->
-<Version>1.0.35</Version>
+<Version>1.0.36</Version>
 <!-- Android's user-visible version label. -->
-<ApplicationDisplayVersion>1.0.35</ApplicationDisplayVersion>
+<ApplicationDisplayVersion>1.0.36</ApplicationDisplayVersion>
 <!-- Android's integer versionCode; it must be greater than the previous APK's code. -->
-<ApplicationVersion>34</ApplicationVersion>
+<ApplicationVersion>35</ApplicationVersion>
 ```
 
 `ApplicationDisplayVersion` alone does not fix an updater that is built with an older assembly
@@ -84,13 +84,18 @@ after every build succeeds and the complete asset set passes validation:
 
 1. Branch from `origin/develop`, commit with explicit paths and push through the local review hook:
    ```bash
-   git commit -m "chore: prepare printer v1.0.35" -- PrinterAPP/PrinterAPP.csproj RELEASE_WORKFLOW.md
+   git commit -m "chore: prepare printer v1.0.36" -- PrinterAPP/PrinterAPP.csproj RELEASE_WORKFLOW.md
    git push -u origin HEAD
    ```
    Open the source PR to `develop`. Complete manual review, CI, unresolved-thread and authenticated
    Sonar gate/zero-open-issue checks, then merge through the workspace's `scripts/pr-merge-gate.sh`.
 
-2. Open a release PR from `develop` to `main` and merge through the same gate. Release PRs use a merge
+2. Confirm `origin/main` is an ancestor of `origin/develop`. If the previous release merge commits
+   are missing, merge `origin/main` into a branch from `origin/develop` and open a gated PR back to
+   `develop`. Preserve its merge commit so the strict up-to-date rule can recognize the ancestry.
+   Never use GitHub's update-branch action, which skips the local review hook.
+
+   Open a release PR from `develop` to `main` and merge through the same gate. Release PRs use a merge
    commit so `develop` remains an ancestor of `main`; never delete either protected branch.
 
 3. Fetch and inspect the released `origin/main` revision. Confirm its three version values match
@@ -98,8 +103,8 @@ after every build succeeds and the complete asset set passes validation:
    ```bash
    git fetch origin main
    git show origin/main:PrinterAPP/PrinterAPP.csproj
-   git tag v1.0.35 origin/main
-   git push origin v1.0.35
+   git tag v1.0.36 origin/main
+   git push origin v1.0.36
    ```
    A tag must identify reviewed, released source. Do not tag an unmerged feature branch or push source
    directly to `main` or `develop`.

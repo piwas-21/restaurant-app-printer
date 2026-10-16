@@ -124,8 +124,9 @@ bytes.AddRange(new byte[] { 0x1B, 0x40 });
 ```
 
 ### Print Routing
-- **Cashier printer**: Full receipt with prices, payment details, totals
-- **Kitchen printers**: Simple ticket with item name, quantity, customizations
+- **Cashier printer**: Receipt with prices, payment details, totals and structured customizations;
+  omit order comments, special requests and item special instructions.
+- **Kitchen printers**: Ticket with item name, quantity, customizations and preparation instructions.
 - **Routing logic**: Based on `KitchenType` field - Front Kitchen, Back Kitchen
 - **Fallback**: Routes to Cashier printer if target kitchen printer unavailable
 
