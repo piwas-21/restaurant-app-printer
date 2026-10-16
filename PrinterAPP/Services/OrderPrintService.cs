@@ -694,16 +694,10 @@ public class OrderPrintService : IOrderPrintService
         ReceiptComposer.AppendCashierContactLines(sb, order, config, labels);
         ReceiptComposer.AppendCashierPreparationLines(sb, order, config, labels);
 
-        // Order-level notes (e.g. "ring the doorbell") — printed before the items so they are not
-        // lost below a long list.
-        sb.Append(EscPosCommands.ExtraDarkOn);
-        ReceiptComposer.AppendOrderNotesLine(sb, order, labels);
-        sb.Append(EscPosCommands.ExtraDarkOff);
-
         sb.AppendLine(new string('-', paperWidth == 80 ? 48 : 32));
 
-        // Items with prices. Each top-level line carries its customizations, its special
-        // instruction and its bundle components/side items (no price on those — the parent total
+        // Items with prices. Each top-level line carries its customizations and
+        // bundle components/side items (no price on those — the parent total
         // already covers them), so the paper matches what the guest actually ordered.
         if (order.Items != null && order.Items.Any())
         {

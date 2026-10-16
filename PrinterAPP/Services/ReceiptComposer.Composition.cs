@@ -10,7 +10,7 @@ public static partial class ReceiptComposer
     private sealed record KitchenPrintContext(PrintLabels Labels, PrintStyleSettings? Styles);
 
     private readonly record struct DetailLinesContext(
-        PrintLabels Labels, int ParentQuantity, SectionStyle? Style, bool TallEmphasis);
+        PrintLabels Labels, int ParentQuantity, SectionStyle? Style, bool TallEmphasis, bool IncludeNotes = true);
 
     public static void AppendCashierItemLines(
         StringBuilder sb, OrderItem item, int depth, int spacing, PrintLabels labels, int parentQuantity = 1,
@@ -43,7 +43,7 @@ public static partial class ReceiptComposer
 
         AppendCashierChildren(sb, item, depth, context, requiredChoicesOnly: true);
         AppendDetailLines(sb, item, indent,
-            new DetailLinesContext(context.Labels, item.Quantity, null, false));
+            new DetailLinesContext(context.Labels, item.Quantity, null, false, IncludeNotes: false));
         AppendCashierChildren(sb, item, depth, context, requiredChoicesOnly: false);
     }
 
@@ -145,7 +145,7 @@ public static partial class ReceiptComposer
             ReceiptKitchenLineFormatter.AppendDetailLine(sb, line, context.Style, context.TallEmphasis);
         }
         var note = ReceiptItemDisplay.DisplaySpecialInstructions(item);
-        if (note is not null)
+        if (context.IncludeNotes && note is not null)
             ReceiptKitchenLineFormatter.AppendDetailLine(sb,
                 $"{indent}   {context.Labels.Note}: {note}", context.Style, context.TallEmphasis);
     }

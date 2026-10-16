@@ -57,11 +57,11 @@ Edit `PrinterAPP/PrinterAPP.csproj` and increment all three version values:
 
 ```xml
 <!-- `<Version>` becomes the assembly version that UpdateService compares with the release tag. -->
-<Version>1.0.35</Version>
+<Version>1.0.36</Version>
 <!-- Android's user-visible version label. -->
-<ApplicationDisplayVersion>1.0.35</ApplicationDisplayVersion>
+<ApplicationDisplayVersion>1.0.36</ApplicationDisplayVersion>
 <!-- Android's integer versionCode; it must be greater than the previous APK's code. -->
-<ApplicationVersion>34</ApplicationVersion>
+<ApplicationVersion>35</ApplicationVersion>
 ```
 
 `ApplicationDisplayVersion` alone does not fix an updater that is built with an older assembly
