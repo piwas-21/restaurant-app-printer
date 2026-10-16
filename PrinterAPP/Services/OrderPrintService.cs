@@ -748,6 +748,11 @@ public class OrderPrintService : IOrderPrintService
             sb.AppendLine($"{labels.DeliveryFee}: {ReceiptComposer.Money(order.DeliveryFee, currency)}");
         }
 
+        foreach (var charge in order.BillCharges.Where(charge => charge.Amount > 0))
+        {
+            sb.AppendLine($"{UpdateReceiptComposer.SanitizeField(charge.Label)}: {ReceiptComposer.Money(charge.Amount, currency)}");
+        }
+
         if (order.Tip > 0)
         {
             sb.AppendLine($"{labels.Tip}: {ReceiptComposer.Money(order.Tip, currency)}");
@@ -758,7 +763,7 @@ public class OrderPrintService : IOrderPrintService
 
         // Total (Cashier Grand Total section — defaults: double size, bold, emphasized)
         sb.Append(ApplyStyle(styles.CashierGrandTotal));
-        sb.AppendLine($"{labels.Total}: {ReceiptComposer.Money(order.Total, currency)}");
+        sb.AppendLine($"{labels.Total}: {ReceiptComposer.Money(order.PayableTotal ?? order.Total + order.BillChargeAmount - order.BillingCreditAmount, currency)}");
         sb.Append(ResetStyle(styles.CashierGrandTotal));
         sb.AppendLine();
 

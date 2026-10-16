@@ -52,6 +52,7 @@
     <Compile Include="..\PrinterAPP\Services\PrinterTargetEntry.cs" Link="Linked\PrinterTargetEntry.cs" />
     <!-- Order models (MAUI-free; plain System.Text.Json records). Pinned here to guard the
          backend-DTO mirror after a string-vs-object drift on deliveryAddress wedged the prod poll. -->
+    <Compile Include="..\PrinterAPP\Models\Order.BillCharges.cs" Link="Linked\Order.BillCharges.cs" />
     <Compile Include="..\PrinterAPP\Models\Order.cs" Link="Linked\Order.cs" />
     <Compile Include="..\PrinterAPP\Models\Order.ReceiptMetadata.cs" Link="Linked\Order.ReceiptMetadata.cs" />
     <Compile Include="..\PrinterAPP\Models\OrderPresentationMetadata.cs" Link="Linked\OrderPresentationMetadata.cs" />
