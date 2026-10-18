@@ -61,10 +61,8 @@ public partial class OrderPrintToSinkTests
         Assert.Contains("CANCEL PREVIOUS:", correction, StringComparison.Ordinal);
         Assert.Contains("REPLACEMENT REFERENCE ONLY:", correction, StringComparison.Ordinal);
         Assert.Contains("Prepare replacement only from its separate ticket.", correction, StringComparison.Ordinal);
-        Assert.Contains("Replacement ticket: NEW-42 / 66666666-6666-4666-8666-666666666666", correction, StringComparison.Ordinal);
-        Assert.Contains("Visit: 44444444", correction, StringComparison.Ordinal);
-        Assert.Contains("Amendment: 55555555", correction, StringComparison.Ordinal);
-        Assert.Contains("Account revision: 7", correction, StringComparison.Ordinal);
+        Assert.Contains($"Replacement ticket: NEW-42{Environment.NewLine}", correction, StringComparison.Ordinal);
+        AssertKitchenTicketHasNoTechnicalMetadata(correction);
         Assert.Contains("Table: T-17", correction, StringComparison.Ordinal);
         Assert.Equal(1, Occurrences(correction, "Pizza"));
         Assert.Equal(1, Occurrences(correction, "Pasta"));
@@ -184,21 +182,25 @@ public partial class OrderPrintToSinkTests
         Assert.False(destination.ReceivedAnything);
     }
 
-    [Fact]
-    public async Task StableCorrectionCopyBypassesAutoPrintGateAndLeavesOriginalHistoryUnchanged()
+    [Theory]
+    [InlineData(DevicePrintTarget.FrontKitchen)]
+    [InlineData(DevicePrintTarget.BackKitchen)]
+    public async Task StableCorrectionCopyBypassesAutoPrintGateAndLeavesOriginalHistoryUnchanged(DevicePrintTarget target)
     {
         using var destination = new Sink();
         using var unrelated = new Sink();
         using var paths = new TempPathProvider();
         var config = new PrinterConfiguration
         {
-            FrontKitchenPrinterName = destination.PrinterName,
+            FrontKitchenPrinterName = target == DevicePrintTarget.FrontKitchen ? destination.PrinterName : unrelated.PrinterName,
+            BackKitchenPrinterName = target == DevicePrintTarget.BackKitchen ? destination.PrinterName : unrelated.PrinterName,
             DefaultKitchenPrinterName = unrelated.PrinterName,
             FrontKitchenAutoPrint = false,
+            BackKitchenAutoPrint = false,
             KitchenAutoPrint = false,
         };
         var jobStore = new PrintUpdateJobStore(paths, NullLogger<PrintUpdateJobStore>.Instance);
-        var parsed = OrderFeedParser.Parse(ReplacementCorrectionEnvelope(DevicePrintTarget.FrontKitchen));
+        var parsed = OrderFeedParser.Parse(ReplacementCorrectionEnvelope(target));
         Assert.True(parsed.IsSuccess, parsed.FailureMessage);
         var update = Assert.Single(parsed.Updates);
         Assert.True(jobStore.AddOrGet(update, out _, out _));
@@ -222,11 +224,16 @@ public partial class OrderPrintToSinkTests
         Assert.Contains("COPY - POSSIBLE DUPLICATE", ticket, StringComparison.Ordinal);
         Assert.Contains("CANCEL PREVIOUS:", ticket, StringComparison.Ordinal);
         Assert.Contains("Pasta", ticket, StringComparison.Ordinal);
+        AssertKitchenTicketHasNoTechnicalMetadata(ticket);
         Assert.DoesNotContain("Soup", ticket, StringComparison.Ordinal);
         Assert.False(unrelated.ReceivedAnything);
         var unchanged = Assert.Single(jobStore.GetHistory());
         Assert.Equal(PrintUpdateJobState.Skipped, unchanged.State);
         Assert.True(unchanged.FinalAcknowledgementQueued);
+        Assert.Equal(update.JobId, unchanged.Update.JobId);
+        Assert.Equal(update.Revision, unchanged.Update.Revision);
+        Assert.Equal(update.AmendmentId, unchanged.Update.AmendmentId);
+        Assert.Equal(update.ServiceSessionId, unchanged.Update.ServiceSessionId);
     }
 
     [Fact]

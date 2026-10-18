@@ -633,9 +633,10 @@ public sealed class PrinterUpdateJobStoreTests
 
         Assert.Contains("*** KITCHEN CHANGE ***", receipt);
         Assert.Contains("Station: Front kitchen", receipt);
-        Assert.Contains("Visit: 44444444", receipt);
-        Assert.Contains("Amendment: 55555555", receipt);
-        Assert.Contains("Account revision: 9", receipt);
+        Assert.DoesNotContain("Visit:", receipt);
+        Assert.DoesNotContain("Amendment:", receipt);
+        Assert.DoesNotContain("Account revision:", receipt);
+        Assert.DoesNotContain("Job:", receipt);
         Assert.Contains("*** ADD ***", receipt);
         Assert.Contains("2x Burger", receipt);
         Assert.Contains("No onions", receipt);

@@ -1,6 +1,6 @@
 # Rumi Restaurant Printer App
 
-A specialized Windows application built with **.NET MAUI** that handles automated receipt printing for the Rumi Restaurant system. It connects to the backend API, polls for new orders, and routes print jobs to specific thermal printers (Cashier, Front Kitchen, Back Kitchen) with custom formatting.
+A Windows and Android application built with **.NET MAUI** that handles automated receipt printing for the Rumi Restaurant system. It connects to the backend API, polls for new orders, and routes print jobs to specific thermal printers (Cashier, Front Kitchen, Back Kitchen) with custom formatting.
 
 ![Printer App UI](https://raw.githubusercontent.com/mgezgin/PrinterAPP/master/docs/screenshot.png) *(Placeholder if you have one)*
 
@@ -12,7 +12,8 @@ A specialized Windows application built with **.NET MAUI** that handles automate
   - **Kitchen Printers:** Prints simple order tickets.
   - **Fallback Logic:** If "Front Kitchen" printer is missing, routes traffic to the Cashier printer automatically.
 - **Smart Formatting:**
-  - **Kitchen Tickets:** Large, bold text for easy reading in the kitchen.
+  - **Kitchen Tickets:** Daily order number, table, order time, station, dishes, quantities and preparation instructions. Amendment tickets retain the human source-order reference in the order-info style.
+  - **Kitchen Corrections:** ADD, CANCEL, CHANGE and instruction changes show only affected preparation; replacement references use the separate ticket number. Copies retain a prominent duplicate warning. Internal UUIDs and job/account revisions are never printed on kitchen tickets; their routing, acknowledgement and history records retain those identities.
   - **Ingredient Customizations:** Clearly marks added/removed ingredients (e.g., `✘ NO Onion`, `+ EXTRA Cheese`).
   - **Turish Character Support:** Correctly handles Turkish characters (e.g., `İ`, `Ş`, `Ğ`) on thermal printers.
 - **Auto-Update System:**
@@ -22,7 +23,7 @@ A specialized Windows application built with **.NET MAUI** that handles automate
 
 ## 📥 Installation
 
-1. Go to the [Releases Page](https://github.com/mgezgin/PrinterAPP/releases).
+1. Go to the [Releases Page](https://github.com/piwas-21/printer-app-releases/releases).
 2. Download the latest `PrinterApp-Setup-x64.exe` (or `x86` for older systems).
 3. Run the installer.
 4. Launch "PrinterAPP" from the Start Menu.
