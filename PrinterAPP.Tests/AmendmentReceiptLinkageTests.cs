@@ -30,7 +30,8 @@ public sealed class AmendmentReceiptLinkageTests
         var receipt = UpdateReceiptComposer.Compose(update);
         Assert.Contains("CANCEL PREVIOUS:", receipt);
         Assert.Contains("REPLACEMENT REFERENCE ONLY:", receipt);
-        Assert.Contains($"Replacement ticket: NEW-42@ / {replacement:D}", receipt);
+        Assert.Contains($"Replacement ticket: NEW-42@{Environment.NewLine}", receipt);
+        Assert.DoesNotContain(replacement.ToString("D"), receipt);
         Assert.Contains("Prepare replacement only from its separate ticket.", receipt);
         Assert.DoesNotContain("TO:", receipt);
         Assert.DoesNotContain("NEW-42\u001b@", receipt, StringComparison.Ordinal);
@@ -48,10 +49,42 @@ public sealed class AmendmentReceiptLinkageTests
         var builder = new StringBuilder();
         AmendmentReceiptComposer.AppendKitchenIdentity(builder, order, "en");
         var text = builder.ToString();
-        Assert.Contains($"Amendment: {amendment:D}", text);
-        Assert.Contains($"Source order: OLD-1@ / {source:D}", text);
+        Assert.Contains($"Amendment{Environment.NewLine}", text);
+        Assert.Contains($"Source order: OLD-1@{Environment.NewLine}", text);
+        Assert.DoesNotContain(amendment.ToString("D"), text);
+        Assert.DoesNotContain(source.ToString("D"), text);
         Assert.Contains("Prepare only the items on this ticket.", text);
         Assert.DoesNotContain('\u001b', text);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("\u001b\n")]
+    public void MissingHumanReferencesNeverFallBackToTechnicalIds(string? number)
+    {
+        var builder = new StringBuilder();
+        AmendmentReceiptComposer.AppendKitchenIdentity(builder, new Order
+        {
+            AmendmentPrintContext = new(Guid.NewGuid(), Guid.NewGuid(), number ?? string.Empty)
+        }, "en");
+        Assert.Equal($"Amendment{Environment.NewLine}Prepare only the items on this ticket.{Environment.NewLine}", builder.ToString());
+
+        var receipt = UpdateReceiptComposer.Compose(new PrinterFeedUpdate
+        {
+            Changes = [new PrinterFeedChange
+            {
+                Kind = KitchenChangeKind.Replace,
+                Previous = new OrderItem { ProductName = "Pizza", Quantity = 1 },
+                Current = new OrderItem { ProductName = "Pasta", Quantity = 1 },
+                ReplacementDispatchedOrderId = Guid.NewGuid(),
+                ReplacementDispatchedOrderNumber = number,
+            }]
+        });
+        Assert.DoesNotContain("Replacement ticket:", receipt);
+        Assert.Contains("REPLACEMENT REFERENCE ONLY:", receipt);
+        Assert.Contains("Prepare replacement only from its separate ticket.", receipt);
+        Assert.DoesNotMatch(@"[0-9a-fA-F]{8}-[0-9a-fA-F-]{27}", receipt);
     }
 
     [Fact]
@@ -91,7 +124,7 @@ public sealed class AmendmentReceiptLinkageTests
         var builder = new StringBuilder();
         AmendmentReceiptComposer.AppendKitchenIdentity(builder, new Order
         { AmendmentPrintContext = new(Guid.NewGuid(), Guid.NewGuid(), "ORIGINAL") }, language);
-        Assert.Contains(title + ":", builder.ToString(), StringComparison.Ordinal);
+        Assert.Contains(title + Environment.NewLine, builder.ToString(), StringComparison.Ordinal);
         Assert.Contains(preparation, builder.ToString(), StringComparison.Ordinal);
         if (language != "en") Assert.DoesNotContain("Prepare only", builder.ToString(), StringComparison.Ordinal);
     }

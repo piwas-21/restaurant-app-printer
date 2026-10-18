@@ -588,9 +588,16 @@ public class OrderPrintService : IOrderPrintService
         // Type + Table (Kitchen Order Type section; defaults to Tall)
         sb.Append(ApplyStyle(styles.KitchenOrderType));
         ReceiptComposer.AppendTypeAndTableLine(sb, order, labels);
-        AmendmentReceiptComposer.AppendKitchenIdentity(sb, order, language);
         _marketplace.AppendIdentity(sb, order, language, showPayment: false);
         sb.Append(ResetStyle(styles.KitchenOrderType));
+
+        // Human amendment/source references belong to order information, not the tall type line.
+        if (order.AmendmentPrintContext is not null)
+        {
+            sb.Append(ApplyStyle(styles.KitchenOrderInfo));
+            AmendmentReceiptComposer.AppendKitchenIdentity(sb, order, language);
+            sb.Append(ResetStyle(styles.KitchenOrderInfo));
+        }
 
         // Customer name only (no phone) — styled as part of the order info block
         if (!string.IsNullOrWhiteSpace(order.CustomerName))

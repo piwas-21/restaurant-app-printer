@@ -54,11 +54,6 @@ public static class UpdateReceiptComposer
         builder.AppendLine($"Order: {SanitizeField(update.OrderNumber)}");
         if (TableDisplay.ResolveLabel(update.TableLabel, update.TableNumber) is { } tableLabel)
             builder.AppendLine($"Table: {tableLabel}");
-        AppendIdentity(builder, "Visit", update.ServiceSessionId);
-        AppendIdentity(builder, "Amendment", update.AmendmentId);
-        if (update.AccountRevision is { } accountRevision)
-            builder.AppendLine($"Account revision: {accountRevision}");
-        builder.AppendLine($"Job: {FormatId(update.JobId)} / revision {update.Revision}");
         builder.AppendLine($"Station: {StationLabel(update.Target)}");
         AppendChangeNote(builder, update.Text);
 
@@ -106,9 +101,11 @@ public static class UpdateReceiptComposer
                 AppendSnapshot(builder, change.Previous);
                 builder.AppendLine(change.ReplacementDispatchedOrderId.HasValue ? "REPLACEMENT REFERENCE ONLY:" : "TO:");
                 AppendSnapshot(builder, change.Current);
-                if (change.ReplacementDispatchedOrderId is Guid dispatchedOrderId)
+                if (change.ReplacementDispatchedOrderId.HasValue)
                 {
-                    builder.AppendLine($"Replacement ticket: {SanitizeField(change.ReplacementDispatchedOrderNumber)} / {dispatchedOrderId:D}");
+                    var replacementNumber = SanitizeField(change.ReplacementDispatchedOrderNumber);
+                    if (!string.IsNullOrWhiteSpace(replacementNumber))
+                        builder.AppendLine($"Replacement ticket: {replacementNumber}");
                     builder.AppendLine("Prepare replacement only from its separate ticket.");
                 }
                 break;
@@ -137,14 +134,6 @@ public static class UpdateReceiptComposer
         builder.AppendLine("Change note:");
         builder.AppendLine(SanitizeNote(text));
     }
-
-    private static void AppendIdentity(StringBuilder builder, string label, Guid? id)
-    {
-        if (id is { } value)
-            builder.AppendLine($"{label}: {FormatId(value)}");
-    }
-
-    private static string FormatId(Guid id) => id.ToString("N")[..8].ToUpperInvariant();
 
     private static string StationLabel(DevicePrintTarget target) => target switch
     {
