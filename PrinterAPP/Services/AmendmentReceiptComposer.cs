@@ -10,8 +10,10 @@ public static class AmendmentReceiptComposer
     {
         if (order.AmendmentPrintContext is not { } context) return;
         var labels = AmendmentReceiptLabels.For(language);
-        builder.AppendLine($"{labels.Amendment}: {context.AmendmentId:D}");
-        builder.AppendLine($"{labels.SourceOrder}: {UpdateReceiptComposer.SanitizeField(context.SourceOrderNumber)} / {context.SourceOrderId:D}");
+        builder.AppendLine(labels.Amendment);
+        var sourceNumber = UpdateReceiptComposer.SanitizeField(context.SourceOrderNumber);
+        if (!string.IsNullOrWhiteSpace(sourceNumber))
+            builder.AppendLine($"{labels.SourceOrder}: {sourceNumber}");
         builder.AppendLine(labels.PrepareThisTicket);
     }
 }
