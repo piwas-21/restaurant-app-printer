@@ -45,7 +45,10 @@ public sealed class CashierPrintJobClient(HttpClient http, IPrinterService print
             if (!acknowledged.IsSuccessStatusCode)
                 logger.LogWarning("Cashier bill {JobId} outcome acknowledgement failed; held against duplicate output", id);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            logger.LogDebug("Cashier bill polling stopped; claimed output remains held against duplicates");
+        }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Cashier bill queue unavailable; any claimed output remains held against duplicates");

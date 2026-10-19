@@ -13,12 +13,12 @@ public static partial class ReceiptComposer
         PrintLabels Labels, int ParentQuantity, SectionStyle? Style, bool TallEmphasis, bool IncludeNotes = true);
 
     public static void AppendCashierItemLines(
-        StringBuilder sb, OrderItem item, int depth, int spacing, PrintLabels labels, int parentQuantity = 1,
+        StringBuilder sb, OrderItem item, int depth, int spacing, PrintLabels labels,
         string? currency = null, bool includeVariations = false)
     {
         if (depth == 0)
             item = ReceiptCompositionProjection.BuildSingle(item);
-        AppendCashierProjected(sb, item, depth, new CashierPrintContext(labels, spacing, currency, includeVariations), parentQuantity);
+        AppendCashierProjected(sb, item, depth, new CashierPrintContext(labels, spacing, currency, includeVariations), parentQuantity: 1);
     }
 
     private static void AppendCashierProjected(
