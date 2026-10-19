@@ -49,6 +49,7 @@ public static partial class ReceiptComposer
         StringBuilder sb, OrderItem item, int depth, CashierPrintContext context, bool requiredChoicesOnly)
     {
         var children = ReceiptItemDisplay.OrderItemsForDisplay(item.SideItems)
+            .Where(child => child.CompositionRole is not (CompositionRole.Ingredient or CompositionRole.Sauce))
             .Where(child => (child.CompositionRole == CompositionRole.RequiredChoice) == requiredChoicesOnly)
             .ToList();
         foreach (var child in children)

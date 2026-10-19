@@ -60,7 +60,7 @@ public sealed class ReceiptProjectionGoldenTests
             Assert.Contains("1x Lunch Menu", cashier);
             Assert.Contains("3x Lunch Menu", cashier);
             Assert.Contains("1x Taco (each)", cashier);
-            Assert.Contains("1x Mango sauce", cashier);
+            Assert.DoesNotContain("Mango sauce", cashier);
             Assert.DoesNotContain("independent configurations", cashier);
             Assert.Contains("1x Still Water (each)", cashier);
             Assert.Contains("4x Kebab", cashier);
@@ -76,8 +76,7 @@ public sealed class ReceiptProjectionGoldenTests
             Assert.DoesNotContain("Chili", cashier);
             Assert.True(cashier.IndexOf("Fries", StringComparison.Ordinal)
                 < cashier.IndexOf("Cola", StringComparison.Ordinal));
-            Assert.True(cashier.IndexOf("Harissa", StringComparison.Ordinal)
-                < cashier.IndexOf("Cola", StringComparison.Ordinal));
+            Assert.DoesNotContain("Harissa", cashier);
             Assert.True(cashier.IndexOf("Legacy Dip", StringComparison.Ordinal)
                 < cashier.IndexOf("Fries", StringComparison.Ordinal));
             Assert.Equal(1, Count(cashier, "EUR 28.00"));

@@ -1,6 +1,6 @@
 namespace PrinterAPP.Models;
 
-/// <summary>Per-install cashier receipt preferences; omitted older config properties default on.</summary>
+/// <summary>Per-install cashier receipt preferences; variations default off and contact preferences default on.</summary>
 public partial class PrinterConfiguration
 {
     public const int DefaultCashierPrintJobTimeoutSeconds = 15;
