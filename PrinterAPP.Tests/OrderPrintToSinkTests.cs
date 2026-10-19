@@ -303,8 +303,8 @@ public partial class OrderPrintToSinkTests
         var (ok, ticket) = await PrintToSinkAsync(order, sink, cts.Token);
 
         Assert.True(ok, "PrintOrderAsync reported failure");
-        Assert.Contains("NO Onion", ticket);
-        Assert.Contains("+ Hot Sauce", ticket); // selected at quantity one — used to be filtered off
+        Assert.DoesNotContain("Onion", ticket);
+        Assert.DoesNotContain("Hot Sauce", ticket); // selected at quantity one — used to be filtered off
         Assert.Contains("1x Ayran", ticket);  // side item — used to be cashier-invisible
         Assert.Contains("Adana Kebab", ticket);
     }
@@ -394,9 +394,10 @@ public partial class OrderPrintToSinkTests
         var ticket = await sink.ReadTicketAsync(cts.Token);
 
         Assert.Contains("EUR 12.00", ticket);
-        Assert.Contains("1x Menu Tacos 1 Viande (Menu)", ticket);
-        Assert.Contains("+ Cheddar", ticket);
-        Assert.Contains("NO Oignons", ticket);
+        Assert.Contains("1x Menu Tacos 1 Viande", ticket);
+        Assert.DoesNotContain("(Menu)", ticket);
+        Assert.DoesNotContain("Cheddar", ticket);
+        Assert.DoesNotContain("Oignons", ticket);
         Assert.Contains("1x Frites", ticket);
         Assert.Contains("1x Boisson", ticket);
     }

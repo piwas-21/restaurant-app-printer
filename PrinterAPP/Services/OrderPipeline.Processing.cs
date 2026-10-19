@@ -173,8 +173,6 @@ public partial class OrderPipeline
         try
         {
             var updateJobStore = _updateJobStore;
-            if (updateJobStore is null)
-                return;
             var config = await _printerService.LoadConfigurationAsync();
             var seconds = Math.Max(
                 PrinterConfiguration.MinimumUpdateRetryIntervalSeconds,
@@ -182,8 +180,10 @@ public partial class OrderPipeline
             using var timer = new PeriodicTimer(TimeSpan.FromSeconds(seconds));
             while (await timer.WaitForNextTickAsync(cancellationToken))
             {
+                if (_cashierPrintJobs is not null)
+                    await _cashierPrintJobs.PollAsync(cancellationToken);
                 await QueuePendingFinalAcknowledgementsAsync();
-                foreach (var pending in updateJobStore.GetPending())
+                foreach (var pending in updateJobStore?.GetPending() ?? [])
                     _ = ProcessUpdateAsync(pending.Update);
             }
         }

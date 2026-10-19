@@ -1,8 +1,13 @@
 namespace PrinterAPP.Models;
 
-/// <summary>Per-install cashier receipt preferences; omitted older config properties default on.</summary>
+/// <summary>Per-install cashier receipt preferences; variations default off and contact preferences default on.</summary>
 public partial class PrinterConfiguration
 {
+    public const int DefaultCashierPrintJobTimeoutSeconds = 15;
+    public const int MinimumCashierPrintJobTimeoutSeconds = 1;
+    public int CashierPrintJobTimeoutSeconds { get; set; } = DefaultCashierPrintJobTimeoutSeconds;
+
+    public bool PrintVariationsOnCashierReceipt { get; set; } = false;
     public bool PrintCustomerPhoneOnCashierReceipt { get; set; } = true;
     public bool PrintCustomerEmailOnCashierReceipt { get; set; } = true;
     public bool PrintPreparationMinutesOnCashierReceipt { get; set; } = true;

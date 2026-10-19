@@ -7,6 +7,10 @@ namespace PrinterAPP.Models;
 public partial class Order
 {
     /// <summary>Human-facing sequence within <see cref="BusinessDate"/>; zero means an older feed omitted it.</summary>
+    public bool IsTableBill { get; set; }
+    public decimal CashierBillRefundedAmount { get; set; }
+    public decimal CashierBillCredit { get; set; }
+
     public long DailyOrderNumber { get; set; }
 
     /// <summary>The tenant's operational date, serialized as yyyy-MM-dd.</summary>
