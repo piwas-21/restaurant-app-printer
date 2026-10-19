@@ -133,6 +133,8 @@ public class OrderPrintService : IOrderPrintService
         CancellationToken cancellationToken,
         IReadOnlySet<DevicePrintTarget>? routedTargets)
     {
+        if (!isManualPrint && order.ServiceSessionId.HasValue)
+            return false;
         if (routedTargets is not null && !routedTargets.Contains(DevicePrintTarget.Cashier))
             return false;
 
@@ -668,7 +670,7 @@ public class OrderPrintService : IOrderPrintService
         // Header (Cashier Header section — defaults: double size, bold, emphasized, centered)
         sb.Append(ApplyStyle(styles.CashierHeader));
         sb.AppendLine($"{config.RestaurantName}");
-        sb.AppendLine(labels.OnlineOrder);
+        sb.AppendLine(order.IsTableBill ? labels.Table : labels.OnlineOrder);
         sb.Append(ResetStyle(styles.CashierHeader));
         sb.AppendLine();
 
@@ -712,7 +714,8 @@ public class OrderPrintService : IOrderPrintService
             for (var index = 0; index < order.Items.Count; index++)
             {
                 sb.Append(ApplyStyle(styles.CashierItemLine));
-                ReceiptComposer.AppendCashierItemLines(sb, order.Items[index], depth: 0, spacing, labels, currency: currency);
+                ReceiptComposer.AppendCashierItemLines(sb, order.Items[index], depth: 0, spacing, labels, currency: currency,
+                    includeVariations: config.PrintVariationsOnCashierReceipt);
                 sb.Append(ResetStyle(styles.CashierItemLine));
                 if (index < order.Items.Count - 1)
                     ReceiptComposer.AppendProductGroupSeparator(sb, paperWidth);
@@ -734,7 +737,9 @@ public class OrderPrintService : IOrderPrintService
 
         if (order.Discount > 0)
         {
-            sb.AppendLine($"{labels.Discount} ({order.DiscountPercentage.ToString(CultureInfo.InvariantCulture)}%): -{ReceiptComposer.Money(order.Discount, currency)}");
+            var discountLabel = order.IsTableBill ? labels.Discount
+                : $"{labels.Discount} ({order.DiscountPercentage.ToString(CultureInfo.InvariantCulture)}%)";
+            sb.AppendLine($"{discountLabel}: -{ReceiptComposer.Money(order.Discount, currency)}");
         }
 
         // Customer-specific discount money is SEPARATE from Discount (backend OrderPricingService:
@@ -759,6 +764,9 @@ public class OrderPrintService : IOrderPrintService
         {
             sb.AppendLine($"{UpdateReceiptComposer.SanitizeField(charge.Label)}: {ReceiptComposer.Money(charge.Amount, currency)}");
         }
+
+        if (order.BillingCreditAmount > 0)
+            sb.AppendLine($"{labels.Credit}: -{ReceiptComposer.Money(order.BillingCreditAmount, currency)}");
 
         if (order.Tip > 0)
         {
@@ -795,6 +803,11 @@ public class OrderPrintService : IOrderPrintService
             sb.AppendLine($"{labels.Due}: {ReceiptComposer.Money(order.RemainingAmount, currency)}");
             sb.Append(EscPosCommands.ExtraDarkOff);
         }
+
+        if (order.CashierBillRefundedAmount > 0)
+            sb.AppendLine($"{labels.Refunded}: {ReceiptComposer.Money(order.CashierBillRefundedAmount, currency)}");
+        if (order.CashierBillCredit > 0)
+            sb.AppendLine($"{labels.Credit}: {ReceiptComposer.Money(order.CashierBillCredit, currency)}");
 
         if (order.RemainingAmount < 0)
         {

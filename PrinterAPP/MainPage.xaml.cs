@@ -1,4 +1,4 @@
-﻿// MainPage.xaml.cs
+// MainPage.xaml.cs
 using Microsoft.Maui.Controls;
 using Microsoft.Extensions.Logging;
 using PrinterAPP.Converters;
@@ -96,6 +96,7 @@ public partial class MainPage : ContentPage
             CashierAutoPrintSwitch.IsToggled = _config.CashierAutoPrint;
             CashierPrintCopiesEntry.Text = _config.CashierPrintCopies.ToString();
             CashierPaperWidthPicker.SelectedIndex = _config.CashierPaperWidth == 80 ? 0 : 1;
+            CashierPrintVariationsSwitch.IsToggled = _config.PrintVariationsOnCashierReceipt;
             CashierPrintCustomerPhoneSwitch.IsToggled = _config.PrintCustomerPhoneOnCashierReceipt;
             CashierPrintCustomerEmailSwitch.IsToggled = _config.PrintCustomerEmailOnCashierReceipt;
             CashierPrintPreparationMinutesSwitch.IsToggled = _config.PrintPreparationMinutesOnCashierReceipt;
@@ -560,6 +561,7 @@ public partial class MainPage : ContentPage
             // Cashier printer settings
             _config.CashierAutoPrint = CashierAutoPrintSwitch.IsToggled;
             _config.CashierPaperWidth = CashierPaperWidthPicker.SelectedIndex == 0 ? 80 : 58;
+            _config.PrintVariationsOnCashierReceipt = CashierPrintVariationsSwitch.IsToggled;
             _config.PrintCustomerPhoneOnCashierReceipt = CashierPrintCustomerPhoneSwitch.IsToggled;
             _config.PrintCustomerEmailOnCashierReceipt = CashierPrintCustomerEmailSwitch.IsToggled;
             _config.PrintPreparationMinutesOnCashierReceipt = CashierPrintPreparationMinutesSwitch.IsToggled;
@@ -713,7 +715,8 @@ public partial class MainPage : ContentPage
                 CashierAutoPrintSwitch.IsToggled = _config.CashierAutoPrint;
                 CashierPrintCopiesEntry.Text = _config.CashierPrintCopies.ToString();
                 CashierPaperWidthPicker.SelectedIndex = _config.CashierPaperWidth == 80 ? 0 : 1;
-                CashierPrintCustomerPhoneSwitch.IsToggled = _config.PrintCustomerPhoneOnCashierReceipt;
+                CashierPrintVariationsSwitch.IsToggled = _config.PrintVariationsOnCashierReceipt;
+            CashierPrintCustomerPhoneSwitch.IsToggled = _config.PrintCustomerPhoneOnCashierReceipt;
                 CashierPrintCustomerEmailSwitch.IsToggled = _config.PrintCustomerEmailOnCashierReceipt;
                 CashierPrintPreparationMinutesSwitch.IsToggled = _config.PrintPreparationMinutesOnCashierReceipt;
                 CashierPrintExpectedReadyAtSwitch.IsToggled = _config.PrintExpectedReadyAtOnCashierReceipt;

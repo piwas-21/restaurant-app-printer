@@ -1,4 +1,4 @@
-﻿<?xml version="1.0" encoding="utf-8" ?>
+<?xml version="1.0" encoding="utf-8" ?>
 <ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui"
              xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml"
              x:Class="PrinterAPP.MainPage">
@@ -184,6 +184,10 @@
                                Margin="10,0,0,0"/>
                     </Grid>
 
+                    <HorizontalStackLayout Spacing="12">
+                        <Label Text="Include selected variations on cashier bills" VerticalOptions="Center" />
+                        <Switch x:Name="CashierPrintVariationsSwitch" />
+                    </HorizontalStackLayout>
                     <Label Text="Cashier receipt details"
                            FontSize="14"
                            FontAttributes="Bold"

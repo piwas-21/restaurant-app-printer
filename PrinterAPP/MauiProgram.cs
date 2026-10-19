@@ -1,4 +1,4 @@
-﻿using System.Reflection;
+using System.Reflection;
 using Microsoft.Extensions.Logging;
 using PrinterAPP.Services;
 using PrinterAPP.ViewModels;
@@ -100,6 +100,10 @@ namespace PrinterAPP
             // Headless order path (feed → print → history → ack). Lives outside the UI so it keeps
             // running with no page or Activity — on Android it is driven by a foreground service, and
             // after a reboot there is no UI at all. See ADR-007.
+            builder.Services.AddSingleton<ICashierPrintJobClient>(sp => new CashierPrintJobClient(
+                new HttpClient { Timeout = System.Threading.Timeout.InfiniteTimeSpan },
+                sp.GetRequiredService<IPrinterService>(), sp.GetRequiredService<IOrderPrintService>(),
+                sp.GetRequiredService<IDeviceIdentityService>(), sp.GetRequiredService<ILogger<CashierPrintJobClient>>()));
             builder.Services.AddSingleton<IOrderPipeline, OrderPipeline>();
             // Restarts a feed that died or went quiet. Started by IBackgroundRunner, not by the
             // pipeline — it depends on IOrderPipeline, so the pipeline cannot own it (Phase 9e).

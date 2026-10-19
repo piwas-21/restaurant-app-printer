@@ -45,14 +45,14 @@ public class ReceiptComposerTests
     };
 
     [Fact]
-    public void Cashier_prints_selected_removed_and_extra_ingredients()
+    public void Cashier_omits_selected_removed_and_extra_ingredients()
     {
         var ticket = ComposeCashier(CustomizedKebab());
 
-        Assert.Contains("+ Bread", ticket);          // selected at quantity one — the complaint
-        Assert.Contains("NO Onion", ticket);       // removed
-        Assert.Contains("+ 3x Hot Sauce", ticket); // quantity above one
-        Assert.Contains("+ Garlic", ticket);
+        Assert.DoesNotContain("+ Bread", ticket);          // selected at quantity one — the complaint
+        Assert.DoesNotContain("NO Onion", ticket);       // removed
+        Assert.DoesNotContain("+ 3x Hot Sauce", ticket); // quantity above one
+        Assert.DoesNotContain("+ Garlic", ticket);
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public class ReceiptComposerTests
             ],
         };
 
-        Assert.Contains("+ Cheddar", ComposeCashier(item));
+        Assert.DoesNotContain("Cheddar", ComposeCashier(item));
         Assert.Contains("+ Cheddar", ComposeKitchen(item));
     }
 
@@ -137,7 +137,7 @@ public class ReceiptComposerTests
         var cashier = ComposeCashier(item);
         var kitchen = ComposeKitchen(item);
 
-        Assert.Contains("NO Onion", cashier);
+        Assert.DoesNotContain("Onion", cashier);
         Assert.Contains("NO Onion", kitchen);
         Assert.DoesNotContain("EXTRA Onion", cashier);
         Assert.DoesNotContain("EXTRA Onion", kitchen);
@@ -245,7 +245,7 @@ public class ReceiptComposerTests
         var cashier = ComposeCashier(item);
         var kitchen = ComposeKitchen(item);
 
-        Assert.Equal(1, cashier.Split("French Fries", StringSplitOptions.None).Length - 1);
+        Assert.DoesNotContain("French Fries", cashier);
         Assert.Equal(1, kitchen.Split("French Fries", StringSplitOptions.None).Length - 1);
         Assert.DoesNotContain("NOTE:", kitchen);
 
@@ -318,7 +318,7 @@ public class ReceiptComposerTests
         var ticket = ComposeCashier(item);
 
         Assert.Contains("1x Pizza", ticket);
-        Assert.Contains("+ Mushrooms", ticket);
+        Assert.DoesNotContain("Mushrooms", ticket);
     }
 
     /// <summary>
@@ -448,7 +448,7 @@ public class ReceiptComposerTests
         Assert.Contains("NOTIZ: scharf", ticket);
 
         var cashier = ComposeCashier(item, De);
-        Assert.Contains("OHNE Zwiebeln", cashier);
+        Assert.DoesNotContain("Zwiebeln", cashier);
         Assert.DoesNotContain("scharf", cashier);
     }
 

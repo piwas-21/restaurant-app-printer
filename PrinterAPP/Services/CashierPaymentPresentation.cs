@@ -8,6 +8,8 @@ internal static class CashierPaymentPresentation
     {
         if (string.Equals(order.PaymentStatus, "Refunded", StringComparison.OrdinalIgnoreCase))
             return labels.Refunded;
+        if (string.Equals(order.PaymentStatus, "PartiallyRefunded", StringComparison.OrdinalIgnoreCase))
+            return $"{labels.Paid} / {labels.Refunded}";
         if (string.Equals(order.PaymentStatus, "Overpaid", StringComparison.OrdinalIgnoreCase))
             return labels.Overpaid;
         if (order.IsFullyPaid || (order.TotalPaid > 0 && order.RemainingAmount <= 0))

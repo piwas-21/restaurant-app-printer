@@ -216,7 +216,8 @@ public sealed class OfferFamilyPrintContractTests
         Assert.Equal(variationId, nuggets.ProductVariationId);
         Assert.Equal("12 pièces", nuggets.VariationName);
         Assert.Contains("EUR 13.00", cashier);
-        Assert.Contains("1x Nuggets (12 pièces)", cashier);
+        Assert.Contains("1x Nuggets", cashier);
+        Assert.DoesNotContain("12 pièces", cashier);
         Assert.Contains("1x Nuggets", kitchen);
         Assert.Contains("- 12 pièces", kitchen);
         Assert.Contains("1x Cola", cashier);
