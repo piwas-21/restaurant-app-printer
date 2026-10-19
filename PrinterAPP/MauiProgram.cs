@@ -101,7 +101,7 @@ namespace PrinterAPP
             // running with no page or Activity — on Android it is driven by a foreground service, and
             // after a reboot there is no UI at all. See ADR-007.
             builder.Services.AddSingleton<ICashierPrintJobClient>(sp => new CashierPrintJobClient(
-                new HttpClient { Timeout = TimeSpan.FromSeconds(15) },
+                new HttpClient { Timeout = System.Threading.Timeout.InfiniteTimeSpan },
                 sp.GetRequiredService<IPrinterService>(), sp.GetRequiredService<IOrderPrintService>(),
                 sp.GetRequiredService<IDeviceIdentityService>(), sp.GetRequiredService<ILogger<CashierPrintJobClient>>()));
             builder.Services.AddSingleton<IOrderPipeline, OrderPipeline>();
