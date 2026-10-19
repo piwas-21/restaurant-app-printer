@@ -5,7 +5,7 @@ namespace PrinterAPP.Services;
 
 public static partial class ReceiptComposer
 {
-    private sealed record CashierPrintContext(PrintLabels Labels, int Spacing, string? Currency);
+    private sealed record CashierPrintContext(PrintLabels Labels, int Spacing, string? Currency, bool IncludeVariations);
 
     private sealed record KitchenPrintContext(PrintLabels Labels, PrintStyleSettings? Styles);
 
@@ -14,18 +14,18 @@ public static partial class ReceiptComposer
 
     public static void AppendCashierItemLines(
         StringBuilder sb, OrderItem item, int depth, int spacing, PrintLabels labels, int parentQuantity = 1,
-        string? currency = null)
+        string? currency = null, bool includeVariations = false)
     {
         if (depth == 0)
             item = ReceiptCompositionProjection.BuildSingle(item);
-        AppendCashierProjected(sb, item, depth, new CashierPrintContext(labels, spacing, currency), parentQuantity);
+        AppendCashierProjected(sb, item, depth, new CashierPrintContext(labels, spacing, currency, includeVariations), parentQuantity);
     }
 
     private static void AppendCashierProjected(
         StringBuilder sb, OrderItem item, int depth, CashierPrintContext context, int parentQuantity)
     {
         var indent = new string(' ', depth * 3);
-        var name = string.IsNullOrWhiteSpace(item.VariationName)
+        var name = !context.IncludeVariations || string.IsNullOrWhiteSpace(item.VariationName)
             ? item.ProductName : $"{item.ProductName} ({item.VariationName})";
 
         if (depth == 0)
@@ -42,8 +42,6 @@ public static partial class ReceiptComposer
         }
 
         AppendCashierChildren(sb, item, depth, context, requiredChoicesOnly: true);
-        AppendDetailLines(sb, item, indent,
-            new DetailLinesContext(context.Labels, item.Quantity, null, false, IncludeNotes: false));
         AppendCashierChildren(sb, item, depth, context, requiredChoicesOnly: false);
     }
 

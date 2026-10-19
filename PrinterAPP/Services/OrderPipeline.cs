@@ -7,6 +7,7 @@ namespace PrinterAPP.Services;
 /// <inheritdoc cref="IOrderPipeline"/>
 public partial class OrderPipeline : IOrderPipeline
 {
+    private readonly ICashierPrintJobClient? _cashierPrintJobs;
     private readonly IEventStreamingService _feed;
     private readonly IOrderPrintService _orderPrintService;
     private readonly IOrderHistoryService _orderHistoryService;
@@ -60,9 +61,11 @@ public partial class OrderPipeline : IOrderPipeline
         IRequestLogService requestLogService,
         ILogger<OrderPipeline> logger,
         IPrintUpdateJobStore? updateJobStore = null,
-        IPrinterUpdateAuthorizationService? updateAuthorizationService = null)
+        IPrinterUpdateAuthorizationService? updateAuthorizationService = null,
+        ICashierPrintJobClient? cashierPrintJobs = null)
     {
         _feed = feed;
+        _cashierPrintJobs = cashierPrintJobs;
         _orderPrintService = orderPrintService;
         _orderHistoryService = orderHistoryService;
         _printAckOutbox = printAckOutbox;

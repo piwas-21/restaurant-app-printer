@@ -64,14 +64,13 @@ public sealed class ReceiptProjectionGoldenTests
             Assert.DoesNotContain("independent configurations", cashier);
             Assert.Contains("1x Still Water (each)", cashier);
             Assert.Contains("4x Kebab", cashier);
-            Assert.Contains("2x Steak (Medium)", cashier);
+            Assert.Contains("2x Steak", cashier);
+            Assert.DoesNotContain("Medium", cashier);
             Assert.Contains("+ 3x Extra Lamb", cashier);
             Assert.DoesNotContain("8x Kebab", cashier);
             Assert.Contains("3x Legacy Dip", cashier);
-            Assert.Equal(2, Count(cashier, "Cheddar"));
-            Assert.True(cashier.IndexOf("+ Cheddar", StringComparison.Ordinal)
-                < cashier.IndexOf("+ 2x Cheddar", StringComparison.Ordinal));
-            Assert.Contains("NO Onion", cashier);
+            Assert.DoesNotContain("Cheddar", cashier);
+            Assert.DoesNotContain("Onion", cashier);
             Assert.DoesNotContain("Taco selection", cashier);
             Assert.DoesNotContain("+ 1x Taco", cashier);
             Assert.DoesNotContain("Chili", cashier);
@@ -79,10 +78,6 @@ public sealed class ReceiptProjectionGoldenTests
                 < cashier.IndexOf("Cola", StringComparison.Ordinal));
             Assert.True(cashier.IndexOf("Harissa", StringComparison.Ordinal)
                 < cashier.IndexOf("Cola", StringComparison.Ordinal));
-            Assert.True(cashier.IndexOf("Cheddar", StringComparison.Ordinal)
-                < cashier.IndexOf("Harissa", StringComparison.Ordinal));
-            Assert.True(cashier.IndexOf("4x Kebab", StringComparison.Ordinal)
-                < cashier.IndexOf("Cheddar", StringComparison.Ordinal));
             Assert.True(cashier.IndexOf("Legacy Dip", StringComparison.Ordinal)
                 < cashier.IndexOf("Fries", StringComparison.Ordinal));
             Assert.Equal(1, Count(cashier, "EUR 28.00"));
@@ -129,7 +124,7 @@ public sealed class ReceiptProjectionGoldenTests
         Assert.Null(parsed.ProjectionVersion);
         Assert.Contains("2x Fries", receipt);
         Assert.DoesNotContain("6x Fries", receipt);
-        Assert.Contains("+ Cheddar", receipt);
+        Assert.DoesNotContain("Cheddar", receipt);
         Assert.DoesNotContain("Recorded; scope unknown", receipt);
     }
 
@@ -158,8 +153,8 @@ public sealed class ReceiptProjectionGoldenTests
         var receipt = ComposeCashier([root], 58);
         Assert.Contains("2x Dip", receipt);
         Assert.DoesNotContain("6x Dip", receipt);
-        Assert.Contains("NO Onion", receipt);
-        Assert.Contains("+ Cheddar", receipt);
+        Assert.DoesNotContain("Onion", receipt);
+        Assert.DoesNotContain("Cheddar", receipt);
         Assert.DoesNotContain("Recorded", receipt);
         Assert.DoesNotContain("scope unknown", receipt);
     }

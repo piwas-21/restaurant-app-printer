@@ -99,8 +99,8 @@ public sealed class BackendPrinterFeedContractTests
 
             Assert.Equal(3, Count(cashier, "Menu Deal"));
             Assert.Equal(3, Count(kitchen, "Menu Deal"));
-            Assert.Contains("NO Cheese", cashier);
-            Assert.Contains("+ 2x Chili", cashier);
+            Assert.DoesNotContain("Cheese", cashier);
+            Assert.DoesNotContain("Chili", cashier);
             Assert.DoesNotContain("Taco selection", cashier);
             Assert.DoesNotContain("12x Beef", cashier);
             Assert.DoesNotContain("4x Side Two", cashier);
