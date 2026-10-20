@@ -760,7 +760,7 @@ public class OrderPrintService : IOrderPrintService
             sb.AppendLine($"{labels.DeliveryFee}: {ReceiptComposer.Money(order.DeliveryFee, currency)}");
         }
 
-        foreach (var charge in order.BillCharges.Where(charge => charge.Amount > 0))
+        foreach (var charge in order.BillCharges.Where(charge => charge.Amount != 0))
         {
             sb.AppendLine($"{UpdateReceiptComposer.SanitizeField(charge.Label)}: {ReceiptComposer.Money(charge.Amount, currency)}");
         }
