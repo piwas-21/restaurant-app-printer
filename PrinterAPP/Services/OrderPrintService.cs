@@ -715,7 +715,8 @@ public class OrderPrintService : IOrderPrintService
             {
                 sb.Append(ApplyStyle(styles.CashierItemLine));
                 ReceiptComposer.AppendCashierItemLines(sb, order.Items[index], depth: 0, spacing, labels, currency: currency,
-                    includeVariations: config.PrintVariationsOnCashierReceipt);
+                    includeVariations: config.PrintVariationsOnCashierReceipt,
+                    includeIngredients: config.PrintIngredientsOnCashierReceipt);
                 sb.Append(ResetStyle(styles.CashierItemLine));
                 if (index < order.Items.Count - 1)
                     ReceiptComposer.AppendProductGroupSeparator(sb, paperWidth);

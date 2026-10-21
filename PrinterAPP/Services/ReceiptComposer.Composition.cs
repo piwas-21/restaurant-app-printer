@@ -5,7 +5,7 @@ namespace PrinterAPP.Services;
 
 public static partial class ReceiptComposer
 {
-    private sealed record CashierPrintContext(PrintLabels Labels, int Spacing, string? Currency, bool IncludeVariations);
+    private sealed record CashierPrintContext(PrintLabels Labels, int Spacing, string? Currency, bool IncludeVariations, bool IncludeIngredients);
 
     private sealed record KitchenPrintContext(PrintLabels Labels, PrintStyleSettings? Styles);
 
@@ -14,11 +14,11 @@ public static partial class ReceiptComposer
 
     public static void AppendCashierItemLines(
         StringBuilder sb, OrderItem item, int depth, int spacing, PrintLabels labels,
-        string? currency = null, bool includeVariations = false)
+        string? currency = null, bool includeVariations = false, bool includeIngredients = false)
     {
         if (depth == 0)
             item = ReceiptCompositionProjection.BuildSingle(item);
-        AppendCashierProjected(sb, item, depth, new CashierPrintContext(labels, spacing, currency, includeVariations), parentQuantity: 1);
+        AppendCashierProjected(sb, item, depth, new CashierPrintContext(labels, spacing, currency, includeVariations, includeIngredients), parentQuantity: 1);
     }
 
     private static void AppendCashierProjected(
@@ -42,6 +42,9 @@ public static partial class ReceiptComposer
         }
 
         AppendCashierChildren(sb, item, depth, context, requiredChoicesOnly: true);
+        if (context.IncludeIngredients)
+            AppendDetailLines(sb, item, indent,
+                new DetailLinesContext(context.Labels, item.Quantity, null, false, IncludeNotes: false));
         AppendCashierChildren(sb, item, depth, context, requiredChoicesOnly: false);
     }
 
@@ -49,7 +52,8 @@ public static partial class ReceiptComposer
         StringBuilder sb, OrderItem item, int depth, CashierPrintContext context, bool requiredChoicesOnly)
     {
         var children = ReceiptItemDisplay.OrderItemsForDisplay(item.SideItems)
-            .Where(child => child.CompositionRole is not (CompositionRole.Ingredient or CompositionRole.Sauce))
+            .Where(child => context.IncludeIngredients
+                || child.CompositionRole is not (CompositionRole.Ingredient or CompositionRole.Sauce))
             .Where(child => (child.CompositionRole == CompositionRole.RequiredChoice) == requiredChoicesOnly)
             .ToList();
         foreach (var child in children)
