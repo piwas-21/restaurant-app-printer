@@ -188,6 +188,11 @@
                         <Label Text="Include selected variations on cashier bills" VerticalOptions="Center" />
                         <Switch x:Name="CashierPrintVariationsSwitch" />
                     </HorizontalStackLayout>
+                    <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                        <Switch x:Name="CashierPrintIngredientsSwitch" VerticalOptions="Center" />
+                        <Label Text="Include selected/removed ingredients and sauces on cashier bills"
+                               Grid.Column="1" VerticalOptions="Center" />
+                    </Grid>
                     <Label Text="Cashier receipt details"
                            FontSize="14"
                            FontAttributes="Bold"

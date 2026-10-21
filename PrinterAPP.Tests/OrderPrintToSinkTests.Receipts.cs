@@ -10,6 +10,26 @@ public partial class OrderPrintToSinkTests
     private static readonly string CustomerEmailFixture = File.ReadAllText(
         Path.Combine(AppContext.BaseDirectory, "Fixtures", "receipt-customer-email.txt")).Trim();
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Cashier_ingredient_switch_controls_bytes_sent_to_printer(bool enabled)
+    {
+        using var sink = new Sink();
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var order = MinimalOrder();
+        order.Items[0].IngredientCustomizations = [new() { IngredientName = "Onion", IsRemoved = true },
+            new() { IngredientName = "Garlic sauce", Quantity = 1, IsAddOn = true }];
+        order.Items[0].SpecialInstructions = "Kitchen only";
+        var (ok, receipt) = await PrintToSinkAsync(order, sink, cancellation.Token,
+            config => config.PrintIngredientsOnCashierReceipt = enabled);
+        Assert.True(ok);
+        Assert.Equal(enabled, receipt.Contains("Onion", StringComparison.Ordinal));
+        Assert.Equal(enabled, receipt.Contains("Garlic sauce", StringComparison.Ordinal));
+        Assert.DoesNotContain("Kitchen only", receipt);
+        Assert.Contains("12.50", receipt);
+    }
+
     [Fact]
     public async Task Cashier_receipt_sends_daily_number_and_enabled_contact_and_preparation_details_to_sink()
     {
