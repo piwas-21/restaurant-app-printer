@@ -33,7 +33,7 @@ A Windows and Android application built with **.NET MAUI** that handles automate
 
 On first launch, you must configure the application:
 
-1. **API URL:** `https://rumi-restaurant.fly.dev` (or your local backend URL).
+1. **API URL:** Use this tenant’s current HTTPS backend base URL, matching the existing installation configuration.
 2. **Printers:** Select the Windows printer queues for:
    - **Cashier Printer** (Main receipt printer)
    - **Kitchen Printer** (Back of house)
@@ -43,8 +43,8 @@ On first launch, you must configure the application:
 ## 🛠️ Development
 
 ### Prerequisites
-- **Visual Studio 2022** (17.8+)
-- **.NET 9 SDK**
+- **Windows** for the Windows target
+- **.NET 10 SDK**
 - **MAUI Workload** (`dotnet workload install maui`)
 
 ### Building Locally
@@ -54,7 +54,7 @@ On first launch, you must configure the application:
 dotnet restore
 
 # Run in Debug mode
-dotnet build -c Debug -t:Run -f net9.0-windows10.0.19041.0
+dotnet build -c Debug -t:Run -f net10.0-windows10.0.19041.0
 ```
 
 ### Publishing
@@ -62,7 +62,7 @@ dotnet build -c Debug -t:Run -f net9.0-windows10.0.19041.0
 To build the standalone `.exe`:
 
 ```powershell
-dotnet publish PrinterAPP/PrinterAPP.csproj -c Release -f net9.0-windows10.0.19041.0 -r win-x64 --self-contained -p:PublishSingleFile=true
+dotnet publish PrinterAPP/PrinterAPP.csproj -c Release -f net10.0-windows10.0.19041.0 -r win-x64 --self-contained -p:PublishSingleFile=true
 ```
 
 ## 📦 Release Workflow
