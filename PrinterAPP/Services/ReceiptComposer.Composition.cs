@@ -14,11 +14,13 @@ public static partial class ReceiptComposer
 
     public static void AppendCashierItemLines(
         StringBuilder sb, OrderItem item, int depth, int spacing, PrintLabels labels,
-        string? currency = null, bool includeVariations = false, bool includeIngredients = false)
+        string? currency = null, PrinterConfiguration? config = null)
     {
         if (depth == 0)
             item = ReceiptCompositionProjection.BuildSingle(item);
-        AppendCashierProjected(sb, item, depth, new CashierPrintContext(labels, spacing, currency, includeVariations, includeIngredients), parentQuantity: 1);
+        var context = new CashierPrintContext(labels, spacing, currency,
+            config?.PrintVariationsOnCashierReceipt ?? false, config?.PrintIngredientsOnCashierReceipt ?? false);
+        AppendCashierProjected(sb, item, depth, context, parentQuantity: 1);
     }
 
     private static void AppendCashierProjected(

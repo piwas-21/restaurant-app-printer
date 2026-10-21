@@ -36,7 +36,7 @@ public class CashierReceiptPreferenceTests
         };
         var output = new StringBuilder();
         ReceiptComposer.AppendCashierItemLines(output, item, 0, 48, PrintLabelCatalog.For("en"),
-            currency: "EUR", includeIngredients: enabled);
+            currency: "EUR", config: new PrinterConfiguration { PrintIngredientsOnCashierReceipt = enabled });
         var bill = output.ToString();
         Assert.Equal(enabled, bill.Contains("NO Onion", StringComparison.Ordinal));
         Assert.Equal(enabled, bill.Contains("Garlic sauce", StringComparison.Ordinal));
@@ -69,7 +69,7 @@ public class CashierReceiptPreferenceTests
                 IngredientCustomizations = [new() { IngredientName = "Sugar", IsRemoved = true }] }] };
         var output = new StringBuilder();
         ReceiptComposer.AppendCashierItemLines(output, item, 0, 48, PrintLabelCatalog.For("fr"),
-            currency: "CHF", includeVariations: variations);
+            currency: "CHF", config: new PrinterConfiguration { PrintVariationsOnCashierReceipt = variations });
         var bill = output.ToString();
         Assert.Equal(variations, bill.Contains("(Frites)", StringComparison.Ordinal));
         Assert.Equal(variations, bill.Contains("(Medium)", StringComparison.Ordinal));
