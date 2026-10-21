@@ -22,6 +22,46 @@ public class CashierReceiptPreferenceTests
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
+    public void Ingredient_preference_covers_selected_removed_and_nested_sauce_details(bool enabled)
+    {
+        var item = new OrderItem
+        {
+            ProductName = "Menu", Quantity = 2, ItemTotal = 18,
+            SpecialInstructions = "Keep this kitchen note private",
+            IngredientCustomizations = [new() { IngredientName = "Onion", IsRemoved = true },
+                new() { IngredientName = "Unselected extra", IsAddOn = true, Quantity = 0 }],
+            SideItems = [new() { ProductName = "Kebab", Quantity = 2, SideItems = [
+                new() { ProductName = "Garlic sauce", CompositionRole = CompositionRole.Sauce, Quantity = 1 }],
+                IngredientCustomizations = [new() { IngredientName = "Chilli", IsAddOn = true, Quantity = 1 }] }]
+        };
+        var output = new StringBuilder();
+        ReceiptComposer.AppendCashierItemLines(output, item, 0, 48, PrintLabelCatalog.For("en"),
+            currency: "EUR", config: new PrinterConfiguration { PrintIngredientsOnCashierReceipt = enabled });
+        var bill = output.ToString();
+        Assert.Equal(enabled, bill.Contains("NO Onion", StringComparison.Ordinal));
+        Assert.Equal(enabled, bill.Contains("Garlic sauce", StringComparison.Ordinal));
+        Assert.Equal(enabled, bill.Contains("Chilli", StringComparison.Ordinal));
+        Assert.DoesNotContain("Unselected extra", bill);
+        Assert.DoesNotContain("kitchen note", bill);
+        Assert.Contains("EUR 18.00", bill);
+        Assert.Contains("Kebab", bill);
+        Assert.Equal(2, item.Quantity);
+    }
+
+    [Fact]
+    public void Ingredient_preference_defaults_off_for_existing_configurations_and_round_trips()
+    {
+        var saved = System.Text.Json.JsonSerializer.Deserialize<PrinterConfiguration>("{}")!;
+        Assert.False(saved.PrintIngredientsOnCashierReceipt);
+        saved.PrintIngredientsOnCashierReceipt = true;
+        var reloaded = System.Text.Json.JsonSerializer.Deserialize<PrinterConfiguration>(
+            System.Text.Json.JsonSerializer.Serialize(saved))!;
+        Assert.True(reloaded.PrintIngredientsOnCashierReceipt);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
     public void Variation_preference_applies_to_root_and_nested_lines_without_ingredients(bool variations)
     {
         var item = new OrderItem { ProductName = "Kofte Grill", VariationName = "Frites", Quantity = 1,
@@ -29,7 +69,7 @@ public class CashierReceiptPreferenceTests
                 IngredientCustomizations = [new() { IngredientName = "Sugar", IsRemoved = true }] }] };
         var output = new StringBuilder();
         ReceiptComposer.AppendCashierItemLines(output, item, 0, 48, PrintLabelCatalog.For("fr"),
-            currency: "CHF", includeVariations: variations);
+            currency: "CHF", config: new PrinterConfiguration { PrintVariationsOnCashierReceipt = variations });
         var bill = output.ToString();
         Assert.Equal(variations, bill.Contains("(Frites)", StringComparison.Ordinal));
         Assert.Equal(variations, bill.Contains("(Medium)", StringComparison.Ordinal));

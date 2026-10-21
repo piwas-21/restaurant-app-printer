@@ -14,7 +14,8 @@ A Windows and Android application built with **.NET MAUI** that handles automate
 - **Smart Formatting:**
   - **Kitchen Tickets:** Daily order number, table, order time, station, dishes, quantities and preparation instructions. Amendment tickets retain the human source-order reference in the order-info style.
   - **Kitchen Corrections:** ADD, CANCEL, CHANGE and instruction changes show only affected preparation; replacement references use the separate ticket number. Copies retain a prominent duplicate warning. Internal UUIDs and job/account revisions are never printed on kitchen tickets; their routing, acknowledgement and history records retain those identities.
-  - **Ingredient Customizations:** Clearly marks added/removed ingredients (e.g., `✘ NO Onion`, `+ EXTRA Cheese`).
+  - **Ingredient Customizations:** Kitchen tickets mark added/removed ingredients. Cashier bills can include selected/removed ingredients and sauces with **Include selected/removed ingredients and sauces on cashier bills** in Cashier settings. This preference is saved per printer installation and defaults off; variations have their own switch.
+  - **Current cashier bills:** Dashboard requests include all current rounds and committed amendments, including updated selections and removed quantities. The backend must support current-ticket cashier snapshots; existing queued bills retain their original snapshot.
   - **Turish Character Support:** Correctly handles Turkish characters (e.g., `İ`, `Ş`, `Ğ`) on thermal printers.
 - **Auto-Update System:**
   - Checks GitHub Releases for updates on startup and via manual check.

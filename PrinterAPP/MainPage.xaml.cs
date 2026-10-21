@@ -96,6 +96,7 @@ public partial class MainPage : ContentPage
             CashierAutoPrintSwitch.IsToggled = _config.CashierAutoPrint;
             CashierPrintCopiesEntry.Text = _config.CashierPrintCopies.ToString();
             CashierPaperWidthPicker.SelectedIndex = _config.CashierPaperWidth == 80 ? 0 : 1;
+            CashierPrintIngredientsSwitch.IsToggled = _config.PrintIngredientsOnCashierReceipt;
             CashierPrintVariationsSwitch.IsToggled = _config.PrintVariationsOnCashierReceipt;
             CashierPrintCustomerPhoneSwitch.IsToggled = _config.PrintCustomerPhoneOnCashierReceipt;
             CashierPrintCustomerEmailSwitch.IsToggled = _config.PrintCustomerEmailOnCashierReceipt;
@@ -561,6 +562,7 @@ public partial class MainPage : ContentPage
             // Cashier printer settings
             _config.CashierAutoPrint = CashierAutoPrintSwitch.IsToggled;
             _config.CashierPaperWidth = CashierPaperWidthPicker.SelectedIndex == 0 ? 80 : 58;
+            _config.PrintIngredientsOnCashierReceipt = CashierPrintIngredientsSwitch.IsToggled;
             _config.PrintVariationsOnCashierReceipt = CashierPrintVariationsSwitch.IsToggled;
             _config.PrintCustomerPhoneOnCashierReceipt = CashierPrintCustomerPhoneSwitch.IsToggled;
             _config.PrintCustomerEmailOnCashierReceipt = CashierPrintCustomerEmailSwitch.IsToggled;
@@ -715,6 +717,7 @@ public partial class MainPage : ContentPage
                 CashierAutoPrintSwitch.IsToggled = _config.CashierAutoPrint;
                 CashierPrintCopiesEntry.Text = _config.CashierPrintCopies.ToString();
                 CashierPaperWidthPicker.SelectedIndex = _config.CashierPaperWidth == 80 ? 0 : 1;
+                CashierPrintIngredientsSwitch.IsToggled = _config.PrintIngredientsOnCashierReceipt;
                 CashierPrintVariationsSwitch.IsToggled = _config.PrintVariationsOnCashierReceipt;
             CashierPrintCustomerPhoneSwitch.IsToggled = _config.PrintCustomerPhoneOnCashierReceipt;
                 CashierPrintCustomerEmailSwitch.IsToggled = _config.PrintCustomerEmailOnCashierReceipt;
