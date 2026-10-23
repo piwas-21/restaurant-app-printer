@@ -20,14 +20,40 @@ public partial class OrderPrintToSinkTests
         var order = MinimalOrder();
         order.Items[0].IngredientCustomizations = [new() { IngredientName = "Onion", IsRemoved = true },
             new() { IngredientName = "Garlic sauce", Quantity = 1, IsAddOn = true }];
-        order.Items[0].SpecialInstructions = "Kitchen only";
+        order.Items[0].SpecialInstructions = "Pain";
         var (ok, receipt) = await PrintToSinkAsync(order, sink, cancellation.Token,
             config => config.PrintIngredientsOnCashierReceipt = enabled);
         Assert.True(ok);
         Assert.Equal(enabled, receipt.Contains("Onion", StringComparison.Ordinal));
         Assert.Equal(enabled, receipt.Contains("Garlic sauce", StringComparison.Ordinal));
-        Assert.DoesNotContain("Kitchen only", receipt);
+        Assert.Contains("NOTE: Pain", receipt);
         Assert.Contains("12.50", receipt);
+    }
+
+    [Theory]
+    [InlineData("Cash", "Espèces")]
+    [InlineData("CreditCard", "CARTE AU RESTAURANT")]
+    public async Task French_cashier_receipt_localizes_wire_values_and_preserves_bread_requests(string method, string expected)
+    {
+        using var sink = new Sink();
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var order = MinimalOrder();
+        order.Type = "Takeaway";
+        order.CustomerName = "Test";
+        order.Items[0].SpecialInstructions = "Pain";
+        order.Items[0].SideItems = [new() { ProductName = "Assiette", Quantity = 1, SpecialInstructions = "Pain à part" }];
+        order.Payments = [new() { PaymentMethod = method, Status = "Pending" }];
+        var (ok, receipt) = await PrintToSinkAsync(order, sink, cancellation.Token,
+            config => config.PrintLanguage = "fr");
+        Assert.True(ok);
+        Assert.Contains("Type: À emporter", receipt);
+        Assert.Contains("Client: Test", receipt);
+        Assert.Contains($"{expected} (En attente)", receipt);
+        Assert.Contains("REMARQUE: Pain", receipt);
+        Assert.Contains("REMARQUE: Pain à part", receipt);
+        Assert.DoesNotContain("Takeaway", receipt);
+        Assert.DoesNotContain("Pending", receipt);
+        Assert.DoesNotContain("Cash", receipt);
     }
 
     [Fact]

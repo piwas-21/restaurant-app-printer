@@ -831,7 +831,7 @@ public class OrderPrintService : IOrderPrintService
                     : $"{paymentLabel} *{payment.CardLastFourDigits}";
                 if (!CashierPaymentPresentation.IsCaptured(payment))
                 {
-                    sb.AppendLine($"{method} ({payment.Status})");
+                    sb.AppendLine($"{method} ({labels.PaymentStatusLabel(payment.Status)})");
                     continue;
                 }
                 var collected = payment.Amount - (payment.RefundedAmount ?? 0)

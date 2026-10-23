@@ -27,7 +27,7 @@ public class CashierReceiptPreferenceTests
         var item = new OrderItem
         {
             ProductName = "Menu", Quantity = 2, ItemTotal = 18,
-            SpecialInstructions = "Keep this kitchen note private",
+            SpecialInstructions = "Extra bread",
             IngredientCustomizations = [new() { IngredientName = "Onion", IsRemoved = true },
                 new() { IngredientName = "Unselected extra", IsAddOn = true, Quantity = 0 }],
             SideItems = [new() { ProductName = "Kebab", Quantity = 2, SideItems = [
@@ -42,7 +42,7 @@ public class CashierReceiptPreferenceTests
         Assert.Equal(enabled, bill.Contains("Garlic sauce", StringComparison.Ordinal));
         Assert.Equal(enabled, bill.Contains("Chilli", StringComparison.Ordinal));
         Assert.DoesNotContain("Unselected extra", bill);
-        Assert.DoesNotContain("kitchen note", bill);
+        Assert.Contains("NOTE: Extra bread", bill);
         Assert.Contains("EUR 18.00", bill);
         Assert.Contains("Kebab", bill);
         Assert.Equal(2, item.Quantity);
