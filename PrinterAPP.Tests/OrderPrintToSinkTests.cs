@@ -651,7 +651,7 @@ public partial class OrderPrintToSinkTests
         Assert.Contains("Payment handled by Uber Eats", ticket); Assert.Contains(expectedTax, ticket);
         Assert.Contains("EUR 5.00", ticket); Assert.DoesNotContain("CHF", ticket);
         Assert.DoesNotContain("11.47", ticket); Assert.DoesNotContain("CARD AT RESTAURANT", ticket);
-        Assert.DoesNotContain("ALLERGY: no peanuts", ticket); Assert.DoesNotContain("TEST ONLY: no food, no courier", ticket);
+        Assert.Contains("NOTE: ALLERGY: no peanuts", ticket); Assert.DoesNotContain("TEST ONLY: no food, no courier", ticket);
     }
 
     [Fact]

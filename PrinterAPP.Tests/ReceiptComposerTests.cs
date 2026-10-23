@@ -250,7 +250,7 @@ public class ReceiptComposerTests
         Assert.DoesNotContain("NOTE:", kitchen);
 
         item.SpecialInstructions = "No salt";
-        Assert.DoesNotContain("No salt", ComposeCashier(item));
+        Assert.Contains("NOTE: No salt", ComposeCashier(item));
         Assert.Contains("No salt", ComposeKitchen(item));
     }
 
@@ -401,7 +401,7 @@ public class ReceiptComposerTests
     }
 
     [Fact]
-    public void Special_instruction_prints_only_on_the_kitchen_ticket()
+    public void Special_instruction_prints_on_cashier_and_kitchen_tickets()
     {
         var item = new OrderItem
         {
@@ -411,7 +411,7 @@ public class ReceiptComposerTests
         };
 
         Assert.Contains("NOTE: extra crispy", ComposeKitchen(item));
-        Assert.DoesNotContain("extra crispy", ComposeCashier(item));
+        Assert.Contains("NOTE: extra crispy", ComposeCashier(item));
     }
 
     [Fact]
@@ -449,7 +449,7 @@ public class ReceiptComposerTests
 
         var cashier = ComposeCashier(item, De);
         Assert.DoesNotContain("Zwiebeln", cashier);
-        Assert.DoesNotContain("scharf", cashier);
+        Assert.Contains("NOTIZ: scharf", cashier);
     }
 
     private static int CountOccurrences(string haystack, string needle)

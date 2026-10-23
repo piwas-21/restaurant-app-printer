@@ -54,14 +54,14 @@ public static class ReceiptItemDisplay
     };
 
     /// <summary>Suppresses a legacy note only when it repeats the chosen variation.</summary>
-    public static string? DisplaySpecialInstructions(OrderItem item)
+    public static string? DisplaySpecialInstructions(OrderItem item, bool variationPrinted = true)
     {
         var instructions = item.SpecialInstructions?.Trim();
         if (string.IsNullOrEmpty(instructions))
             return null;
 
         var variation = item.VariationName?.Trim();
-        return !string.IsNullOrEmpty(variation)
+        return variationPrinted && !string.IsNullOrEmpty(variation)
             && string.Equals(
                 NormalizeDisplayText(instructions), NormalizeDisplayText(variation), StringComparison.OrdinalIgnoreCase)
                 ? null
