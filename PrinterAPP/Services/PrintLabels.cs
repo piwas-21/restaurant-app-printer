@@ -48,7 +48,15 @@ public sealed record PrintLabels(
     string Credit,
     string Email,
     string Preparation,
-    string ReadyAt)
+    string ReadyAt,
+    string Cash,
+    string DebitCard,
+    string OnlinePayment,
+    string MobilePayment,
+    string BankTransfer,
+    string Pending,
+    string Processing,
+    string Failed)
 {
     /// <summary>
     /// Renders the raw <c>Order.Type</c> value the backend sends (DineIn/TakeAway/Delivery) in this
@@ -57,7 +65,7 @@ public sealed record PrintLabels(
     public string OrderType(string rawType) => rawType switch
     {
         "DineIn" => DineIn,
-        "TakeAway" => TakeAway,
+        "Takeaway" or "TakeAway" => TakeAway,
         "Delivery" => Delivery,
         _ => rawType,
     };
@@ -79,12 +87,34 @@ public sealed record PrintLabels(
             .Replace("_", string.Empty, StringComparison.Ordinal)
             .ToLowerInvariant();
 
-        var isCardPayment = normalized is "creditcard" or "card"
-            || normalized == ((int)PaymentMethodCode.CreditCard).ToString(CultureInfo.InvariantCulture);
-
-        return isCardPayment ? CardAtRestaurant
+        if (normalized == "card") return CardAtRestaurant;
+        return Enum.TryParse<PaymentMethodCode>(normalized, ignoreCase: true, out var method)
+            ? method switch
+            {
+                PaymentMethodCode.Cash => Cash,
+                PaymentMethodCode.CreditCard => CardAtRestaurant,
+                PaymentMethodCode.DebitCard => DebitCard,
+                PaymentMethodCode.OnlinePayment => OnlinePayment,
+                PaymentMethodCode.MobilePayment => MobilePayment,
+                PaymentMethodCode.BankTransfer => BankTransfer,
+                _ => rawMethod ?? string.Empty,
+            }
             : rawMethod ?? string.Empty;
     }
+
+    /// <summary>Backend PaymentStatus names and legacy wire codes; unknown statuses stay visible.</summary>
+    public string PaymentStatusLabel(string? status) => status?.Trim().ToLowerInvariant() switch
+    {
+        "pending" or "1" => Pending,
+        "processing" or "2" => Processing,
+        "completed" or "3" => Paid,
+        "failed" or "4" => Failed,
+        "refunded" or "5" => Refunded,
+        "partiallyrefunded" or "6" => $"{Paid} / {Refunded}",
+        "overpaid" or "7" => Overpaid,
+        "partiallypaid" or "8" => PartiallyPaid,
+        _ => status ?? string.Empty,
+    };
 }
 
 /// <summary>
@@ -113,6 +143,7 @@ public static class PrintLabelCatalog
         "Instructions", "ThankYou", "DineIn", "TakeAway", "Delivery", "NoItems", "PaymentTip",
         "Each", "PaymentState", "Unpaid", "PartiallyPaid", "Refunded", "Overpaid", "Credit",
         "Email", "Preparation", "ReadyAt",
+        "Cash", "DebitCard", "OnlinePayment", "MobilePayment", "BankTransfer", "Pending", "Processing", "Failed",
     ];
 
     /// <summary>
@@ -134,43 +165,50 @@ public static class PrintLabelCatalog
         "ONLINE ORDER|Type|Table|Customer|Tel|NOTES|NOTE|NO|+|Subtotal|Tax|Discount" +
         "|Customer discount|Promo|Delivery Fee|Tip|TOTAL|PAYMENT|CARD AT RESTAURANT|PAID|DUE|DELIVERY TO" +
         "|Instructions|Thank you for your visit!|Dine-in|Takeaway|Delivery|(No items in order)|Additional tip" +
-        "|each|PAYMENT STATUS|UNPAID|PARTIALLY PAID|REFUNDED|OVERPAID|CREDIT|Email|Prep|Ready at");
+        "|each|PAYMENT STATUS|UNPAID|PARTIALLY PAID|REFUNDED|OVERPAID|CREDIT|Email|Prep|Ready at" +
+        "|Cash|Debit card|Online payment|Mobile payment|Bank transfer|Pending|Processing|Failed");
 
     public static readonly PrintLabels German = Parse(
         "ONLINE-BESTELLUNG|Typ|Tisch|Kunde|Tel|NOTIZEN|NOTIZ|OHNE|+|Zwischensumme|MwSt|Rabatt" +
         "|Kundenrabatt|Promo|Liefergebühr|Trinkgeld|TOTAL|ZAHLUNG|KARTENZAHLUNG IM RESTAURANT|BEZAHLT|OFFEN|LIEFERUNG AN" +
         "|Hinweise|Vielen Dank für Ihren Besuch!|Im Lokal|Mitnehmen|Lieferung|(Keine Artikel in der Bestellung)|Zusätzliches Trinkgeld" +
-        "|jeweils|ZAHLUNGSSTATUS|UNBEZAHLT|TEILWEISE BEZAHLT|ERSTATTET|ÜBERZAHLT|GUTHABEN|E-Mail|Prep.|Fertig um");
+        "|jeweils|ZAHLUNGSSTATUS|UNBEZAHLT|TEILWEISE BEZAHLT|ERSTATTET|ÜBERZAHLT|GUTHABEN|E-Mail|Prep.|Fertig um" +
+        "|Bar|Debitkarte|Onlinezahlung|Mobile Zahlung|Überweisung|Ausstehend|In Bearbeitung|Fehlgeschlagen");
 
     public static readonly PrintLabels French = Parse(
         "COMMANDE EN LIGNE|Type|Table|Client|Tél|REMARQUES|REMARQUE|SANS|+|Sous-total|TVA|Remise" +
         "|Remise client|Promo|Frais de livraison|Pourboire|TOTAL|PAIEMENT|CARTE AU RESTAURANT|PAYÉ|DÛ|LIVRAISON À" +
         "|Instructions|Merci de votre visite !|Sur place|À emporter|Livraison|(Aucun article dans la commande)|Pourboire supplémentaire" +
-        "|chacun|ÉTAT DU PAIEMENT|NON PAYÉ|PARTIELLEMENT PAYÉ|REMBOURSÉ|TROP-PAYÉ|AVOIR|E-mail|Prépa.|Prêt à");
+        "|chacun|ÉTAT DU PAIEMENT|NON PAYÉ|PARTIELLEMENT PAYÉ|REMBOURSÉ|TROP-PAYÉ|AVOIR|E-mail|Prépa.|Prêt à" +
+        "|Espèces|Carte de débit|Paiement en ligne|Paiement mobile|Virement bancaire|En attente|En cours|Échec");
 
     public static readonly PrintLabels Italian = Parse(
         "ORDINE ONLINE|Tipo|Tavolo|Cliente|Tel|NOTE|NOTA|SENZA|+|Subtotale|IVA|Sconto" +
         "|Sconto cliente|Promo|Costo di consegna|Mancia|TOTALE|PAGAMENTO|CARTA AL RISTORANTE|PAGATO|DA PAGARE|CONSEGNA A" +
         "|Istruzioni|Grazie per la visita!|Al tavolo|Da asporto|Consegna|(Nessun articolo nell'ordine)|Mancia aggiuntiva" +
-        "|ciascuno|STATO DEL PAGAMENTO|NON PAGATO|PAGATO PARZIALMENTE|RIMBORSATO|PAGATO IN ECCESSO|CREDITO|E-mail|Prep.|Pronto alle");
+        "|ciascuno|STATO DEL PAGAMENTO|NON PAGATO|PAGATO PARZIALMENTE|RIMBORSATO|PAGATO IN ECCESSO|CREDITO|E-mail|Prep.|Pronto alle" +
+        "|Contanti|Carta di debito|Pagamento online|Pagamento mobile|Bonifico bancario|In attesa|In elaborazione|Non riuscito");
 
     public static readonly PrintLabels Spanish = Parse(
         "PEDIDO ONLINE|Tipo|Mesa|Cliente|Tel|NOTAS|NOTA|SIN|+|Subtotal|IVA|Descuento" +
         "|Descuento cliente|Promo|Gastos de envío|Propina|TOTAL|PAGO|TARJETA EN EL RESTAURANTE|PAGADO|PENDIENTE|ENTREGAR EN" +
         "|Indicaciones|¡Gracias por su visita!|En el local|Para llevar|Entrega|(Sin artículos en el pedido)|Propina adicional" +
-        "|cada uno|ESTADO DEL PAGO|SIN PAGAR|PAGADO PARCIALMENTE|REEMBOLSADO|PAGADO DE MÁS|CRÉDITO|Correo|Prep.|Listo a las");
+        "|cada uno|ESTADO DEL PAGO|SIN PAGAR|PAGADO PARCIALMENTE|REEMBOLSADO|PAGADO DE MÁS|CRÉDITO|Correo|Prep.|Listo a las" +
+        "|Efectivo|Tarjeta de débito|Pago en línea|Pago móvil|Transferencia bancaria|Pendiente|En proceso|Fallido");
 
     public static readonly PrintLabels Dutch = Parse(
         "ONLINE BESTELLING|Type|Tafel|Klant|Tel|OPMERKINGEN|LET OP|ZONDER|+|Subtotaal|BTW|Korting" +
         "|Klantkorting|Promo|Bezorgkosten|Fooi|TOTAAL|BETALING|KAARTBETALING IN HET RESTAURANT|BETAALD|OPENSTAAND|BEZORGEN AAN" +
         "|Instructies|Bedankt voor uw bezoek!|Ter plaatse|Meenemen|Bezorging|(Geen artikelen in de bestelling)|Extra fooi" +
-        "|elk|BETAALSTATUS|ONBETAALD|GEDEELTELIJK BETAALD|TERUGBETAALD|TEVEEL BETAALD|TEGOED|E-mail|Bereiding|Gereed om");
+        "|elk|BETAALSTATUS|ONBETAALD|GEDEELTELIJK BETAALD|TERUGBETAALD|TEVEEL BETAALD|TEGOED|E-mail|Bereiding|Gereed om" +
+        "|Contant|Betaalpas|Online betaling|Mobiele betaling|Bankoverschrijving|In afwachting|In behandeling|Mislukt");
 
     public static readonly PrintLabels Turkish = Parse(
         "ONLINE SİPARİŞ|Tür|Masa|Müşteri|Tel|NOTLAR|NOT|YOK|+|Ara Toplam|KDV|İndirim" +
         "|Müşteri indirimi|Promosyon|Teslimat Ücreti|Bahşiş|TOPLAM|ÖDEME|RESTORANDA KARTLA ÖDEME|ÖDENEN|KALAN|TESLİMAT ADRESİ" +
         "|Talimatlar|Ziyaretiniz için teşekkürler!|Lokalda|Paket|Teslimat|(Siparişte ürün yok)|Ek bahşiş" +
-        "|her biri|ÖDEME DURUMU|ÖDENMEDİ|KISMEN ÖDENDİ|İADE EDİLDİ|FAZLA ÖDENDİ|ALACAK|E-posta|Hazırlık|Hazır");
+        "|her biri|ÖDEME DURUMU|ÖDENMEDİ|KISMEN ÖDENDİ|İADE EDİLDİ|FAZLA ÖDENDİ|ALACAK|E-posta|Hazırlık|Hazır" +
+        "|Nakit|Banka kartı|Çevrimiçi ödeme|Mobil ödeme|Banka havalesi|Bekliyor|İşleniyor|Başarısız");
 
     /// <summary>Maps one spec onto the record; a short or long spec fails loudly here.</summary>
     private static PrintLabels Parse(string spec)
@@ -221,6 +259,14 @@ public static class PrintLabelCatalog
             Credit: fields[35],
             Email: fields[36],
             Preparation: fields[37],
-            ReadyAt: fields[38]);
+            ReadyAt: fields[38],
+            Cash: fields[39],
+            DebitCard: fields[40],
+            OnlinePayment: fields[41],
+            MobilePayment: fields[42],
+            BankTransfer: fields[43],
+            Pending: fields[44],
+            Processing: fields[45],
+            Failed: fields[46]);
     }
 }

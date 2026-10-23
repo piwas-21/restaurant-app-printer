@@ -10,7 +10,7 @@ public static partial class ReceiptComposer
     private sealed record KitchenPrintContext(PrintLabels Labels, PrintStyleSettings? Styles);
 
     private readonly record struct DetailLinesContext(
-        PrintLabels Labels, int ParentQuantity, SectionStyle? Style, bool TallEmphasis, bool IncludeNotes = true);
+        PrintLabels Labels, int ParentQuantity, SectionStyle? Style, bool TallEmphasis, bool VariationPrinted = true);
 
     public static void AppendCashierItemLines(
         StringBuilder sb, OrderItem item, int depth, int spacing, PrintLabels labels,
@@ -44,9 +44,12 @@ public static partial class ReceiptComposer
         }
 
         AppendCashierChildren(sb, item, depth, context, requiredChoicesOnly: true);
-        if (context.IncludeIngredients)
-            AppendDetailLines(sb, item, indent,
-                new DetailLinesContext(context.Labels, item.Quantity, null, false, IncludeNotes: false));
+        var variationPrinted = context.IncludeVariations && !string.IsNullOrWhiteSpace(item.VariationName)
+            && (depth == 0 || item.CompositionRole != CompositionRole.Dish
+                || string.IsNullOrWhiteSpace(item.PresentationLabel));
+        var details = new DetailLinesContext(context.Labels, item.Quantity, null, false, variationPrinted);
+        if (context.IncludeIngredients) AppendIngredientLines(sb, item, indent, details);
+        AppendNoteLine(sb, item, indent, details);
         AppendCashierChildren(sb, item, depth, context, requiredChoicesOnly: false);
     }
 
@@ -55,12 +58,16 @@ public static partial class ReceiptComposer
     {
         var children = ReceiptItemDisplay.OrderItemsForDisplay(item.SideItems)
             .Where(child => context.IncludeIngredients
-                || child.CompositionRole is not (CompositionRole.Ingredient or CompositionRole.Sauce))
+                || child.CompositionRole is not (CompositionRole.Ingredient or CompositionRole.Sauce)
+                || HasItemInstructions(child))
             .Where(child => (child.CompositionRole == CompositionRole.RequiredChoice) == requiredChoicesOnly)
             .ToList();
         foreach (var child in children)
             AppendCashierProjected(sb, child, depth + 1, context, item.Quantity);
     }
+
+    private static bool HasItemInstructions(OrderItem item) =>
+        !string.IsNullOrWhiteSpace(item.SpecialInstructions) || (item.SideItems?.Any(HasItemInstructions) ?? false);
 
     public static void AppendKitchenItemLines(
         StringBuilder sb, OrderItem item, int depth, PrintLabels labels, int parentQuantity = 1,
@@ -139,6 +146,13 @@ public static partial class ReceiptComposer
     private static void AppendDetailLines(
         StringBuilder sb, OrderItem item, string indent, DetailLinesContext context)
     {
+        AppendIngredientLines(sb, item, indent, context);
+        AppendNoteLine(sb, item, indent, context);
+    }
+
+    private static void AppendIngredientLines(
+        StringBuilder sb, OrderItem item, string indent, DetailLinesContext context)
+    {
         foreach (var ingredient in (item.IngredientCustomizations ?? [])
             .Select((value, index) => new { Value = value, Index = index })
             .OrderBy(entry => entry.Value.PresentationOrder ?? int.MaxValue)
@@ -149,8 +163,13 @@ public static partial class ReceiptComposer
             var line = FormatIngredientLine(ingredient, indent, context.Labels, context.ParentQuantity);
             ReceiptKitchenLineFormatter.AppendDetailLine(sb, line, context.Style, context.TallEmphasis);
         }
-        var note = ReceiptItemDisplay.DisplaySpecialInstructions(item);
-        if (context.IncludeNotes && note is not null)
+    }
+
+    private static void AppendNoteLine(
+        StringBuilder sb, OrderItem item, string indent, DetailLinesContext context)
+    {
+        var note = ReceiptItemDisplay.DisplaySpecialInstructions(item, context.VariationPrinted);
+        if (note is not null)
             ReceiptKitchenLineFormatter.AppendDetailLine(sb,
                 $"{indent}   {context.Labels.Note}: {note}", context.Style, context.TallEmphasis);
     }
